@@ -30,6 +30,7 @@
     "qr:code-manager-api-selftest": "node scripts/qq-code-manager-api-selftest.js",
     "code:agent": "node scripts/qq-isolated-code-agent.js",
     "code:provider-selftest": "node scripts/qq-isolated-code-provider-selftest.js",
+    "code:provider-check": "node scripts/qq-isolated-code-provider-check.js",
     "build:release": "pkg . --no-bytecode --targets node18-win-x64,node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
