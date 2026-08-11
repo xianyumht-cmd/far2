@@ -13,6 +13,7 @@
     "qr:test": "node scripts/qr-mode-test.js",
     "qr:pc-bridge": "node scripts/qr-pc-bridge-test.js",
     "qr:dual-scan": "node scripts/qr-dual-scan-test.js",
+    "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "build:release": "pkg . --no-bytecode --targets node18-win-x64,node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
