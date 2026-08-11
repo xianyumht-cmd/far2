@@ -58,7 +58,7 @@ function installCodeManagerApiHook(provider) {
         return res.status(status).json({ ok: false, error: message });
     }
 
-    proto.use = function patchedUse(...args) {
+    const patchedUse = function patchedUse(...args) {
         const result = originalUse.apply(this, args);
         const mountPath = typeof args[0] === 'string' ? args[0] : '';
 
@@ -75,13 +75,11 @@ function installCodeManagerApiHook(provider) {
         return result;
     };
 
+    proto.use = patchedUse;
+
     return function uninstall() {
         if (proto.use === patchedUse) proto.use = originalUse;
     };
-
-    function patchedUse(...args) {
-        return proto.use.apply(this, args);
-    }
 }
 
 module.exports = {
