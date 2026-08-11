@@ -23,8 +23,6 @@
     "qr:session-import": "node scripts/qq-session-import-accounts.js",
     "qr:session-pair": "node scripts/qq-session-pair.js",
     "qr:session-recover-test": "node scripts/qq-session-recovery-test.js",
-    "qr:session-target-code": "node scripts/qq-session-target-code-test.js",
-    "qr:session-renderer-restart": "node scripts/qq-session-renderer-restart-test.js",
     "qr:code-manager-plan": "node scripts/qq-code-manager-plan.js",
     "build:release": "pkg . --no-bytecode --targets node18-win-x64,node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
