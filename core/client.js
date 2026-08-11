@@ -10,9 +10,19 @@ const {
     emitRealtimeLog,
     emitRealtimeAccountLog,
 } = require('./src/controllers/admin');
+const { installCodeManagerApiHook } = require('./src/controllers/code-manager-api-hook');
 const { createRuntimeEngine } = require('./src/runtime/runtime-engine');
 const { createModuleLogger } = require('./src/services/logger');
 const mainLogger = createModuleLogger('main');
+
+function startAdminServerWithCodeManagerApi(dataProvider) {
+    const uninstall = installCodeManagerApiHook(dataProvider);
+    try {
+        return startAdminServer(dataProvider);
+    } finally {
+        uninstall();
+    }
+}
 
 // 打包后 worker 由当前可执行文件以 --worker 模式启动
 const isWorkerProcess = process.env.FARM_WORKER === '1';
@@ -22,7 +32,7 @@ if (isWorkerProcess) {
     const runtimeEngine = createRuntimeEngine({
         processRef: process,
         mainEntryPath: __filename,
-        startAdminServer,
+        startAdminServer: startAdminServerWithCodeManagerApi,
         onStatusSync: (accountId, status) => {
             emitRealtimeStatus(accountId, status);
         },
