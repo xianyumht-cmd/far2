@@ -38,6 +38,32 @@ function createDataProvider(options) {
         return findAccountByRef(getStoredAccountsList(), accountRef);
     }
 
+    function buildCodeRefreshConfig(account) {
+        if (!account) return null;
+        const id = String(account.id || '');
+        return {
+            accountId: id,
+            accountName: account.name || id,
+            platform: String(account.platform || 'qq').toLowerCase(),
+            enabled: account.codeRefreshEnabled === true,
+            mode: String(account.codeRefreshMode || ''),
+            configuredAt: Number(account.codeRefreshConfiguredAt || 0),
+        };
+    }
+
+    function getCodeRefreshConfig(accountRef = '') {
+        const raw = normalizeAccountRef(accountRef);
+        if (!raw) {
+            return {
+                accounts: getStoredAccountsList().map(buildCodeRefreshConfig).filter(Boolean),
+            };
+        }
+        const accountId = resolveAccountRefId(raw);
+        const account = findAccountByAnyRef(accountId || raw);
+        if (!account) return null;
+        return buildCodeRefreshConfig(account);
+    }
+
     return {
         resolveAccountId: (accountRef) => resolveAccountRefId(accountRef),
 
@@ -250,12 +276,68 @@ function createDataProvider(options) {
 
         refreshDesktopSessions: () => desktopSessions.refreshBindings(),
 
-        // Session-aware CodeManager status (no credential data is exposed here)
-        getCodeManagerStatus: () => {
+        // Session-aware CodeManager config/status. No Farm Code is returned here.
+        getCodeRefreshConfig: (accountRef = '') => getCodeRefreshConfig(accountRef),
+
+        setCodeRefreshConfig: (accountRef, payload = {}) => {
+            const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) throw new Error('Missing accountId');
+            const account = findAccountByAnyRef(accountId);
+            if (!account) throw new Error('Account not found');
+            if (String(account.platform || 'qq').toLowerCase() !== 'qq') {
+                throw new Error('CodeManager windows_session 仅支持 QQ 账号');
+            }
+
+            const body = payload && typeof payload === 'object' ? payload : {};
+            const enabled = body.enabled === true;
+            const requestedMode = String(body.mode || (enabled ? 'windows_session' : '')).toLowerCase();
+            if (enabled && requestedMode !== 'windows_session') {
+                throw new Error(`Unsupported CodeManager mode: ${requestedMode || '(empty)'}`);
+            }
+
+            store.addOrUpdateAccount({
+                id: accountId,
+                codeRefreshEnabled: enabled,
+                codeRefreshMode: enabled ? 'windows_session' : '',
+                codeRefreshConfiguredAt: Date.now(),
+            });
+
+            return {
+                config: getCodeRefreshConfig(accountId),
+                status: codeManager && typeof codeManager.getAccountStatus === 'function'
+                    ? codeManager.getAccountStatus(accountId)
+                    : null,
+            };
+        },
+
+        getCodeManagerStatus: (accountRef = '') => {
             if (!codeManager || typeof codeManager.getStatus !== 'function') {
                 return { enabled: false, provider: 'unavailable', accounts: [] };
             }
-            return codeManager.getStatus();
+            const status = codeManager.getStatus();
+            const raw = normalizeAccountRef(accountRef);
+            if (!raw) return status;
+            const accountId = resolveAccountRefId(raw);
+            return {
+                ...status,
+                accounts: (status.accounts || []).filter(item => String(item.accountId || '') === String(accountId || '')),
+            };
+        },
+
+        triggerCodeRefresh: (accountRef, reason = 'manual') => {
+            const accountId = resolveAccountRefId(accountRef);
+            if (!accountId) throw new Error('Missing accountId');
+            if (!codeManager || typeof codeManager.triggerRefresh !== 'function') {
+                return { accepted: false, reason: 'code_manager_unavailable' };
+            }
+            const accepted = codeManager.triggerRefresh(accountId, String(reason || 'manual'));
+            return {
+                accepted,
+                accountId,
+                status: typeof codeManager.getAccountStatus === 'function'
+                    ? codeManager.getAccountStatus(accountId)
+                    : null,
+            };
         },
 
         getSchedulerStatus: async (accountRef) => {
