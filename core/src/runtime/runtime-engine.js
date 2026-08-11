@@ -23,6 +23,7 @@ function createRuntimeEngine(options = {}) {
   const onLog = typeof options.onLog === 'function' ? options.onLog : null
   const onAccountLog = typeof options.onAccountLog === 'function' ? options.onAccountLog : null
   const startAdminServer = typeof options.startAdminServer === 'function' ? options.startAdminServer : null
+  const codeRefreshProvider = options.codeRefreshProvider || null
 
   const workerControls = { startWorker: null, restartWorker: null }
   const runtimeState = createRuntimeState({
@@ -96,6 +97,7 @@ function createRuntimeEngine(options = {}) {
     log,
     addAccountLog,
     processRef,
+    codeRefreshProvider,
   })
 
   const dataProvider = createDataProvider({
