@@ -23,6 +23,7 @@
     "qr:session-recover-test": "pnpm -C core qr:session-recover-test",
     "qr:session-target-code": "pnpm -C core qr:session-target-code",
     "qr:session-renderer-restart": "pnpm -C core qr:session-renderer-restart",
+    "qr:code-manager-plan": "pnpm -C core qr:code-manager-plan",
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
