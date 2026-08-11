@@ -26,10 +26,11 @@
     "qr:code-manager-plan": "node scripts/qq-code-manager-plan.js",
     "qr:code-manager-config": "node scripts/qq-code-manager-config.js",
     "qr:code-manager-selftest": "node scripts/qq-code-manager-selftest.js",
+    "qr:code-manager-api-selftest": "node scripts/qq-code-manager-api-selftest.js",
     "build:release": "pkg . --no-bytecode --targets node18-win-x64,node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
-    "build:mac": "pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist",
+    "build:mac": "pkg . --no-bytecode --targets node18-macos-x64 --out-path dist",
     "lint": "eslint . --fix",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
