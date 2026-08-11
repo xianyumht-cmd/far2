@@ -1,19 +1,26 @@
 const process = require('node:process');
-const { captureFreshFarmCode } = require('./windows-runtime-code');
+const desktopSessions = require('./desktop-session-registry');
 
 const DEFAULT_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
 const DEFAULT_POLL_MS = 10 * 1000;
-const DEFAULT_CAPTURE_TIMEOUT_MS = 90 * 1000;
+const DEFAULT_RETRY_MS = 30 * 1000;
 
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function maskCode(code) {
-    const text = String(code || '').trim();
-    if (!text) return '(empty)';
-    if (text.length <= 8) return text;
-    return `${text.slice(0, 4)}...${text.slice(-4)}`;
+function createUnavailableProvider() {
+    return {
+        name: 'targeted_provider_pending',
+        async getAvailability(_account, binding) {
+            if (!binding) return { available: false, reason: 'desktop_session_not_bound' };
+            if (binding.status !== 'online' || binding.needsRebind) {
+                return { available: false, reason: 'desktop_session_offline' };
+            }
+            return { available: false, reason: 'targeted_provider_unavailable' };
+        },
+        async refresh() {
+            const err = new Error('当前没有可用的多 QQ 定向 Code Provider');
+            err.code = 'targeted_provider_unavailable';
+            throw err;
+        },
+    };
 }
 
 function createCodeManager(options = {}) {
@@ -25,8 +32,10 @@ function createCodeManager(options = {}) {
         log,
         addAccountLog,
         processRef = process,
+        codeRefreshProvider = null,
     } = options;
 
+    const provider = codeRefreshProvider || createUnavailableProvider();
     const refreshIntervalMs = Math.max(
         30 * 1000,
         Number(processRef.env.FARM_CODE_REFRESH_INTERVAL_MS) || DEFAULT_REFRESH_INTERVAL_MS,
@@ -35,17 +44,19 @@ function createCodeManager(options = {}) {
         1000,
         Number(processRef.env.FARM_CODE_REFRESH_POLL_MS) || DEFAULT_POLL_MS,
     );
-    const captureTimeoutMs = Math.max(
+    const retryMs = Math.max(
         5000,
-        Number(processRef.env.FARM_CODE_CAPTURE_TIMEOUT_MS) || DEFAULT_CAPTURE_TIMEOUT_MS,
+        Number(processRef.env.FARM_CODE_REFRESH_RETRY_MS) || DEFAULT_RETRY_MS,
     );
 
     let timer = null;
     let started = false;
-    let warnedBinding = false;
+    let warnedProvider = false;
     const nextRefreshAt = new Map();
     const inFlight = new Map();
     const lastTriggerAt = new Map();
+    const pendingReason = new Map();
+    const lastState = new Map();
 
     function getAccountsList() {
         const data = store.getAccounts();
@@ -58,70 +69,154 @@ function createCodeManager(options = {}) {
         return getAccountsList().find(acc => String(acc.id || '') === id) || null;
     }
 
-    function getManagedAccount() {
-        if (processRef.platform !== 'win32') return null;
-        if (String(processRef.env.FARM_CODE_AUTO_REFRESH || '0') !== '1') return null;
-
-        const qqAccounts = getAccountsList().filter(acc => String(acc.platform || 'qq').toLowerCase() === 'qq');
-        const explicitlyEnabled = qqAccounts.filter(acc =>
-            acc.codeRefreshEnabled === true
-            && acc.codeRefreshMode === 'windows_runtime'
-            && String(acc.desktopSessionUin || '').trim(),
-        );
-
-        if (explicitlyEnabled.length === 1) return explicitlyEnabled[0];
-        if (!warnedBinding) {
-            warnedBinding = true;
-            log('系统', 'CodeManager 未启用自动刷新：必须先建立“农场账号 ↔ 指定 Windows QQ Session”绑定，避免多 QQ 环境弹账号选择框或刷新错账号');
+    function getDesktopSnapshot() {
+        try {
+            return desktopSessions.getStatus();
+        } catch {
+            return { bindings: [], runtimeSessions: [] };
         }
-        return null;
     }
 
-    function isManagedAccount(accountId) {
-        const managed = getManagedAccount();
-        return !!(managed && String(managed.id || '') === String(accountId || ''));
+    function getBindingForAccount(accountId, snapshot = getDesktopSnapshot()) {
+        const id = String(accountId || '').trim();
+        return (snapshot.bindings || []).find(item => String(item.accountId || '') === id) || null;
     }
 
-    async function waitWorkerStopped(accountId, timeoutMs = 2500) {
-        const id = String(accountId || '');
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-            if (!workers[id]) return true;
-            await sleep(100);
+    function isGlobalEnabled() {
+        return processRef.platform === 'win32'
+            && String(processRef.env.FARM_CODE_AUTO_REFRESH || '0') === '1';
+    }
+
+    function isAccountConfigured(account) {
+        if (!account) return false;
+        return String(account.platform || 'qq').toLowerCase() === 'qq'
+            && account.codeRefreshEnabled === true
+            && String(account.codeRefreshMode || 'windows_session').toLowerCase() === 'windows_session';
+    }
+
+    function getManagedAccounts(snapshot = getDesktopSnapshot()) {
+        if (!isGlobalEnabled()) return [];
+        return getAccountsList()
+            .filter(isAccountConfigured)
+            .map(account => ({
+                account,
+                binding: getBindingForAccount(account.id, snapshot),
+            }));
+    }
+
+    function setState(accountId, state, extra = {}) {
+        const id = String(accountId || '').trim();
+        if (!id) return;
+        lastState.set(id, {
+            state,
+            updatedAt: Date.now(),
+            ...extra,
+        });
+    }
+
+    async function providerAvailability(account, binding) {
+        if (!binding) return { available: false, reason: 'desktop_session_not_bound' };
+        if (binding.status !== 'online' || binding.needsRebind) {
+            return { available: false, reason: 'desktop_session_offline' };
         }
-        return !workers[id];
+        if (!provider || typeof provider.refresh !== 'function') {
+            return { available: false, reason: 'targeted_provider_unavailable' };
+        }
+        if (typeof provider.getAvailability === 'function') {
+            try {
+                const result = await provider.getAvailability(account, binding);
+                if (result && typeof result === 'object') return result;
+            } catch (err) {
+                return {
+                    available: false,
+                    reason: err && err.code ? err.code : (err && err.message ? err.message : 'provider_availability_failed'),
+                };
+            }
+        }
+        return { available: true, reason: 'ok' };
+    }
+
+    function scheduleRetry(accountId, reason) {
+        const id = String(accountId || '').trim();
+        if (!id) return;
+        pendingReason.set(id, String(reason || 'retry'));
+        nextRefreshAt.set(id, Date.now() + retryMs);
     }
 
     async function refreshAccount(accountId, reason = 'scheduled') {
         const id = String(accountId || '').trim();
         if (!id) return { ok: false, reason: 'missing_account_id' };
-        if (!isManagedAccount(id)) return { ok: false, reason: 'account_not_managed' };
+        if (!isGlobalEnabled()) return { ok: false, reason: 'auto_refresh_disabled' };
         if (inFlight.has(id)) return inFlight.get(id);
 
         const task = (async () => {
-            const before = getAccountById(id);
-            if (!before) return { ok: false, reason: 'account_not_found' };
+            const account = getAccountById(id);
+            if (!account) return { ok: false, reason: 'account_not_found' };
+            if (!isAccountConfigured(account)) return { ok: false, reason: 'account_not_configured' };
 
-            const wasRunning = !!workers[id];
-            const displayName = before.name || id;
-            log('系统', `CodeManager 开始刷新账号 ${displayName} 的 Farm Code，原因: ${reason}`, {
-                accountId: id,
-                accountName: displayName,
-            });
-            addAccountLog('code_refresh_start', `开始刷新 Farm Code (${reason})`, id, displayName, { reason });
+            const snapshot = getDesktopSnapshot();
+            const binding = getBindingForAccount(id, snapshot);
+            const availability = await providerAvailability(account, binding);
+            const displayName = account.name || id;
 
-            if (wasRunning) {
-                stopWorker(id);
-                await waitWorkerStopped(id);
+            if (!availability.available) {
+                const state = availability.reason === 'desktop_session_offline' || availability.reason === 'desktop_session_not_bound'
+                    ? 'waiting_session'
+                    : 'waiting_provider';
+                setState(id, state, {
+                    reason: availability.reason,
+                    trigger: reason,
+                    qqUin: binding ? String(binding.qqUin || '') : '',
+                });
+                scheduleRetry(id, reason);
+
+                if (state === 'waiting_provider' && !warnedProvider) {
+                    warnedProvider = true;
+                    log('系统', `CodeManager 已进入多账号 Session 调度模式，但当前没有可用的定向 Code Provider；不会回退到全局 QQ 选择器`, {
+                        accountId: id,
+                        accountName: displayName,
+                    });
+                }
+
+                addAccountLog(
+                    state === 'waiting_session' ? 'code_refresh_waiting_session' : 'code_refresh_waiting_provider',
+                    state === 'waiting_session'
+                        ? `等待对应 Windows QQ Session 上线 (${availability.reason})`
+                        : `等待定向 Code Provider (${availability.reason})`,
+                    id,
+                    displayName,
+                    { reason, provider: provider.name || 'unknown' },
+                );
+                return { ok: false, reason: availability.reason, state };
             }
 
+            const wasRunning = !!workers[id];
+            setState(id, 'refreshing', {
+                reason,
+                provider: provider.name || 'unknown',
+                qqUin: binding ? String(binding.qqUin || '') : '',
+            });
+            addAccountLog('code_refresh_start', `开始刷新 Farm Code (${reason})`, id, displayName, {
+                reason,
+                provider: provider.name || 'unknown',
+            });
+
             try {
-                const captured = await captureFreshFarmCode({
-                    timeoutMs: captureTimeoutMs,
-                    log: (msg) => log('系统', `CodeManager: ${msg}`, { accountId: id, accountName: displayName }),
+                const result = await provider.refresh({
+                    account,
+                    binding,
+                    reason,
                 });
-                const freshCode = String(captured && captured.code || '').trim();
-                if (!freshCode) throw new Error('未获得 fresh Code');
+                const freshCode = String(result && result.code || '').trim();
+                if (!freshCode) {
+                    const err = new Error('Provider 未返回 fresh Code');
+                    err.code = 'provider_empty_code';
+                    throw err;
+                }
+
+                if (wasRunning) {
+                    stopWorker(id);
+                }
 
                 const refreshedAt = Date.now();
                 store.addOrUpdateAccount({
@@ -131,25 +226,28 @@ function createCodeManager(options = {}) {
                     lastCodeRefreshOk: true,
                     lastCodeRefreshError: '',
                     lastCodeRefreshReason: reason,
-                    lastCodeSource: captured.source || 'qq.login',
+                    lastCodeSource: result.source || provider.name || 'session_provider',
                 });
 
                 const updated = getAccountById(id);
-                const startedNow = startWorker(updated || { ...before, code: freshCode });
+                const startedNow = startWorker(updated || { ...account, code: freshCode });
+                pendingReason.delete(id);
                 nextRefreshAt.set(id, refreshedAt + refreshIntervalMs);
-
-                log('系统', `CodeManager 已获取 fresh Code ${maskCode(freshCode)}，账号 ${displayName} 已重新登录`, {
-                    accountId: id,
-                    accountName: displayName,
+                setState(id, 'ready', {
+                    reason: 'refresh_ok',
+                    provider: provider.name || 'unknown',
+                    refreshedAt,
                 });
-                addAccountLog('code_refresh_ok', `Farm Code 刷新成功 ${maskCode(freshCode)}`, id, displayName, {
+
+                addAccountLog('code_refresh_ok', 'Farm Code 刷新成功', id, displayName, {
                     reason,
-                    source: captured.source || 'qq.login',
+                    provider: provider.name || 'unknown',
                     restarted: !!startedNow,
                 });
-                return { ok: true, code: freshCode, restarted: !!startedNow, reason };
+                return { ok: true, restarted: !!startedNow, reason };
             } catch (err) {
                 const message = err && err.message ? err.message : String(err || 'unknown');
+                const errorCode = err && err.code ? String(err.code) : 'provider_failed';
                 store.addOrUpdateAccount({
                     id,
                     lastCodeRefreshAt: Date.now(),
@@ -157,23 +255,22 @@ function createCodeManager(options = {}) {
                     lastCodeRefreshError: message,
                     lastCodeRefreshReason: reason,
                 });
-                nextRefreshAt.set(id, Date.now() + Math.min(refreshIntervalMs, 30 * 1000));
+                scheduleRetry(id, reason);
+                setState(id, 'provider_error', {
+                    reason: errorCode,
+                    message,
+                    provider: provider.name || 'unknown',
+                });
                 log('错误', `CodeManager 刷新账号 ${displayName} 失败: ${message}`, {
                     accountId: id,
                     accountName: displayName,
                 });
-                addAccountLog('code_refresh_failed', `Farm Code 刷新失败: ${message}`, id, displayName, { reason });
-
-                if (wasRunning && !workers[id]) {
-                    try {
-                        startWorker(before);
-                        log('系统', `CodeManager 已尝试用旧 Code 恢复账号 ${displayName}`, {
-                            accountId: id,
-                            accountName: displayName,
-                        });
-                    } catch {}
-                }
-                return { ok: false, reason: message };
+                addAccountLog('code_refresh_failed', `Farm Code 刷新失败: ${message}`, id, displayName, {
+                    reason,
+                    provider: provider.name || 'unknown',
+                    errorCode,
+                });
+                return { ok: false, reason: errorCode, message };
             }
         })().finally(() => {
             inFlight.delete(id);
@@ -185,61 +282,87 @@ function createCodeManager(options = {}) {
 
     function triggerRefresh(accountId, reason) {
         const id = String(accountId || '').trim();
-        if (!id || !isManagedAccount(id)) return false;
+        const account = getAccountById(id);
+        if (!id || !isGlobalEnabled() || !isAccountConfigured(account)) return false;
+
         const now = Date.now();
         const last = Number(lastTriggerAt.get(id) || 0);
         if (now - last < 5000 && inFlight.has(id)) return true;
         lastTriggerAt.set(id, now);
+        pendingReason.set(id, String(reason || 'manual'));
+        nextRefreshAt.set(id, now);
         refreshAccount(id, reason).catch(() => null);
         return true;
     }
 
     function handleAccountLog(entry) {
         if (!entry || !entry.accountId) return;
-        const action = String(entry.action || '');
         const id = String(entry.accountId || '');
-        if (!isManagedAccount(id)) return;
+        const account = getAccountById(id);
+        if (!isGlobalEnabled() || !isAccountConfigured(account)) return;
 
+        const action = String(entry.action || '');
         if (action === 'ws_400') {
             triggerRefresh(id, 'ws_400');
             return;
         }
         if (action === 'kickout_stop') {
-            const reason = String(entry.reason || '未知');
-            if (/版本过低|客户端版本/i.test(reason)) return;
-            triggerRefresh(id, `kickout:${reason}`);
+            const kickReason = String(entry.reason || '未知');
+            if (/版本过低|客户端版本/i.test(kickReason)) return;
+            triggerRefresh(id, `kickout:${kickReason}`);
         }
     }
 
     function tick() {
-        const account = getManagedAccount();
-        if (!account) return;
-        const id = String(account.id || '');
-        if (!id || !workers[id] || inFlight.has(id)) return;
+        const snapshot = getDesktopSnapshot();
+        const managed = getManagedAccounts(snapshot);
+        const now = Date.now();
 
-        let due = Number(nextRefreshAt.get(id) || 0);
-        if (!due) {
-            due = Date.now() + refreshIntervalMs;
-            nextRefreshAt.set(id, due);
-            return;
-        }
-        if (Date.now() >= due) {
-            triggerRefresh(id, 'scheduled');
+        for (const { account, binding } of managed) {
+            const id = String(account.id || '');
+            if (!id || inFlight.has(id)) continue;
+
+            if (!binding || binding.status !== 'online' || binding.needsRebind) {
+                setState(id, 'waiting_session', {
+                    reason: binding ? 'desktop_session_offline' : 'desktop_session_not_bound',
+                });
+                continue;
+            }
+
+            let due = Number(nextRefreshAt.get(id) || 0);
+            if (!due) {
+                due = now + refreshIntervalMs;
+                nextRefreshAt.set(id, due);
+                setState(id, 'scheduled', { nextRefreshAt: due });
+                continue;
+            }
+
+            if (now >= due) {
+                const reason = pendingReason.get(id) || 'scheduled';
+                refreshAccount(id, reason).catch(() => null);
+            }
         }
     }
 
     function start() {
         if (started) return;
         started = true;
-        const account = getManagedAccount();
-        if (account) {
+
+        const snapshot = getDesktopSnapshot();
+        const managed = getManagedAccounts(snapshot);
+        const now = Date.now();
+        for (const { account, binding } of managed) {
             const id = String(account.id || '');
-            nextRefreshAt.set(id, Date.now() + refreshIntervalMs);
-            log('系统', `CodeManager 已启用：账号 ${account.name || id} 将每 ${Math.round(refreshIntervalMs / 1000)} 秒刷新一次 Farm Code；HTTP 400/Kickout 会立即刷新`, {
-                accountId: id,
-                accountName: account.name || id,
+            nextRefreshAt.set(id, now + refreshIntervalMs);
+            setState(id, binding && binding.status === 'online' && !binding.needsRebind ? 'scheduled' : 'waiting_session', {
+                nextRefreshAt: now + refreshIntervalMs,
             });
         }
+
+        if (managed.length) {
+            log('系统', `CodeManager 多账号 Session 调度已启用：${managed.length} 个账号，Provider=${provider.name || 'unknown'}`);
+        }
+
         timer = setInterval(tick, pollMs);
         if (timer && typeof timer.unref === 'function') timer.unref();
     }
@@ -251,15 +374,28 @@ function createCodeManager(options = {}) {
     }
 
     function getStatus() {
-        const account = getManagedAccount();
-        const id = account ? String(account.id || '') : '';
+        const snapshot = getDesktopSnapshot();
+        const managed = getManagedAccounts(snapshot);
         return {
-            enabled: started && !!account,
-            accountId: id,
-            accountName: account ? (account.name || id) : '',
+            enabled: started && isGlobalEnabled(),
+            provider: provider.name || 'unknown',
             refreshIntervalMs,
-            nextRefreshAt: id ? Number(nextRefreshAt.get(id) || 0) : 0,
-            refreshing: id ? inFlight.has(id) : false,
+            pollMs,
+            retryMs,
+            accounts: managed.map(({ account, binding }) => {
+                const id = String(account.id || '');
+                return {
+                    accountId: id,
+                    accountName: account.name || id,
+                    qqUin: binding ? String(binding.qqUin || '') : '',
+                    sessionStatus: binding ? binding.status : 'unbound',
+                    needsRebind: binding ? !!binding.needsRebind : true,
+                    nextRefreshAt: Number(nextRefreshAt.get(id) || 0),
+                    refreshing: inFlight.has(id),
+                    pendingReason: pendingReason.get(id) || '',
+                    state: lastState.get(id) || { state: 'idle', updatedAt: 0 },
+                };
+            }),
         };
     }
 
