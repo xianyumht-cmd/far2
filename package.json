@@ -10,6 +10,7 @@
     "qr:pc": "pnpm -C core qr:test pc",
     "qr:auto": "pnpm -C core qr:test auto",
     "qr:pc-bridge": "pnpm -C core qr:pc-bridge",
+    "qr:dual-scan": "pnpm -C core qr:dual-scan",
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
