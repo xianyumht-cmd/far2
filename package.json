@@ -21,6 +21,7 @@
     "qr:session-import": "pnpm -C core qr:session-import",
     "qr:session-pair": "pnpm -C core qr:session-pair",
     "qr:session-recover-test": "pnpm -C core qr:session-recover-test",
+    "qr:session-binding-audit": "pnpm -C core qr:session-binding-audit",
     "qr:code-manager-plan": "pnpm -C core qr:code-manager-plan",
     "qr:code-manager-config": "pnpm -C core qr:code-manager-config",
     "qr:code-manager-selftest": "pnpm -C core qr:code-manager-selftest",
