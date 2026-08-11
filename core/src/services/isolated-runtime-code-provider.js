@@ -2,7 +2,7 @@ const process = require('node:process');
 const fetch = require('node-fetch');
 const { isLikelyCode } = require('./windows-runtime-code');
 
-const DEFAULT_HEALTH_TIMEOUT_MS = 5000;
+const DEFAULT_HEALTH_TIMEOUT_MS = 20000;
 const DEFAULT_REFRESH_TIMEOUT_MS = 120000;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
