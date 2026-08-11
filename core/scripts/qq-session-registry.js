@@ -14,7 +14,8 @@ function printSessions(sessions) {
     return;
   }
   for (const item of sessions) {
-    console.log(`farmRootPid=${item.farmRootPid} mainQqPid=${item.mainQqPid} platformChannel=${item.platformChannel || '(none)'} qqUin=${maskUin(item.qqUin) || '(unknown)'}`);
+    console.log(`farmRootPid=${item.farmRootPid} mainQqPid=${item.mainQqPid} platformChannel=${item.platformChannel || '(none)'}`);
+    console.log(`  qqUin=${maskUin(item.qqUin) || '(unknown)'} uinSource=${item.uinSource || '(none)'}`);
   }
 }
 
