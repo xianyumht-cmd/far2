@@ -12,6 +12,7 @@
     "qr:pc-bridge": "pnpm -C core qr:pc-bridge",
     "qr:dual-scan": "pnpm -C core qr:dual-scan",
     "qr:runtime-code": "pnpm -C core qr:runtime-code",
+    "qr:process-map": "pnpm -C core qr:process-map",
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
