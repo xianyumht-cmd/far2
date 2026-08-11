@@ -19,6 +19,7 @@ function createDataProvider(options) {
         startWorker,
         stopWorker,
         restartWorker,
+        codeManager,
     } = options;
 
     function getStoredAccountsList() {
@@ -248,6 +249,14 @@ function createDataProvider(options) {
         },
 
         refreshDesktopSessions: () => desktopSessions.refreshBindings(),
+
+        // Session-aware CodeManager status (no credential data is exposed here)
+        getCodeManagerStatus: () => {
+            if (!codeManager || typeof codeManager.getStatus !== 'function') {
+                return { enabled: false, provider: 'unavailable', accounts: [] };
+            }
+            return codeManager.getStatus();
+        },
 
         getSchedulerStatus: async (accountRef) => {
             const accountId = resolveAccountRefId(accountRef);
