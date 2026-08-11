@@ -26,6 +26,8 @@
     "qr:code-manager-config": "pnpm -C core qr:code-manager-config",
     "qr:code-manager-selftest": "pnpm -C core qr:code-manager-selftest",
     "qr:code-manager-api-selftest": "pnpm -C core qr:code-manager-api-selftest",
+    "code:agent": "pnpm -C core code:agent",
+    "code:provider-selftest": "pnpm -C core code:provider-selftest",
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
