@@ -58,6 +58,7 @@ core/src/services/isolated-runtime-code-provider.js
 core/src/services/isolated-code-agent.js
 core/scripts/qq-isolated-code-agent.js
 core/scripts/qq-isolated-code-provider-selftest.js
+core/scripts/qq-isolated-code-provider-check.js
 ```
 
 Production startup in `core/client.js` creates `isolated_qq_runtime` only when `FARM_CODE_PROVIDER_TARGETS` is configured. If it is absent, CodeManager keeps the safe `targeted_provider_pending` fallback.
@@ -200,6 +201,28 @@ It verifies:
 - Agent rejects multiple QQ main processes in its Windows Session;
 - Agent rejects an observed runtime UIN mismatch.
 
+## Safe targeted acceptance probe
+
+Before enabling the global CodeManager scheduler, use the explicit Provider probe for one UIN at a time.
+
+Health-only mode:
+
+```powershell
+pnpm code:provider-check -- <QQ UIN>
+```
+
+This does not mint a Code.
+
+Explicit one-shot mint verification:
+
+```powershell
+pnpm code:provider-check -- <QQ UIN> --refresh
+```
+
+`--refresh` invokes only the exact UIN-mapped isolated Agent. The returned Code is validated in memory and immediately discarded. The command prints only masked UIN, result/source and Code length. It does not print or persist the Code, mutate any FAR2 account, or stop/start any worker.
+
+Use this probe to establish that each isolated environment can independently mint a fresh Code before `FARM_CODE_AUTO_REFRESH=1` is ever enabled.
+
 ## Current safety state
 
 The Provider implementation now exists, but **real Provider acceptance is still pending**.
@@ -240,6 +263,10 @@ A VM/remote topology is still suitable for Provider isolation, but the current C
 
 A production provider is not ready until all of these pass:
 
+- `pnpm code:provider-selftest` passes locally.
+- Health-only probe is READY for account A's exact UIN and exact endpoint.
+- One-shot `--refresh` probe mints a Code for account A without printing/persisting it.
+- Repeat the same two probe steps for account B.
 - Refresh account A while account B stays unchanged.
 - Refresh account B while account A stays unchanged.
 - No account chooser appears during unattended refresh.
