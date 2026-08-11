@@ -4,6 +4,18 @@ const desktopSessions = require('./desktop-session-registry');
 const DEFAULT_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
 const DEFAULT_POLL_MS = 10 * 1000;
 const DEFAULT_RETRY_MS = 30 * 1000;
+const DEFAULT_WORKER_STOP_TIMEOUT_MS = 2500;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function maskUin(uin) {
+    const text = String(uin || '').trim();
+    if (!text) return '';
+    if (text.length <= 4) return '****';
+    return `${text.slice(0, 2)}****${text.slice(-2)}`;
+}
 
 function createUnavailableProvider() {
     return {
@@ -33,6 +45,7 @@ function createCodeManager(options = {}) {
         addAccountLog,
         processRef = process,
         codeRefreshProvider = null,
+        desktopSessionRegistry = desktopSessions,
     } = options;
 
     const provider = codeRefreshProvider || createUnavailableProvider();
@@ -47,6 +60,10 @@ function createCodeManager(options = {}) {
     const retryMs = Math.max(
         5000,
         Number(processRef.env.FARM_CODE_REFRESH_RETRY_MS) || DEFAULT_RETRY_MS,
+    );
+    const workerStopTimeoutMs = Math.max(
+        500,
+        Number(processRef.env.FARM_CODE_WORKER_STOP_TIMEOUT_MS) || DEFAULT_WORKER_STOP_TIMEOUT_MS,
     );
 
     let timer = null;
@@ -71,7 +88,7 @@ function createCodeManager(options = {}) {
 
     function getDesktopSnapshot() {
         try {
-            return desktopSessions.getStatus();
+            return desktopSessionRegistry.getStatus();
         } catch {
             return { bindings: [], runtimeSessions: [] };
         }
@@ -94,14 +111,18 @@ function createCodeManager(options = {}) {
             && String(account.codeRefreshMode || 'windows_session').toLowerCase() === 'windows_session';
     }
 
-    function getManagedAccounts(snapshot = getDesktopSnapshot()) {
-        if (!isGlobalEnabled()) return [];
+    function getConfiguredAccounts(snapshot = getDesktopSnapshot()) {
         return getAccountsList()
             .filter(isAccountConfigured)
             .map(account => ({
                 account,
                 binding: getBindingForAccount(account.id, snapshot),
             }));
+    }
+
+    function getManagedAccounts(snapshot = getDesktopSnapshot()) {
+        if (!isGlobalEnabled()) return [];
+        return getConfiguredAccounts(snapshot);
     }
 
     function setState(accountId, state, extra = {}) {
@@ -143,6 +164,16 @@ function createCodeManager(options = {}) {
         nextRefreshAt.set(id, Date.now() + retryMs);
     }
 
+    async function waitWorkerStopped(accountId, timeoutMs = workerStopTimeoutMs) {
+        const id = String(accountId || '').trim();
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            if (!workers[id]) return true;
+            await sleep(100);
+        }
+        return !workers[id];
+    }
+
     async function refreshAccount(accountId, reason = 'scheduled') {
         const id = String(accountId || '').trim();
         if (!id) return { ok: false, reason: 'missing_account_id' };
@@ -166,13 +197,13 @@ function createCodeManager(options = {}) {
                 setState(id, state, {
                     reason: availability.reason,
                     trigger: reason,
-                    qqUin: binding ? String(binding.qqUin || '') : '',
+                    qqUin: binding ? maskUin(binding.qqUin) : '',
                 });
                 scheduleRetry(id, reason);
 
                 if (state === 'waiting_provider' && !warnedProvider) {
                     warnedProvider = true;
-                    log('系统', `CodeManager 已进入多账号 Session 调度模式，但当前没有可用的定向 Code Provider；不会回退到全局 QQ 选择器`, {
+                    log('系统', 'CodeManager 已进入多账号 Session 调度模式，但当前没有可用的定向 Code Provider；不会回退到全局 QQ 选择器', {
                         accountId: id,
                         accountName: displayName,
                     });
@@ -194,13 +225,14 @@ function createCodeManager(options = {}) {
             setState(id, 'refreshing', {
                 reason,
                 provider: provider.name || 'unknown',
-                qqUin: binding ? String(binding.qqUin || '') : '',
+                qqUin: binding ? maskUin(binding.qqUin) : '',
             });
             addAccountLog('code_refresh_start', `开始刷新 Farm Code (${reason})`, id, displayName, {
                 reason,
                 provider: provider.name || 'unknown',
             });
 
+            let workerStoppedForRefresh = false;
             try {
                 const result = await provider.refresh({
                     account,
@@ -216,6 +248,13 @@ function createCodeManager(options = {}) {
 
                 if (wasRunning) {
                     stopWorker(id);
+                    workerStoppedForRefresh = true;
+                    const stopped = await waitWorkerStopped(id);
+                    if (!stopped) {
+                        const err = new Error('旧 worker 停止超时，拒绝启动新会话');
+                        err.code = 'worker_stop_timeout';
+                        throw err;
+                    }
                 }
 
                 const refreshedAt = Date.now();
@@ -270,6 +309,15 @@ function createCodeManager(options = {}) {
                     provider: provider.name || 'unknown',
                     errorCode,
                 });
+
+                if (wasRunning && workerStoppedForRefresh && !workers[id]) {
+                    try {
+                        startWorker(getAccountById(id) || account);
+                    } catch {
+                        // keep the provider error as the primary failure
+                    }
+                }
+
                 return { ok: false, reason: errorCode, message };
             }
         })().finally(() => {
@@ -373,30 +421,52 @@ function createCodeManager(options = {}) {
         started = false;
     }
 
+    function buildAccountStatus(account, binding) {
+        const id = String(account.id || '');
+        let state = lastState.get(id) || null;
+        if (!state) {
+            if (!binding || binding.status !== 'online' || binding.needsRebind) {
+                state = { state: 'waiting_session', updatedAt: 0 };
+            } else if (!isGlobalEnabled()) {
+                state = { state: 'configured', updatedAt: 0 };
+            } else {
+                state = { state: 'scheduled', updatedAt: 0 };
+            }
+        }
+
+        return {
+            accountId: id,
+            accountName: account.name || id,
+            qqUin: binding ? maskUin(binding.qqUin) : '',
+            sessionStatus: binding ? binding.status : 'unbound',
+            needsRebind: binding ? !!binding.needsRebind : true,
+            nextRefreshAt: Number(nextRefreshAt.get(id) || 0),
+            refreshing: inFlight.has(id),
+            pendingReason: pendingReason.get(id) || '',
+            state,
+        };
+    }
+
     function getStatus() {
         const snapshot = getDesktopSnapshot();
-        const managed = getManagedAccounts(snapshot);
+        const configured = getConfiguredAccounts(snapshot);
         return {
             enabled: started && isGlobalEnabled(),
+            started,
+            globalEnabled: isGlobalEnabled(),
             provider: provider.name || 'unknown',
             refreshIntervalMs,
             pollMs,
             retryMs,
-            accounts: managed.map(({ account, binding }) => {
-                const id = String(account.id || '');
-                return {
-                    accountId: id,
-                    accountName: account.name || id,
-                    qqUin: binding ? String(binding.qqUin || '') : '',
-                    sessionStatus: binding ? binding.status : 'unbound',
-                    needsRebind: binding ? !!binding.needsRebind : true,
-                    nextRefreshAt: Number(nextRefreshAt.get(id) || 0),
-                    refreshing: inFlight.has(id),
-                    pendingReason: pendingReason.get(id) || '',
-                    state: lastState.get(id) || { state: 'idle', updatedAt: 0 },
-                };
-            }),
+            configuredCount: configured.length,
+            accounts: configured.map(({ account, binding }) => buildAccountStatus(account, binding)),
         };
+    }
+
+    function getAccountStatus(accountId) {
+        const id = String(accountId || '').trim();
+        if (!id) return null;
+        return getStatus().accounts.find(item => item.accountId === id) || null;
     }
 
     return {
@@ -407,9 +477,11 @@ function createCodeManager(options = {}) {
         triggerRefresh,
         handleAccountLog,
         getStatus,
+        getAccountStatus,
     };
 }
 
 module.exports = {
     createCodeManager,
+    createUnavailableProvider,
 };
