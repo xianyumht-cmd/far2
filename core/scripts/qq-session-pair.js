@@ -43,6 +43,61 @@ function ask(rl, prompt) {
   return new Promise(resolve => rl.question(prompt, answer => resolve(String(answer || '').trim())));
 }
 
+function getAccountsList() {
+  const data = store.getAccounts();
+  return Array.isArray(data && data.accounts) ? data.accounts : [];
+}
+
+function ensureLocalMetadataAccount(sourceAccount, uin) {
+  const sourceId = String(sourceAccount.id || '').trim();
+  const current = getAccountsList();
+
+  // Prefer the same source ID when it already exists locally.
+  const sameId = current.find(a => String(a.id || '') === sourceId);
+  if (sameId) {
+    store.addOrUpdateAccount({
+      id: sameId.id,
+      name: sourceAccount.name,
+      platform: sourceAccount.platform || 'qq',
+      uin,
+      qq: uin,
+      avatar: sourceAccount.avatar,
+      username: sourceAccount.username,
+    });
+    return String(sameId.id);
+  }
+
+  // Reruns should reuse the account already created for this QQ instead of duplicating it.
+  const sameUin = current.find(a => normalizeUin(a.uin || a.qq) === uin);
+  if (sameUin) {
+    store.addOrUpdateAccount({
+      id: sameUin.id,
+      name: sourceAccount.name,
+      platform: sourceAccount.platform || 'qq',
+      uin,
+      qq: uin,
+      avatar: sourceAccount.avatar,
+      username: sourceAccount.username,
+    });
+    return String(sameUin.id);
+  }
+
+  const beforeIds = new Set(current.map(a => String(a.id || '')));
+  const result = store.addOrUpdateAccount({
+    name: sourceAccount.name,
+    platform: sourceAccount.platform || 'qq',
+    uin,
+    qq: uin,
+    avatar: sourceAccount.avatar,
+    username: sourceAccount.username,
+  });
+  const nextAccounts = Array.isArray(result && result.accounts) ? result.accounts : getAccountsList();
+  const created = nextAccounts.find(a => !beforeIds.has(String(a.id || '')) && normalizeUin(a.uin || a.qq) === uin)
+    || nextAccounts.find(a => normalizeUin(a.uin || a.qq) === uin);
+  if (!created || !created.id) throw new Error(`无法为源账号 ${sourceId || sourceAccount.name} 创建测试元数据账号`);
+  return String(created.id);
+}
+
 async function main() {
   if (process.platform !== 'win32') throw new Error('此命令仅支持 Windows');
 
@@ -70,15 +125,15 @@ async function main() {
   console.log(`来源账号文件: ${sourceFile}`);
   console.log(`原项目账号数: ${sourceAccounts.length}`);
   console.log(`当前可识别 Windows QQ 农场 Session: ${sessions.length}`);
-  console.log('说明: 完整 QQ/UIN 只在本机内存和 desktop-sessions.json 中使用，终端只显示脱敏值。');
-  console.log('说明: 不读取、不复制原项目 Farm Code。\n');
+  console.log('说明: 完整 QQ/UIN 只在本机内存、测试账号元数据和 desktop-sessions.json 中使用，终端只显示脱敏值。');
+  console.log('说明: 不读取、不复制原项目 Farm Code，也不会修改原项目 accounts.json。\n');
 
   if (!sourceAccounts.length) throw new Error('原项目没有账号');
   if (!sessions.length) throw new Error('当前没有可识别的 QQ 农场 Session，请先打开对应账号的 QQ经典农场');
 
   console.log('=== 原项目账号 ===');
   sourceAccounts.forEach((a, i) => {
-    console.log(`[A${i + 1}] accountId=${a.id} name=${a.name}`);
+    console.log(`[A${i + 1}] sourceAccountId=${a.id} name=${a.name}`);
   });
 
   console.log('\n=== Windows QQ Sessions ===');
@@ -119,27 +174,17 @@ async function main() {
           continue;
         }
 
-        // far2-test 只保存账号元数据，不迁移旧 Code。
-        store.addOrUpdateAccount({
-          id: account.id,
-          name: account.name,
-          platform: account.platform || 'qq',
-          uin,
-          qq: uin,
-          avatar: account.avatar,
-          username: account.username,
-        });
-
+        const localAccountId = ensureLocalMetadataAccount(account, uin);
         const bound = registry.bindAccount({
-          accountId: account.id,
+          accountId: localAccountId,
           farmRootPid: session.farmRootPid,
           qqUin: uin,
-          note: 'interactive_pair_from_legacy_account',
+          note: `interactive_pair_source_account:${account.id}`,
         });
 
         usedSessionIndexes.add(idx);
         paired++;
-        console.log(`✅ 已配对 ${account.name} -> ${maskUin(uin)} (mainQqPid=${bound.mainQqPid}, farmRootPid=${bound.farmRootPid})`);
+        console.log(`✅ 已配对 ${account.name} (源ID=${account.id}, 测试ID=${localAccountId}) -> ${maskUin(uin)} (mainQqPid=${bound.mainQqPid}, farmRootPid=${bound.farmRootPid})`);
         break;
       }
     }
