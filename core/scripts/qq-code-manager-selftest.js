@@ -92,6 +92,7 @@ async function main() {
 
   const unavailable = new Set();
   let sequence = 0;
+  let providerRefreshCalls = 0;
   const fakeProvider = {
     name: 'selftest_targeted_provider',
     async getAvailability(account, binding) {
@@ -106,6 +107,7 @@ async function main() {
       return { available: true, reason: 'ok' };
     },
     async refresh({ account, binding }) {
+      providerRefreshCalls += 1;
       assert.equal(String(account.id), String(binding.accountId), 'provider received mismatched account/session');
       sequence += 1;
       return {
@@ -188,12 +190,47 @@ async function main() {
   assert.deepEqual(started, []);
   console.log('✅ unavailable Provider does not stop worker PASS');
 
+  unavailable.delete('1');
+  stopped.length = 0;
+  started.length = 0;
+  const beforeMismatchCode = accounts[0].code;
+  const callsBeforeMismatch = providerRefreshCalls;
+  bindings = bindings.map(item => String(item.accountId) === '1'
+    ? { ...item, qqUin: '2320006072', status: 'online', needsRebind: false }
+    : item);
+  const mismatch = await manager.refreshAccount('1', 'selftest_identity_mismatch');
+  assert.equal(mismatch.ok, false);
+  assert.equal(mismatch.state, 'session_mismatch');
+  assert.equal(mismatch.reason, 'session_identity_mismatch');
+  assert.equal(accounts[0].code, beforeMismatchCode, 'code changed despite session identity mismatch');
+  assert.equal(providerRefreshCalls, callsBeforeMismatch, 'provider.refresh was called despite identity mismatch');
+  assert.deepEqual(stopped, []);
+  assert.deepEqual(started, []);
+  const mismatchStatus = manager.getAccountStatus('1');
+  assert.equal(mismatchStatus.sessionIdentityOk, false);
+  assert.equal(mismatchStatus.sessionIdentityReason, 'session_identity_mismatch');
+  assert.equal(mismatchStatus.expectedQqUin, '44****56');
+  assert.equal(mismatchStatus.qqUin, '23****72');
+  console.log('✅ mismatched Session is blocked before Provider PASS');
+
+  bindings = bindings.map(item => String(item.accountId) === '1'
+    ? { ...item, qqUin: '447677756', status: 'online', needsRebind: false }
+    : item);
+  stopped.length = 0;
+  started.length = 0;
+  const recovered = await manager.refreshAccount('1', 'selftest_identity_recovered');
+  assert.equal(recovered.ok, true);
+  assert.equal(providerRefreshCalls, callsBeforeMismatch + 1);
+  console.log('✅ corrected Session can refresh again PASS');
+
   const status = manager.getStatus();
   assert.equal(status.configuredCount, 2);
   assert.equal(status.provider, 'selftest_targeted_provider');
   assert.equal(status.accounts.length, 2);
   assert.equal(status.accounts.find(x => x.accountId === '1').qqUin, '44****56');
   assert.equal(status.accounts.find(x => x.accountId === '2').qqUin, '23****72');
+  assert.equal(status.accounts.find(x => x.accountId === '1').sessionIdentityOk, true);
+  assert.equal(status.accounts.find(x => x.accountId === '2').sessionIdentityOk, true);
   console.log('✅ status isolation/privacy PASS');
 
   console.log('\n=== RESULT ===');
@@ -201,6 +238,7 @@ async function main() {
     ok: true,
     accountCount: status.accounts.length,
     provider: status.provider,
+    sessionIdentityHardGuard: true,
     account1: {
       qq: status.accounts.find(x => x.accountId === '1').qqUin,
       state: status.accounts.find(x => x.accountId === '1').state.state,
