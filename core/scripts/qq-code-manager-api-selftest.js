@@ -49,9 +49,13 @@ async function main() {
         },
     };
 
+    // IMPORTANT: mirror production startup order in core/client.js.
+    // Install the hook BEFORE express() creates the app instance, otherwise
+    // Express 4 has already copied application methods onto the app and the
+    // prototype hook cannot observe app.use('/api', ...).
+    const uninstall = installCodeManagerApiHook(provider);
     const app = express();
     app.use(express.json());
-    const uninstall = installCodeManagerApiHook(provider);
     app.use('/api', (req, _res, next) => {
         req.currentUser = {
             role: String(req.headers['x-test-role'] || 'user'),
@@ -71,7 +75,14 @@ async function main() {
             ...options,
             headers: { 'content-type': 'application/json', 'x-test-user': 'alice', ...(options.headers || {}) },
         });
-        return { status: response.status, body: await response.json() };
+        const text = await response.text();
+        let body;
+        try {
+            body = text ? JSON.parse(text) : null;
+        } catch {
+            throw new Error(`Expected JSON from ${path}, got HTTP ${response.status}: ${text.slice(0, 300)}`);
+        }
+        return { status: response.status, body };
     }
 
     try {
