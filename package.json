@@ -18,6 +18,7 @@
     "qr:session-bind": "pnpm -C core qr:session-bind",
     "qr:session-unbind": "pnpm -C core qr:session-unbind",
     "qr:session-auto-bind": "pnpm -C core qr:session-auto-bind",
+    "qr:session-import": "pnpm -C core qr:session-import",
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
