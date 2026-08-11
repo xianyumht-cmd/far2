@@ -10,11 +10,53 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function normalizeUin(value) {
+    const text = String(value || '').trim();
+    return /^\d{5,12}$/.test(text) ? text : '';
+}
+
 function maskUin(uin) {
     const text = String(uin || '').trim();
     if (!text) return '';
     if (text.length <= 4) return '****';
     return `${text.slice(0, 2)}****${text.slice(-2)}`;
+}
+
+function getSessionIdentity(account, binding) {
+    const expectedUin = normalizeUin(account && (account.uin || account.qq));
+    const boundUin = normalizeUin(binding && binding.qqUin);
+
+    if (!expectedUin) {
+        return {
+            ok: false,
+            reason: 'account_uin_missing',
+            expectedUin: '',
+            boundUin,
+        };
+    }
+    if (!boundUin) {
+        return {
+            ok: false,
+            reason: 'session_identity_unverified',
+            expectedUin,
+            boundUin: '',
+        };
+    }
+    if (expectedUin !== boundUin) {
+        return {
+            ok: false,
+            reason: 'session_identity_mismatch',
+            expectedUin,
+            boundUin,
+        };
+    }
+
+    return {
+        ok: true,
+        reason: 'ok',
+        expectedUin,
+        boundUin,
+    };
 }
 
 function createUnavailableProvider() {
@@ -140,6 +182,17 @@ function createCodeManager(options = {}) {
         if (binding.status !== 'online' || binding.needsRebind) {
             return { available: false, reason: 'desktop_session_offline' };
         }
+
+        const identity = getSessionIdentity(account, binding);
+        if (!identity.ok) {
+            return {
+                available: false,
+                reason: identity.reason,
+                expectedUin: maskUin(identity.expectedUin),
+                boundUin: maskUin(identity.boundUin),
+            };
+        }
+
         if (!provider || typeof provider.refresh !== 'function') {
             return { available: false, reason: 'targeted_provider_unavailable' };
         }
@@ -191,13 +244,23 @@ function createCodeManager(options = {}) {
             const displayName = account.name || id;
 
             if (!availability.available) {
-                const state = availability.reason === 'desktop_session_offline' || availability.reason === 'desktop_session_not_bound'
-                    ? 'waiting_session'
-                    : 'waiting_provider';
+                let state = 'waiting_provider';
+                if (availability.reason === 'desktop_session_offline' || availability.reason === 'desktop_session_not_bound') {
+                    state = 'waiting_session';
+                } else if (
+                    availability.reason === 'session_identity_mismatch'
+                    || availability.reason === 'session_identity_unverified'
+                    || availability.reason === 'account_uin_missing'
+                ) {
+                    state = 'session_mismatch';
+                }
+
                 setState(id, state, {
                     reason: availability.reason,
                     trigger: reason,
                     qqUin: binding ? maskUin(binding.qqUin) : '',
+                    expectedUin: availability.expectedUin || maskUin(account.uin || account.qq),
+                    boundUin: availability.boundUin || (binding ? maskUin(binding.qqUin) : ''),
                 });
                 scheduleRetry(id, reason);
 
@@ -209,15 +272,33 @@ function createCodeManager(options = {}) {
                     });
                 }
 
-                addAccountLog(
-                    state === 'waiting_session' ? 'code_refresh_waiting_session' : 'code_refresh_waiting_provider',
-                    state === 'waiting_session'
-                        ? `等待对应 Windows QQ Session 上线 (${availability.reason})`
-                        : `等待定向 Code Provider (${availability.reason})`,
-                    id,
-                    displayName,
-                    { reason, provider: provider.name || 'unknown' },
-                );
+                if (state === 'session_mismatch') {
+                    const expected = availability.expectedUin || maskUin(account.uin || account.qq);
+                    const bound = availability.boundUin || (binding ? maskUin(binding.qqUin) : '');
+                    log('错误', `CodeManager 拒绝刷新账号 ${displayName}: Session 身份校验失败 (${availability.reason})`, {
+                        accountId: id,
+                        accountName: displayName,
+                        expectedUin: expected,
+                        boundUin: bound,
+                    });
+                    addAccountLog(
+                        'code_refresh_session_mismatch',
+                        `拒绝刷新：账号与 Windows QQ Session 身份不一致 (${availability.reason})`,
+                        id,
+                        displayName,
+                        { reason, expectedUin: expected, boundUin: bound },
+                    );
+                } else {
+                    addAccountLog(
+                        state === 'waiting_session' ? 'code_refresh_waiting_session' : 'code_refresh_waiting_provider',
+                        state === 'waiting_session'
+                            ? `等待对应 Windows QQ Session 上线 (${availability.reason})`
+                            : `等待定向 Code Provider (${availability.reason})`,
+                        id,
+                        displayName,
+                        { reason, provider: provider.name || 'unknown' },
+                    );
+                }
                 return { ok: false, reason: availability.reason, state };
             }
 
@@ -377,6 +458,16 @@ function createCodeManager(options = {}) {
                 continue;
             }
 
+            const identity = getSessionIdentity(account, binding);
+            if (!identity.ok) {
+                setState(id, 'session_mismatch', {
+                    reason: identity.reason,
+                    expectedUin: maskUin(identity.expectedUin),
+                    boundUin: maskUin(identity.boundUin),
+                });
+                continue;
+            }
+
             let due = Number(nextRefreshAt.get(id) || 0);
             if (!due) {
                 due = now + refreshIntervalMs;
@@ -402,9 +493,27 @@ function createCodeManager(options = {}) {
         for (const { account, binding } of managed) {
             const id = String(account.id || '');
             nextRefreshAt.set(id, now + refreshIntervalMs);
-            setState(id, binding && binding.status === 'online' && !binding.needsRebind ? 'scheduled' : 'waiting_session', {
-                nextRefreshAt: now + refreshIntervalMs,
-            });
+
+            if (!binding || binding.status !== 'online' || binding.needsRebind) {
+                setState(id, 'waiting_session', {
+                    reason: binding ? 'desktop_session_offline' : 'desktop_session_not_bound',
+                    nextRefreshAt: now + refreshIntervalMs,
+                });
+                continue;
+            }
+
+            const identity = getSessionIdentity(account, binding);
+            if (!identity.ok) {
+                setState(id, 'session_mismatch', {
+                    reason: identity.reason,
+                    expectedUin: maskUin(identity.expectedUin),
+                    boundUin: maskUin(identity.boundUin),
+                    nextRefreshAt: now + refreshIntervalMs,
+                });
+                continue;
+            }
+
+            setState(id, 'scheduled', { nextRefreshAt: now + refreshIntervalMs });
         }
 
         if (managed.length) {
@@ -423,10 +532,24 @@ function createCodeManager(options = {}) {
 
     function buildAccountStatus(account, binding) {
         const id = String(account.id || '');
+        const identity = binding ? getSessionIdentity(account, binding) : {
+            ok: false,
+            reason: 'desktop_session_not_bound',
+            expectedUin: normalizeUin(account.uin || account.qq),
+            boundUin: '',
+        };
         let state = lastState.get(id) || null;
         if (!state) {
             if (!binding || binding.status !== 'online' || binding.needsRebind) {
                 state = { state: 'waiting_session', updatedAt: 0 };
+            } else if (!identity.ok) {
+                state = {
+                    state: 'session_mismatch',
+                    updatedAt: 0,
+                    reason: identity.reason,
+                    expectedUin: maskUin(identity.expectedUin),
+                    boundUin: maskUin(identity.boundUin),
+                };
             } else if (!isGlobalEnabled()) {
                 state = { state: 'configured', updatedAt: 0 };
             } else {
@@ -437,7 +560,10 @@ function createCodeManager(options = {}) {
         return {
             accountId: id,
             accountName: account.name || id,
+            expectedQqUin: maskUin(identity.expectedUin),
             qqUin: binding ? maskUin(binding.qqUin) : '',
+            sessionIdentityOk: !!identity.ok,
+            sessionIdentityReason: identity.reason,
             sessionStatus: binding ? binding.status : 'unbound',
             needsRebind: binding ? !!binding.needsRebind : true,
             nextRefreshAt: Number(nextRefreshAt.get(id) || 0),
