@@ -42,7 +42,7 @@ function createCodeManager(options = {}) {
 
     let timer = null;
     let started = false;
-    let warnedMultiAccount = false;
+    let warnedBinding = false;
     const nextRefreshAt = new Map();
     const inFlight = new Map();
     const lastTriggerAt = new Map();
@@ -60,24 +60,19 @@ function createCodeManager(options = {}) {
 
     function getManagedAccount() {
         if (processRef.platform !== 'win32') return null;
-        if (String(processRef.env.FARM_CODE_AUTO_REFRESH || '1') === '0') return null;
+        if (String(processRef.env.FARM_CODE_AUTO_REFRESH || '0') !== '1') return null;
 
         const qqAccounts = getAccountsList().filter(acc => String(acc.platform || 'qq').toLowerCase() === 'qq');
-        const explicitlyEnabled = qqAccounts.filter(acc => acc.codeRefreshEnabled === true || acc.codeRefreshMode === 'windows_runtime');
+        const explicitlyEnabled = qqAccounts.filter(acc =>
+            acc.codeRefreshEnabled === true
+            && acc.codeRefreshMode === 'windows_runtime'
+            && String(acc.desktopSessionUin || '').trim(),
+        );
 
         if (explicitlyEnabled.length === 1) return explicitlyEnabled[0];
-        if (explicitlyEnabled.length > 1) {
-            if (!warnedMultiAccount) {
-                warnedMultiAccount = true;
-                log('系统', 'CodeManager 检测到多个账号启用了 Windows QQ Code 刷新，已暂停自动刷新；后续需建立 QQ Session 与农场账号的明确映射');
-            }
-            return null;
-        }
-
-        if (qqAccounts.length === 1) return qqAccounts[0];
-        if (qqAccounts.length > 1 && !warnedMultiAccount) {
-            warnedMultiAccount = true;
-            log('系统', 'CodeManager 检测到多个 QQ 农场账号，未自动猜测绑定关系；当前仅支持单账号自动绑定 Windows QQ Session');
+        if (!warnedBinding) {
+            warnedBinding = true;
+            log('系统', 'CodeManager 未启用自动刷新：必须先建立“农场账号 ↔ 指定 Windows QQ Session”绑定，避免多 QQ 环境弹账号选择框或刷新错账号');
         }
         return null;
     }
@@ -132,8 +127,6 @@ function createCodeManager(options = {}) {
                 store.addOrUpdateAccount({
                     id,
                     code: freshCode,
-                    codeRefreshEnabled: true,
-                    codeRefreshMode: 'windows_runtime',
                     lastCodeRefreshAt: refreshedAt,
                     lastCodeRefreshOk: true,
                     lastCodeRefreshError: '',
