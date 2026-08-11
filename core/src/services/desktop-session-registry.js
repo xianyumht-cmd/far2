@@ -138,6 +138,15 @@ function parseFarmUin(rows) {
     return '';
 }
 
+function parseAnyAnnotatedUin(rows) {
+    for (const row of rows || []) {
+        const cmd = String(row && row.cmd || '');
+        const match = cmd.match(/--annotation=uin=(\d{5,12})/i);
+        if (match) return normalizeUin(match[1]);
+    }
+    return '';
+}
+
 function scanRuntimeSessions() {
     const rows = getProcessSnapshot();
     if (!rows.length) return [];
@@ -147,13 +156,19 @@ function scanRuntimeSessions() {
 
     for (const root of roots) {
         const directParent = byPid.get(normalizePid(root.ppid)) || null;
-        const descendants = getDescendants(rows, root.pid);
-        const qqUin = parseFarmUin(descendants);
+        const farmDescendants = getDescendants(rows, root.pid);
         const mainQqPid = directParent && isMainQQ(directParent)
             ? normalizePid(directParent.pid)
             : 0;
+        const mainQqDescendants = mainQqPid ? getDescendants(rows, mainQqPid) : [];
+        const farmUin = parseFarmUin(farmDescendants);
+        const parentTreeUin = parseAnyAnnotatedUin(mainQqDescendants);
+        const qqUin = farmUin || parentTreeUin;
+        const uinSource = farmUin ? 'farm_crashpad' : (parentTreeUin ? 'main_qq_tree' : '');
+
         sessions.push({
             qqUin,
+            uinSource,
             mainQqPid,
             farmRootPid: normalizePid(root.pid),
             farmRootParentPid: normalizePid(root.ppid),
