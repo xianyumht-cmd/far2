@@ -1,5 +1,6 @@
 const { findAccountByRef, normalizeAccountRef, resolveAccountId: resolveAccountIdByList } = require('../services/account-resolver');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
+const desktopSessions = require('../services/desktop-session-registry');
 
 function createDataProvider(options) {
     const {
@@ -225,6 +226,28 @@ function createDataProvider(options) {
             const accountId = resolveAccountRefId(accountRef);
             return !!(accountId && workers[accountId]);
         },
+
+        // Windows QQ Desktop Session Registry
+        getDesktopSessions: () => desktopSessions.getStatus(),
+
+        bindDesktopSession: (accountRef, payload = {}) => {
+            const accountId = resolveAccountRefId(accountRef) || String(accountRef || '').trim();
+            if (!accountId) throw new Error('Missing accountId');
+            return desktopSessions.bindAccount({
+                accountId,
+                farmRootPid: payload.farmRootPid,
+                qqUin: payload.qqUin,
+                note: payload.note,
+            });
+        },
+
+        unbindDesktopSession: (accountRef) => {
+            const accountId = resolveAccountRefId(accountRef) || String(accountRef || '').trim();
+            if (!accountId) return false;
+            return desktopSessions.unbindAccount(accountId);
+        },
+
+        refreshDesktopSessions: () => desktopSessions.refreshBindings(),
 
         getSchedulerStatus: async (accountRef) => {
             const accountId = resolveAccountRefId(accountRef);
