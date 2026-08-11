@@ -37,6 +37,13 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Analytics.vue'),
   },
   {
+    path: 'code-manager',
+    name: 'code-manager',
+    label: 'Code刷新',
+    icon: 'i-carbon-renew',
+    component: () => import('@/views/CodeManager.vue'),
+  },
+  {
     path: 'settings',
     name: 'Settings',
     label: '设置',
