@@ -6,6 +6,7 @@ const store = require('../models/store')
 const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig } = require('../config/config')
 const { sendPushooMessage } = require('../services/push')
 const { MiniProgramLoginSession } = require('../services/qrlogin')
+const { createCodeManager } = require('../services/code-manager')
 const { createDataProvider } = require('./data-provider')
 const { createReloginReminderService } = require('./relogin-reminder')
 const { createRuntimeState } = require('./runtime-state')
@@ -87,6 +88,16 @@ function createRuntimeEngine(options = {}) {
   workerControls.startWorker = startWorker
   workerControls.restartWorker = restartWorker
 
+  const codeManager = createCodeManager({
+    store,
+    workers,
+    startWorker,
+    stopWorker,
+    log,
+    addAccountLog,
+    processRef,
+  })
+
   const dataProvider = createDataProvider({
     workers,
     globalLogs: GLOBAL_LOGS,
@@ -109,6 +120,7 @@ function createRuntimeEngine(options = {}) {
     if (onLog) onLog(entry, entry && entry.accountId ? entry.accountId : '', entry && entry.accountName ? entry.accountName : '')
   })
   runtimeEvents.on('account_log', (entry) => {
+    codeManager.handleAccountLog(entry)
     if (onAccountLog) onAccountLog(entry)
   })
 
@@ -155,6 +167,8 @@ function createRuntimeEngine(options = {}) {
     if (shouldAutoStartAccounts) {
       startAllAccounts()
     }
+
+    codeManager.start()
   }
 
   function stopAllAccounts() {
@@ -168,6 +182,7 @@ function createRuntimeEngine(options = {}) {
     runtimeEvents,
     workers,
     dataProvider,
+    codeManager,
     start,
     startAllAccounts,
     stopAllAccounts,
