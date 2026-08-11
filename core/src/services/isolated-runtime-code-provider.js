@@ -255,7 +255,8 @@ function createIsolatedRuntimeCodeProvider(options = {}) {
             );
 
             if (!response.ok) {
-                throw createProviderError(`provider_refresh_http_${response.status}`, 'Provider 刷新请求失败');
+                const agentReason = safeReason(data && data.reason, `provider_refresh_http_${response.status}`);
+                throw createProviderError(agentReason, `Provider 刷新失败 (${agentReason})`);
             }
             const providerUin = normalizeUin(data && data.qqUin);
             if (!providerUin) {
@@ -265,10 +266,8 @@ function createIsolatedRuntimeCodeProvider(options = {}) {
                 throw createProviderError('provider_identity_mismatch', 'Provider 返回 QQ UIN 不匹配');
             }
             if (!data || data.ok !== true) {
-                throw createProviderError(
-                    safeReason(data && data.reason, 'provider_refresh_failed'),
-                    'Provider 未能生成 fresh Code',
-                );
+                const agentReason = safeReason(data && data.reason, 'provider_refresh_failed');
+                throw createProviderError(agentReason, `Provider 未能生成 fresh Code (${agentReason})`);
             }
             const code = String(data.code || '').trim();
             if (!isLikelyCode(code)) {
