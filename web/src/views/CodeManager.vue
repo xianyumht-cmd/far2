@@ -54,21 +54,48 @@ const config = ref<CodeRefreshConfig | null>(null)
 const status = ref<CodeManagerStatus | null>(null)
 let timer: ReturnType<typeof setInterval> | null = null
 
+function maskUin(value: unknown) {
+  const text = String(value || '').trim()
+  if (!/^\d{5,12}$/.test(text))
+    return ''
+  if (text.length <= 4)
+    return '****'
+  return `${text.slice(0, 2)}****${text.slice(-2)}`
+}
+
 const accountStatus = computed(() => status.value?.accounts?.[0] || null)
+const expectedAccountUin = computed(() => maskUin(currentAccount.value?.uin))
+const boundSessionUin = computed(() => String(accountStatus.value?.qqUin || ''))
+const sessionIdentityMismatch = computed(() => Boolean(
+  expectedAccountUin.value
+  && boundSessionUin.value
+  && expectedAccountUin.value !== boundSessionUin.value,
+))
+
 const providerReady = computed(() => {
   const provider = String(status.value?.provider || '')
   return !!provider && provider !== 'targeted_provider_pending' && provider !== 'unavailable'
 })
+
 const canManualRefresh = computed(() => Boolean(
   config.value?.enabled
   && status.value?.globalEnabled
   && providerReady.value
+  && !sessionIdentityMismatch.value
   && accountStatus.value?.sessionStatus === 'online'
   && !accountStatus.value?.needsRebind
   && !accountStatus.value?.refreshing,
 ))
 
 const stateMeta = computed(() => {
+  if (sessionIdentityMismatch.value) {
+    return {
+      label: 'Session 错绑',
+      detail: `当前账号 QQ ${expectedAccountUin.value}，但绑定 Session 是 ${boundSessionUin.value}。为防止串号，Code 刷新已强制禁止。`,
+      cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    }
+  }
+
   const key = String(accountStatus.value?.state?.state || (config.value?.enabled ? 'configured' : 'disabled'))
   const map: Record<string, { label: string, detail: string, cls: string }> = {
     disabled: { label: '未启用', detail: '当前账号未加入 Code 自动刷新。', cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
@@ -76,7 +103,7 @@ const stateMeta = computed(() => {
     scheduled: { label: '等待调度', detail: 'Session 正常，等待下一次刷新时间。', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
     refreshing: { label: '正在刷新', detail: '正在为当前账号获取 fresh Code。', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
     ready: { label: '刷新成功', detail: '最近一次刷新已完成。', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-    waiting_session: { label: '等待 Session', detail: '对应 Windows QQ 农场 Session 当前不在线或需要重新绑定。', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
+    waiting_session: { label: '等待 Session', detail: '对应 Windows QQ 农场 Session 当前不在线。若保存的 QQ/UIN 正确，重新打开该 QQ 的农场后会自动恢复。', cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
     waiting_provider: { label: '等待 Provider', detail: '定向 Code Provider 尚未就绪，不会回退到全局 QQ 选择器。', cls: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300' },
     provider_error: { label: 'Provider 异常', detail: accountStatus.value?.state?.message || '定向 Provider 执行失败。', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
   }
@@ -84,6 +111,8 @@ const stateMeta = computed(() => {
 })
 
 const manualRefreshHint = computed(() => {
+  if (sessionIdentityMismatch.value)
+    return `账号 QQ ${expectedAccountUin.value} 与绑定 Session ${boundSessionUin.value} 不一致，禁止刷新。`
   if (!config.value?.enabled)
     return '请先启用当前账号的 Code 自动刷新。'
   if (!status.value?.globalEnabled)
@@ -221,6 +250,15 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else>
+      <div v-if="sessionIdentityMismatch" class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm leading-6 text-red-800 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-200">
+        <div class="font-semibold">
+          检测到账号 / Session 身份不一致，已强制禁止 Code 刷新
+        </div>
+        <div class="mt-1">
+          当前账号 QQ：{{ expectedAccountUin || '未知' }}；绑定 Session：{{ boundSessionUin || '未绑定' }}。请先修复绑定关系，再继续 Provider 测试。
+        </div>
+      </div>
+
       <div class="grid gap-4 lg:grid-cols-3">
         <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div class="text-xs font-medium uppercase tracking-wide text-gray-400">
@@ -241,12 +279,18 @@ onBeforeUnmount(() => {
           <div class="mt-3 text-lg font-semibold text-gray-900 dark:text-white">
             {{ accountStatus?.qqUin || '未绑定' }}
           </div>
+          <div class="mt-1 text-xs text-gray-400">
+            当前账号 QQ：{{ expectedAccountUin || '未知' }}
+          </div>
           <div class="mt-2 flex flex-wrap gap-2 text-xs">
             <span class="rounded-full px-2.5 py-1" :class="accountStatus?.sessionStatus === 'online' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'">
               {{ accountStatus?.sessionStatus || 'unbound' }}
             </span>
-            <span v-if="accountStatus?.needsRebind" class="rounded-full bg-orange-100 px-2.5 py-1 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-              needsRebind
+            <span v-if="sessionIdentityMismatch" class="rounded-full bg-red-100 px-2.5 py-1 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+              身份不一致
+            </span>
+            <span v-else-if="accountStatus?.needsRebind" class="rounded-full bg-orange-100 px-2.5 py-1 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+              等待自动恢复
             </span>
           </div>
         </section>
