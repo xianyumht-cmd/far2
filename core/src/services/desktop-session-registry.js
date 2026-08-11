@@ -14,6 +14,11 @@ function normalizePid(value) {
     return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 
+function normalizeSessionId(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : -1;
+}
+
 function normalizeUin(value) {
     const text = String(value || '').trim();
     return /^\d{5,12}$/.test(text) ? text : '';
@@ -66,7 +71,7 @@ function getProcessSnapshot() {
     const ps = [
         '$ErrorActionPreference="SilentlyContinue";',
         'Get-CimInstance Win32_Process |',
-        'Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,CommandLine,CreationDate |',
+        'Select-Object Name,ProcessId,ParentProcessId,SessionId,ExecutablePath,CommandLine,CreationDate |',
         'ConvertTo-Json -Compress -Depth 3',
     ].join(' ');
     try {
@@ -81,6 +86,7 @@ function getProcessSnapshot() {
             name: String(row.Name || ''),
             pid: normalizePid(row.ProcessId),
             ppid: normalizePid(row.ParentProcessId),
+            sessionId: normalizeSessionId(row.SessionId),
             exe: String(row.ExecutablePath || ''),
             cmd: String(row.CommandLine || ''),
             created: String(row.CreationDate || ''),
@@ -147,6 +153,27 @@ function parseAnyAnnotatedUin(rows) {
     return '';
 }
 
+function scanMainQqProcesses() {
+    const rows = getProcessSnapshot();
+    if (!rows.length) return [];
+    return rows
+        .filter(isMainQQ)
+        .map(row => ({
+            qqUin: parseAnyAnnotatedUin(getDescendants(rows, row.pid)),
+            mainQqPid: normalizePid(row.pid),
+            windowsSessionId: normalizeSessionId(row.sessionId),
+            detectedAt: now(),
+        }))
+        .sort((a, b) => a.windowsSessionId - b.windowsSessionId || a.mainQqPid - b.mainQqPid);
+}
+
+function getCurrentWindowsSessionId() {
+    if (process.platform !== 'win32') return -1;
+    const rows = getProcessSnapshot();
+    const current = rows.find(row => normalizePid(row.pid) === normalizePid(process.pid));
+    return current ? normalizeSessionId(current.sessionId) : -1;
+}
+
 function scanRuntimeSessions() {
     const rows = getProcessSnapshot();
     if (!rows.length) return [];
@@ -165,6 +192,9 @@ function scanRuntimeSessions() {
         const parentTreeUin = parseAnyAnnotatedUin(mainQqDescendants);
         const qqUin = farmUin || parentTreeUin;
         const uinSource = farmUin ? 'farm_crashpad' : (parentTreeUin ? 'main_qq_tree' : '');
+        const windowsSessionId = normalizeSessionId(
+            directParent && directParent.sessionId >= 0 ? directParent.sessionId : root.sessionId,
+        );
 
         sessions.push({
             qqUin,
@@ -172,6 +202,7 @@ function scanRuntimeSessions() {
             mainQqPid,
             farmRootPid: normalizePid(root.pid),
             farmRootParentPid: normalizePid(root.ppid),
+            windowsSessionId,
             platformChannel: parsePlatformChannel(root.cmd),
             directParentIsMainQQ: !!mainQqPid,
             detectedAt: now(),
@@ -293,6 +324,8 @@ function getStatus() {
 
 module.exports = {
     REGISTRY_FILE,
+    scanMainQqProcesses,
+    getCurrentWindowsSessionId,
     scanRuntimeSessions,
     getBindings,
     getBinding,
