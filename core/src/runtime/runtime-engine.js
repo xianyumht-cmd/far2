@@ -114,6 +114,7 @@ function createRuntimeEngine(options = {}) {
     startWorker,
     stopWorker,
     restartWorker,
+    codeManager,
   })
 
   runtimeEvents.on('log', (entry) => {
