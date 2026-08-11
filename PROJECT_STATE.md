@@ -1,220 +1,109 @@
 # FAR2 Project State / Handoff
 
-> Last updated: 2026-08-12 06:27 (+08:00)
+> Last updated: 2026-08-12
 >
 > Repository: `xianyumht-cmd/far2`
 >
-> Local test checkout used during this work: `D:\project2\far2-test`
->
 > Branch: `main`
 >
-> Handoff anchor after Provider contract/docs work: `7b7921c5dd20fd411d14d6f96ee721204cef0cfd`
+> Targeted Provider implementation/docs anchor before this state update: `69105c825e19a8c180f0dfc5c85201691636b967`
 
 ## 1. Current task goal
 
-Implement safe, unattended Farm Code refresh for multiple QQ accounts without cross-account refreshes, without falling back to the machine-wide QQ account chooser, and without guessing an account by process order.
+Implement safe unattended QQ Farm Code refresh for multiple QQ accounts without cross-account refreshes, without using the shared-desktop QQ account chooser, and without guessing account identity by PID/process/window order.
 
-The architecture is intentionally split into two layers:
-
-1. **Account/Session orchestration** — identify which Windows QQ farm runtime belongs to which farm account, recover after PID changes, schedule refresh independently per account, expose state/config through API/WebUI, and hard-block cross-account refreshes.
-2. **Targeted Code Provider** — obtain a fresh Farm Code for exactly the requested QQ identity/session.
-
-Layer 1 is now substantially complete and verified. Layer 2 is the remaining blocker.
-
----
-
-## 2. Current verified account/session mapping
-
-Last binding audit passed with `issueCount=0`.
-
-| FAR2 account | Account ID | QQ/UIN | Main QQ PID at audit | Farm root PID at audit | Binding |
-|---|---:|---|---:|---:|---|
-| `4476` | `1` | `44****56` | `9192` | `13772` | online, exact UIN match |
-| `232` | `2` | `23****72` | `5500` | `7132` | online, exact UIN match |
-
-Important:
-
-- PIDs are **runtime-only and ephemeral**. Never persist identity by PID alone.
-- Durable identity is the saved QQ/UIN.
-- The Session Registry is expected to recover new PIDs after the same QQ reopens the farm mini-program.
-- Do not bind accounts by ordering of processes/windows.
-
-The full QQ numbers are intentionally not documented here. The current account records already contain their UIN/QQ metadata.
-
----
-
-## 3. Proven protocol/runtime facts
-
-### Game protocol
-
-- Farm WSS endpoint remains the project endpoint used by the original bot.
-- Publicly working client version adopted during this work: `1.13.0.5_20260729`.
-- With the updated version, the bot successfully performed Login, user info, friend list, friend weed/bug/water, and own-farm operations.
-- A later `KickoutNotify` with unknown reason is a separate issue; do **not** treat every unknown kickout as guaranteed Code expiry.
-
-### Fresh Code source on Windows
-
-A standalone diagnostic proved that the official Windows QQ mini-program runtime can produce a usable Farm Code through its own `qq.login()` flow:
-
-- QQEX farm cache was patched temporarily.
-- The real QQ farm mini-program executed `qq.login()`.
-- A fresh Code was captured.
-- Farm WebSocket probe passed.
-- Patched files were restored afterward.
-
-This proves a fresh Code is obtainable from the real Windows QQ runtime. It does **not** solve selecting one specific QQ when multiple QQ identities share the same desktop environment.
-
----
-
-## 4. Completed and verified work
-
-### 4.1 Desktop Session Registry
-
-Implemented `core/src/services/desktop-session-registry.js`.
-
-Capabilities:
-
-- Read-only Windows process snapshot through CIM.
-- Detect top-level QQ processes and farm mini-program roots.
-- Resolve QQ/UIN from farm/main QQ descendant process annotations.
-- Current successful UIN source on this machine: `main_qq_tree`.
-- Persist bindings in `core/data/desktop-sessions.json`.
-- Recover runtime PID/channel values by saved UIN after farm restart.
-- Mark offline / `needsRebind` when no matching runtime is present.
-
-Key commands:
-
-```powershell
-pnpm qr:sessions
-pnpm qr:session-map
-pnpm qr:session-recover-test -- 1
-pnpm qr:session-recover-test -- 2
-```
-
-Account 1 recovery was explicitly tested and passed after farmRootPid changed.
-
-### 4.2 Account ↔ Session pairing
-
-Legacy imported account metadata originally lacked UIN/QQ, so automatic mapping from the old source was impossible.
-
-Interactive pairing was performed and corrected to the verified mapping above.
-
-A later binding audit independently verified both account UINs, saved binding UINs, and live runtime Session UINs all match.
-
-### 4.3 Multi-account CodeManager
-
-`core/src/services/code-manager.js` was refactored into a per-account Session-aware scheduler.
-
-Each configured account has independent state such as:
-
-- `nextRefreshAt`
-- `inFlight`
-- `pendingReason`
-- retry scheduling
-- Session state
-- Provider state
-
-Supported states include:
-
-- `configured`
-- `scheduled`
-- `refreshing`
-- `ready`
-- `waiting_session`
-- `waiting_provider`
-- `provider_error`
-- `session_mismatch`
-
-Important behavior:
-
-- `ws_400` affects only the corresponding account.
-- Kickout-triggered refresh affects only the corresponding account.
-- Offline Session does not stop the existing worker.
-- Unavailable Provider does not stop the existing worker.
-- Existing worker is stopped only after a Provider has already returned a fresh Code.
-- CodeManager waits for the old worker to exit before starting the new one.
-- No automatic fallback to global `tencent://` exists.
-
-### 4.4 Hard backend anti-cross-account guard
-
-This is a critical completed protection.
-
-Before **any** Provider can run, CodeManager now checks:
-
-1. Account has a valid UIN/QQ.
-2. Bound Session has a valid UIN.
-3. Account UIN equals bound Session UIN exactly.
-
-If any identity check fails:
-
-- Provider is not called.
-- Worker is not stopped.
-- Code is not modified.
-- State becomes `session_mismatch` (or the relevant waiting state).
-
-The fake self-test explicitly changed account 1's bound UIN to account 2's UIN and verified:
-
-- mismatched Session blocked before Provider — PASS
-- Provider refresh call count did not increase — PASS
-- Code remained unchanged — PASS
-- worker did not stop/start — PASS
-- restoring the correct UIN allowed refresh again — PASS
-
-Latest self-test result included:
+Architecture:
 
 ```text
-sessionIdentityHardGuard=true
+FAR2 / CodeManager
+        |
+        +-- exact QQ UIN A -> fixed Provider A -> isolated Windows QQ runtime A
+        |
+        +-- exact QQ UIN B -> fixed Provider B -> isolated Windows QQ runtime B
 ```
 
-### 4.5 Account-level refresh configuration
+The orchestration layer is already complete. This work implemented the first production-shaped **targeted isolated QQ runtime Provider**. The remaining blocker is real Windows acceptance/E2E, not another Provider architecture rewrite.
 
-Both real accounts have been configured as:
+---
+
+## 2. Verified account/session mapping
+
+Last real binding audit before Provider implementation passed with `issueCount=0`.
+
+| FAR2 account | Account ID | QQ/UIN | Binding |
+|---|---:|---|---|
+| `4476` | `1` | `44****56` | online, exact UIN match |
+| `232` | `2` | `23****72` | online, exact UIN match |
+
+Rules:
+
+- Full QQ numbers remain in account/session data and are intentionally not written into docs.
+- Durable identity is QQ/UIN.
+- Runtime PID, farm root PID and window/process order are not identity.
+- Session Registry may recover changed PIDs by saved UIN.
+
+---
+
+## 3. Previously solved and verified orchestration
+
+### Desktop Session Registry
+
+`core/src/services/desktop-session-registry.js`
+
+Already supports:
+
+- read-only Windows process snapshot through CIM;
+- top-level QQ and Farm mini-program discovery;
+- UIN extraction from QQ/Farm descendant annotations;
+- persisted account -> QQ/UIN -> runtime Session binding;
+- PID/channel recovery by saved UIN after Farm restart;
+- offline / `needsRebind` state when runtime disappears.
+
+Provider work additionally added **Windows SessionId** discovery:
+
+- process snapshot includes `SessionId`;
+- `scanMainQqProcesses()` exposes top-level QQs with Windows SessionId;
+- `scanRuntimeSessions()` exposes Farm runtime Windows SessionId;
+- `getCurrentWindowsSessionId()` identifies the Agent's own Windows login session.
+
+This is used as a real isolation boundary and is not a replacement for the UIN guard.
+
+### Multi-account CodeManager
+
+`core/src/services/code-manager.js`
+
+Already verified behavior:
+
+- per-account schedule / single-flight / retry / state;
+- `ws_400` and kickout only affect the corresponding account;
+- offline Session does not stop an existing worker;
+- unavailable Provider does not stop an existing worker;
+- Provider must return a fresh Code **before** CodeManager stops the old worker;
+- CodeManager persists Code, waits for old worker exit, then starts the new worker;
+- no automatic fallback to global `tencent://`.
+
+### Hard anti-cross-account backend guard
+
+Before any Provider call CodeManager verifies:
+
+1. account has valid UIN/QQ;
+2. bound Session has valid UIN;
+3. account UIN equals bound Session UIN exactly.
+
+A mismatch blocks before Provider invocation and leaves the worker/Code untouched. Existing fake CodeManager self-test previously passed this path with `sessionIdentityHardGuard=true`.
+
+### Account-level config
+
+Both real accounts were configured:
 
 ```text
 codeRefreshEnabled=true
 codeRefreshMode=windows_session
 ```
 
-Last audit verified both remain enabled with mode `windows_session`.
+### API / WebUI
 
-Command:
-
-```powershell
-pnpm qr:code-manager-config -- enable 1 2
-```
-
-### 4.6 CodeManager read-only planner/audit
-
-Useful diagnostics:
-
-```powershell
-pnpm qr:code-manager-plan
-pnpm qr:session-binding-audit
-```
-
-Last real binding audit result:
-
-```text
-accountId=1 name=4476
-  accountUin=44****56 bindingUin=44****56
-  expectedSession=online boundSession=online
-  bindingStatus=online needsRebind=false
-  codeRefreshEnabled=true mode=windows_session
-  result=OK
-
-accountId=2 name=232
-  accountUin=23****72 bindingUin=23****72
-  expectedSession=online boundSession=online
-  bindingStatus=online needsRebind=false
-  codeRefreshEnabled=true mode=windows_session
-  result=OK
-
-issueCount=0
-```
-
-### 4.7 CodeManager API
-
-Implemented authenticated API routes:
+Completed:
 
 ```text
 GET  /api/code-manager/status
@@ -223,438 +112,439 @@ POST /api/code-manager/config
 POST /api/code-manager/refresh
 ```
 
-Properties:
-
-- Reuses existing admin/auth middleware.
-- Normal users only see/control their own accounts.
-- Admin can see all accessible accounts.
-- No Farm Code is returned by these API routes.
-
-API self-test passed:
-
-```text
-status permission filter PASS
-own account config GET PASS
-cross-account access denied PASS
-config POST PASS
-manual refresh route PASS
-admin status scope PASS
-response credential privacy PASS
-```
-
-### 4.8 WebUI Code refresh page
-
-Added:
+Web page:
 
 ```text
 /code-manager
 ```
 
-Sidebar item: `Code刷新`.
-
-Page follows the existing left-side selected account; it does not create a second account selector.
-
-Displays:
-
-- account-level enable/disable
-- `windows_session` mode
-- masked bound QQ/UIN
-- Session online/offline state
-- Provider name/status
-- global scheduler state
-- refresh interval / poll / retry
-- next refresh / pending reason
-- manual refresh button
-
-Safety UI:
-
-- manual refresh is disabled while the real Provider is unavailable
-- UI compares current account UIN and bound Session UIN
-- visible `Session 错绑` warning if identities differ
-- mismatch disables refresh
-
-Backend guard remains authoritative even if the UI is bypassed.
-
-### 4.9 Web build / real admin startup
-
-`pnpm build:web` passed successfully with Vite.
-
-Observed UnoCSS warnings for some existing Carbon icons are non-fatal and did not block the build.
-
-Real core/admin server was started successfully:
-
-```powershell
-pnpm dev:core
-```
-
-Admin panel:
-
-```text
-http://127.0.0.1:3007
-```
-
-`/code-manager` loaded correctly in the browser.
-
-### 4.10 Provider injection contract
-
-`createRuntimeEngine({ codeRefreshProvider })` now exposes the Provider injection point and forwards it to CodeManager.
-
-See:
-
-```text
-docs/CODE_REFRESH_PROVIDER.md
-```
-
-Provider shape:
-
-```js
-{
-  name: 'provider_name',
-
-  async getAvailability(account, binding) {
-    return { available: true, reason: 'ok' }
-  },
-
-  async refresh({ account, binding, reason }) {
-    return {
-      code: '<fresh Farm Code>',
-      source: 'provider_name',
-    }
-  },
-}
-```
-
-Provider must **not** mutate accounts or restart workers. CodeManager owns persistence/restart/retry/status.
+API permission isolation and credential privacy self-test previously passed. Web build/admin startup previously passed. WebUI already blocks manual refresh on Provider unavailable or Session/UIN mismatch.
 
 ---
 
-## 5. Current production safety state
+## 4. Proven fresh Code source
 
-The built-in Provider is still:
+`core/src/services/windows-runtime-code.js` is the existing proven single-QQ runtime mint mechanism.
+
+A previous real diagnostic proved:
+
+- QQEX Farm `game.js` can be patched temporarily;
+- the real QQ Farm mini-program executes `qq.login()`;
+- a usable fresh Farm Code is captured;
+- Farm WebSocket probe passes;
+- patched files are restored afterward.
+
+The old problem was **targeting**: machine-wide `tencent://` on one shared Windows desktop can show the QQ chooser when multiple QQ identities are logged in.
+
+Provider work does not try to solve that ambiguity inside the shared desktop. It moves the proven single-QQ mint flow into an isolated Windows environment where exactly one QQ identity is possible.
+
+`windows-runtime-code.js` now accepts a configurable mini-program close delay. Default behavior remains the prior short delay; isolated Agent uses a longer delay only so it can verify the live runtime UIN after `qq.login()` returns and before releasing the Code.
+
+---
+
+## 5. Implemented targeted isolated-runtime Provider
+
+### 5.1 Main FAR2 Provider adapter
+
+New file:
 
 ```text
-targeted_provider_pending
+core/src/services/isolated-runtime-code-provider.js
 ```
 
-Therefore real automatic Code refresh is intentionally disabled.
+Provider name:
 
-**DO NOT set:**
+```text
+isolated_qq_runtime
+```
+
+Configuration is exact-UIN keyed through:
+
+```text
+FARM_CODE_PROVIDER_TARGETS
+```
+
+Each UIN maps to one fixed endpoint. Example shape only:
+
+```json
+{
+  "123456789": {
+    "name": "runtime_a",
+    "url": "http://127.0.0.1:43101",
+    "tokenEnv": "FAR2_CODE_PROVIDER_TOKEN_A"
+  },
+  "987654321": {
+    "name": "runtime_b",
+    "url": "http://127.0.0.1:43102",
+    "tokenEnv": "FAR2_CODE_PROVIDER_TOKEN_B"
+  }
+}
+```
+
+Safety behavior:
+
+- exact `account.uin/qq === binding.qqUin` re-check before network call;
+- exact UIN -> exact endpoint lookup only;
+- no target means unavailable/error, never another-account fallback;
+- `/v1/health` response UIN must equal requested UIN;
+- `/v1/code/refresh` response UIN is verified again;
+- returned Code is format-validated;
+- bearer token required;
+- remote plaintext HTTP rejected by default;
+- HTTPS accepted;
+- loopback HTTP accepted for same-machine separate Windows user sessions;
+- no plaintext Code in normal FAR2 logs/API/WebUI.
+
+### 5.2 Isolated Windows Code Agent
+
+New files:
+
+```text
+core/src/services/isolated-code-agent.js
+core/scripts/qq-isolated-code-agent.js
+```
+
+Agent must run under the same interactive Windows user/session that owns that QQ/QQEX environment.
+
+Required environment:
+
+```text
+FAR2_CODE_AGENT_UIN=<full QQ UIN>
+FAR2_CODE_AGENT_TOKEN=<random secret, >= 24 chars>
+```
+
+Optional:
+
+```text
+FAR2_CODE_AGENT_HOST=127.0.0.1
+FAR2_CODE_AGENT_PORT=43101
+FAR2_CODE_AGENT_CAPTURE_TIMEOUT_MS=90000
+FAR2_CODE_AGENT_IDENTITY_TIMEOUT_MS=2500
+```
+
+Start command:
+
+```powershell
+pnpm code:agent
+```
+
+Agent hard checks:
+
+- Windows only;
+- identifies its own Windows SessionId;
+- requires exactly one top-level QQ process in that Windows login session;
+- if a known top-level QQ UIN differs from configured UIN -> block;
+- if any observed Farm runtime UIN in that Windows Session differs -> block;
+- requires local QQEX Farm cache;
+- after fresh Code capture, keeps Farm alive briefly and requires the observed runtime UIN to equal the configured UIN before releasing Code;
+- identity unknown after the verification window -> fail closed;
+- captured wrong-account/unknown-account Code is never returned to FAR2;
+- plaintext Code is not logged.
+
+Private authenticated transport:
+
+```text
+GET  /v1/health
+POST /v1/code/refresh
+```
+
+The built-in HTTP listener defaults to loopback. For a remote VM/host, use HTTPS/VPN/reverse proxy rather than exposing the plain Agent HTTP service.
+
+### 5.3 Production startup wiring
+
+`core/client.js` now creates the isolated Provider from environment and injects it into `createRuntimeEngine({ codeRefreshProvider })`.
+
+Important safe default:
+
+- if `FARM_CODE_PROVIDER_TARGETS` is absent, no new Provider is injected;
+- CodeManager continues to expose the safe `targeted_provider_pending` fallback;
+- this work did **not** set or enable `FARM_CODE_AUTO_REFRESH=1`.
+
+### 5.4 Simulated anti-cross-account self-test
+
+New:
+
+```text
+core/scripts/qq-isolated-code-provider-selftest.js
+pnpm code:provider-selftest
+```
+
+Pure simulation only; it does not open QQ or call real `qq.login()`.
+
+It covers:
+
+- UIN A routes to endpoint A only;
+- UIN B routes to endpoint B only;
+- account/Session mismatch does not make any Provider request;
+- Provider identity mismatch is rejected;
+- remote plaintext HTTP is rejected by default;
+- Agent rejects multiple QQ main processes in one Windows Session;
+- Agent rejects observed runtime UIN mismatch.
+
+**Execution status:** script was added but not claimed as executed in the implementation environment. The available execution container could not resolve GitHub to obtain the checkout, and this repository currently has no GitHub Actions runs. Run this test in the real Windows checkout before first Agent acceptance.
+
+### 5.5 Safe targeted Provider acceptance probe
+
+New:
+
+```text
+core/scripts/qq-isolated-code-provider-check.js
+pnpm code:provider-check
+```
+
+Health only:
+
+```powershell
+pnpm code:provider-check -- <QQ UIN>
+```
+
+Explicit one-shot mint verification:
+
+```powershell
+pnpm code:provider-check -- <QQ UIN> --refresh
+```
+
+This tool exists specifically to test the isolated Provider **without enabling the global CodeManager scheduler**.
+
+`--refresh`:
+
+- invokes only the endpoint mapped to the supplied exact UIN;
+- obtains/validates one fresh Code in memory;
+- prints only masked UIN, source and Code length;
+- immediately discards Code;
+- does not print or persist Code;
+- does not modify any FAR2 account;
+- does not stop/start any worker.
+
+---
+
+## 6. Current production safety state
+
+The targeted Provider implementation now exists.
+
+It is **not yet production-accepted** because the real isolated Windows environments have not been exercised through the new Agent/Provider path.
+
+Therefore unattended refresh remains OFF.
+
+**DO NOT leave enabled yet:**
 
 ```text
 FARM_CODE_AUTO_REFRESH=1
 ```
 
-until a targeted Provider passes the acceptance checklist in `docs/CODE_REFRESH_PROVIDER.md`.
+Current distinction:
 
-Expected WebUI state while Provider is not implemented:
-
-```text
-Account config: enabled / windows_session
-Session: online when farm is open
-Provider: targeted_provider_pending
-Global scheduler: disabled
-Manual refresh: disabled
-```
+- Session identity: solved/verified.
+- Account/Session anti-cross guard: solved/verified.
+- CodeManager/API/WebUI: solved/verified.
+- Targeted Provider implementation: implemented.
+- Targeted Provider simulated self-test: added, execution pending on Windows checkout.
+- Real one-account isolated mint acceptance: pending.
+- Real Provider -> CodeManager -> persist -> worker reconnect E2E: pending.
+- Two-account unattended soak: pending.
 
 ---
 
-## 6. Failed / rejected approaches — do not repeat
+## 7. Recommended first real topology
 
-These routes have already been tested and should not be retried without genuinely new evidence.
+Use **separate Windows user sessions on the same host** first.
 
-### 6.1 Old QQ miniapp IDE QR exchange
+Why:
 
-Old route can complete QR scan/poll and identify the QQ, but final exchange returned:
+- each user owns a different `APPDATA/QQEX` runtime;
+- each Agent has a distinct Windows SessionId;
+- each login session can run exactly one QQ identity;
+- ports can be separate (`43101`, `43102`);
+- the current machine-wide Session Registry can still observe runtime sessions;
+- no weakening of CodeManager's existing online Session/UIN guard is required.
+
+Target layout:
+
+```text
+Windows user/session A
+  exactly one QQ A
+  Agent A :43101
+
+Windows user/session B
+  exactly one QQ B
+  Agent B :43102
+
+main FAR2
+  exact UIN A -> 127.0.0.1:43101
+  exact UIN B -> 127.0.0.1:43102
+```
+
+A fully remote VM is still a valid later Provider isolation boundary, but the current CodeManager hard gate requires its bound Desktop Session to be online. Do not bypass/weaken that safety gate just to make a remote VM topology work; remote Session reporting would be a separate feature.
+
+---
+
+## 8. Exact next steps
+
+Do these in order. Do not go back to the rejected QR/Ctrl+R/renderer experiments.
+
+### Step 1 — update the real Windows checkout and run non-QQ self-test
+
+```powershell
+pnpm code:provider-selftest
+```
+
+Expected result is all isolated Provider anti-cross checks PASS. If it fails, fix the new Provider code before touching real QQ.
+
+### Step 2 — prepare isolated Windows session A
+
+- log into a separate Windows user/session;
+- run **only account A's QQ** in that login session;
+- open QQ经典农场 once so that user's QQEX Farm cache exists;
+- configure Agent UIN/token and port `43101`;
+- start `pnpm code:agent` in that same Windows user session;
+- initial status must not report multiple QQ or runtime identity mismatch.
+
+Do the equivalent for account B on port `43102` after A is proven.
+
+### Step 3 — configure exact UIN -> endpoint mapping in main FAR2
+
+Set `FARM_CODE_PROVIDER_TARGETS` and token environment variables. Do not put real tokens into the repository.
+
+Keep:
+
+```text
+FARM_CODE_AUTO_REFRESH=0
+```
+
+for this stage.
+
+### Step 4 — health-only Provider probe
+
+For account A's full UIN:
+
+```powershell
+pnpm code:provider-check -- <QQ UIN>
+```
+
+Must return `READY` and must not mint Code.
+
+### Step 5 — one-shot isolated mint acceptance
+
+For account A only:
+
+```powershell
+pnpm code:provider-check -- <QQ UIN> --refresh
+```
+
+Acceptance:
+
+- no QQ account chooser;
+- Agent confirms its isolated Windows Session has exactly one QQ;
+- live Farm runtime UIN is verified as requested UIN;
+- command reports `refresh: PASS` with source/code length only;
+- no plaintext Code in logs;
+- FAR2 account records/workers unchanged.
+
+Then repeat Steps 4-5 for account B.
+
+### Step 6 — controlled CodeManager E2E
+
+Only after both isolated mint probes pass:
+
+1. make only the account under test eligible for refresh (temporarily disable the other account's refresh if needed);
+2. enable the global refresh gate only for this controlled acceptance window;
+3. manually trigger account A;
+4. verify Provider returns fresh Code before worker stop;
+5. verify only account A Code persists;
+6. verify account A old worker exits before replacement starts;
+7. verify Farm Login succeeds;
+8. verify account B Code/worker never changes;
+9. repeat with roles reversed.
+
+Do not move to scheduled unattended mode if either account fails any isolation/identity check.
+
+### Step 7 — unattended soak
+
+After both controlled E2E tests pass:
+
+- enable both account refresh configs;
+- enable scheduled global refresh;
+- observe at least multiple refresh cycles;
+- confirm no chooser, no cross-account change, no leaked Code, and independent retry behavior.
+
+---
+
+## 9. Provider acceptance checklist
+
+Production-ready only when all pass:
+
+- [ ] `pnpm code:provider-selftest` passes in real checkout.
+- [ ] Agent A runs in a Windows Session containing exactly one QQ A.
+- [ ] Agent B runs in a Windows Session containing exactly one QQ B.
+- [ ] Health-only exact-UIN probe READY for A.
+- [ ] One-shot mint probe PASS for A, no chooser/code leak/account mutation.
+- [ ] Health-only exact-UIN probe READY for B.
+- [ ] One-shot mint probe PASS for B, no chooser/code leak/account mutation.
+- [ ] Provider never runs for offline Session.
+- [ ] Provider never runs for account/Session UIN mismatch.
+- [ ] Provider-returned UIN mismatch is rejected.
+- [ ] Account A controlled CodeManager refresh changes/restarts A only.
+- [ ] Account B controlled CodeManager refresh changes/restarts B only.
+- [ ] Worker is stopped only after fresh Code exists.
+- [ ] Old worker fully exits before replacement worker starts.
+- [ ] New worker logs into Farm successfully.
+- [ ] Normal logs/API/WebUI contain no plaintext Code.
+- [ ] Multi-cycle unattended soak passes.
+
+---
+
+## 10. Failed/rejected approaches — do not repeat
+
+Do not retry or reintroduce these as Provider fallbacks unless genuinely new evidence changes the technical facts.
+
+### Old QQ miniapp IDE QR exchange
+
+Final exchange returned:
 
 ```text
 -3000
 校验失败
 ```
 
-`-3000` is not a Farm Code and must never be stored.
+Not a Farm Code; never store it.
 
-### 6.2 PC QZone QR route
+### QZone QR / PC cookie bridge / dual scan
 
-QZone PTLogin can authenticate a QQ web session but does not directly yield a Farm Code.
+These authenticate or combine unrelated login state but did not produce a usable targeted Farm Code. The old IDE exchange still failed.
 
-### 6.3 PC cookie → miniapp bridge
+### Shared-desktop machine-wide `tencent://` targeting
 
-Using QZone login cookies with the miniapp flow did not make the miniapp confirmation ticket transition successfully.
+Usable for the proven single-account diagnostic only. With multiple QQs it can show the QQ chooser and is not production targeting.
 
-### 6.4 Dual-scan experiment
+### Target-window Ctrl+R
 
-Combining a genuine miniapp scan ticket with PC cookies still produced `-3000 校验失败` from the old IDE login exchange.
+Previously tested: no Code captured within the test window. Do not rerun.
 
-Conclusion: do not keep debugging the old IDE endpoint as the primary solution.
+### Renderer kill/restart
 
-### 6.5 Global runtime Code acquisition with multiple QQs
+Previously tested: `renderer_not_respawned`. Do not rerun.
 
-The proven single-account runtime tester uses machine-wide `tencent://` to open QQ Farm. With multiple QQ accounts logged in this can show the QQ account chooser, so it is not suitable for unattended multi-account targeting.
+### Process injection / internal IPC hooking / cookie extraction
 
-### 6.6 Target-window Ctrl+R experiment
-
-A test intercepted the global `tencent://` launch and sent Ctrl+R to the bound farm root window instead.
-
-Result:
-
-```text
-90 秒内没有捕获到 Code
-```
-
-The QQ mini-program did not reload the modified disk `game.js` in the required way.
-
-Do not rerun the old target-code test.
-
-### 6.7 Renderer restart experiment
-
-A test terminated only the target farm root's renderer children.
-
-Result:
-
-```text
-renderer_not_respawned
-```
-
-The farm root remained, Session binding remained online, but QQEX did not respawn those renderer processes during the test window.
-
-Do not use renderer killing as the refresh mechanism.
-
-### 6.8 Process injection / IPC hooking path
-
-Reference projects contain Frida/process-hooking/cookie-oriented approaches. These are not the chosen path for FAR2 targeted Provider work.
-
-Do not add code that injects into QQ processes, hooks internal IPC, extracts cookies/tokens, or kills/restarts renderers to force credential generation.
+Not the selected FAR2 path. Do not add Frida/process-hooking/internal credential extraction or renderer kill mechanisms.
 
 ---
 
-## 7. What is actually solved vs. still open
-
-### Solved / verified
-
-- [x] Farm protocol works with updated client version.
-- [x] Fresh Code can be generated by the real Windows QQ farm runtime in a single-account/unambiguous flow.
-- [x] Multiple concurrent QQ farm Sessions can be discovered.
-- [x] Each farm Session can be mapped to a QQ/UIN.
-- [x] Account ↔ QQ/UIN ↔ runtime Session binding.
-- [x] Session PID recovery after farm window restart.
-- [x] Multi-account independent CodeManager scheduling.
-- [x] Per-account single-flight behavior.
-- [x] Waiting-session / waiting-provider safe states.
-- [x] Worker stop/start ordering around a successful Provider result.
-- [x] Backend hard UIN identity guard.
-- [x] Fake multi-account self-tests.
-- [x] API + permission isolation.
-- [x] WebUI state/config page.
-- [x] Real Web build and admin startup.
-- [x] Targeted Provider interface/injection point.
-- [x] Provider requirements documented.
-
-### Not solved
-
-- [ ] Obtain a fresh Farm Code for **one explicitly requested QQ identity** while multiple QQ accounts share the same Windows desktop runtime, using a safe/reliable unattended method.
-- [ ] Production Provider implementation.
-- [ ] Real end-to-end automatic refresh with Provider → fresh Code → account persistence → worker reconnect for account 1 and account 2.
-- [ ] Final unattended soak test.
-
-This distinction is important: **Session identity is solved; per-Session Code minting is not.**
-
----
-
-## 8. Recommended next architecture
-
-Do not spend more time trying random keyboard shortcuts, renderer kills, or process-order guesses inside one shared Windows desktop.
-
-Recommended production topology:
+## 11. Files changed in the targeted Provider implementation pass
 
 ```text
-FAR2 / CodeManager
-        |
-        +-- account 4476 -> Provider instance A -> isolated QQ runtime A
-        |
-        +-- account 232  -> Provider instance B -> isolated QQ runtime B
-```
-
-Each Provider environment should have exactly one possible QQ identity.
-
-Suitable isolation boundaries:
-
-- separate Windows user sessions;
-- separate Windows VMs;
-- another supported QQ runtime isolation/profile where the QQ client itself keeps identity unambiguous.
-
-Why this is preferred:
-
-- no account chooser ambiguity;
-- no PID/order guessing;
-- no need to hook QQ internals;
-- each Provider instance can reuse the already proven single-QQ runtime Code flow;
-- FAR2 already has the account/session hard identity guard before applying a result.
-
----
-
-## 9. Next implementation steps in the new chat
-
-Proceed in this order.
-
-### Step A — read state first
-
-Read:
-
-```text
-PROJECT_STATE.md
+core/client.js
+core/package.json
+package.json
+core/src/services/desktop-session-registry.js
+core/src/services/windows-runtime-code.js
+core/src/services/isolated-runtime-code-provider.js
+core/src/services/isolated-code-agent.js
+core/scripts/qq-isolated-code-agent.js
+core/scripts/qq-isolated-code-provider-selftest.js
+core/scripts/qq-isolated-code-provider-check.js
 docs/CODE_REFRESH_PROVIDER.md
+PROJECT_STATE.md
 ```
 
-Do not re-run the failed QR/target-window/renderer experiments.
-
-### Step B — choose the first production Provider topology
-
-Preferred first practical test:
-
-- keep one QQ in the current Windows environment;
-- put the second QQ in one isolated Windows runtime/user/VM;
-- make each Provider endpoint responsible for exactly one QQ UIN.
-
-The Provider must return only `{ code, source }` for the requested bound account.
-
-### Step C — build Provider adapter
-
-Implement a Provider that satisfies:
-
-```js
-getAvailability(account, binding)
-refresh({ account, binding, reason })
-```
-
-No account mutation inside Provider.
-No worker restart inside Provider.
-No plaintext Code in normal logs/API.
-
-### Step D — first real end-to-end account test
-
-Test account 1 only:
-
-1. Session online and exact UIN match.
-2. Provider available.
-3. Obtain fresh Code.
-4. Only then stop account 1 worker.
-5. Persist fresh Code to account 1.
-6. Wait old worker exit.
-7. Start account 1 worker.
-8. Verify successful farm Login.
-9. Confirm account 2 never changed/stopped.
-
-Then repeat for account 2.
-
-### Step E — enable global scheduler only after both pass
-
-Only after both real accounts pass isolated manual Provider refresh should `FARM_CODE_AUTO_REFRESH=1` be considered.
-
-Then test:
-
-- scheduled refresh;
-- `ws_400` trigger;
-- safe non-version kickout trigger;
-- Provider unavailable behavior;
-- Session offline behavior;
-- Session mismatch behavior;
-- multi-hour unattended soak.
-
----
-
-## 10. Useful commands
-
-From:
-
-```powershell
-cd D:\project2\far2-test
-```
-
-Update:
-
-```powershell
-git pull
-```
-
-Build WebUI:
-
-```powershell
-pnpm build:web
-```
-
-Start real admin/core:
-
-```powershell
-pnpm dev:core
-```
-
-Admin:
-
-```text
-http://127.0.0.1:3007
-http://127.0.0.1:3007/code-manager
-```
-
-Session registry:
-
-```powershell
-pnpm qr:sessions
-```
-
-Binding audit:
-
-```powershell
-pnpm qr:session-binding-audit
-```
-
-CodeManager plan:
-
-```powershell
-pnpm qr:code-manager-plan
-```
-
-Account refresh config:
-
-```powershell
-pnpm qr:code-manager-config -- enable 1 2
-```
-
-Fake CodeManager regression test:
-
-```powershell
-pnpm qr:code-manager-selftest
-```
-
-Fake API regression test:
-
-```powershell
-pnpm qr:code-manager-api-selftest
-```
-
----
-
-## 11. Important operational rules
-
-- Never ask the user to paste a real Farm Code into chat.
-- Do not print/store Farm Code in ordinary logs.
-- Do not treat `-3000` as a Code.
-- Do not assume every `KickoutNotify` means Code expiry.
-- Do not identify an account by process order.
-- Do not persist PID as account identity.
-- Do not fall back to machine-wide `tencent://` when multiple QQ accounts are present.
-- Do not enable real global refresh while Provider is still `targeted_provider_pending`.
-- Session mismatch must fail closed.
-- Provider failure must not stop a healthy worker.
-- Obtain fresh Code before stopping the old worker.
-
----
-
-## 12. New-chat continuation prompt
-
-Use this as the first message in the next chat:
-
-```text
-继续 far2 的 QQ 农场多账号 Code 自动刷新项目。
-先读取仓库根目录 PROJECT_STATE.md 和 docs/CODE_REFRESH_PROVIDER.md，严格按里面的当前状态继续，不要重复已经失败的 QR / Ctrl+R / renderer 重启实验。
-当前 Session/绑定/CodeManager/API/WebUI/防串号已完成，剩余核心是 targeted Code Provider。继续从“独立 QQ 运行环境 Provider”方案往下实现。
-```
+Provider/docs implementation commits were made directly on `main`. The latest pre-state handoff anchor is `69105c825e19a8c180f0dfc5c85201691636b967`; this `PROJECT_STATE.md` update is the final handoff record for this pass.
