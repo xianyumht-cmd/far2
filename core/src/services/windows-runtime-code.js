@@ -59,8 +59,9 @@ function findGameJs(folder) {
     return '';
 }
 
-function buildPayload() {
-    return `${MARKER}\n;(function(){\n  var tries=0;\n  function closeSoon(api){\n    setTimeout(function(){\n      try{if(api&&typeof api.exitMiniProgram==='function') return api.exitMiniProgram();}catch(e){}\n      try{if(api&&typeof api.exitMiniApp==='function') return api.exitMiniApp();}catch(e){}\n    },180);\n  }\n  function run(){\n    tries++;\n    var api=null;\n    try{if(typeof qq!=='undefined'&&qq&&typeof qq.login==='function') api=qq;}catch(e){}\n    if(!api){try{if(typeof wx!=='undefined'&&wx&&typeof wx.login==='function') api=wx;}catch(e){}}\n    if(!api){if(tries<120)setTimeout(run,250);return;}\n    try{api.login({success:function(res){\n      var code=res&&res.code?String(res.code):'';\n      if(!code)return;\n      try{if(typeof api.setClipboardData==='function')api.setClipboardData({data:code});}catch(e){}\n      try{var f=api.getFileSystemManager&&api.getFileSystemManager();var b=api.env&&api.env.USER_DATA_PATH?api.env.USER_DATA_PATH:'';if(f&&b)f.writeFileSync(b+'/_code.txt',code,'utf8');}catch(e){}\n      closeSoon(api);\n    },fail:function(){}});}catch(e){}\n  }\n  run();\n})();\n`;
+function buildPayload(options = {}) {
+    const closeDelayMs = Math.max(180, Math.min(10000, Number(options.closeDelayMs) || 180));
+    return `${MARKER}\n;(function(){\n  var tries=0;\n  function closeSoon(api){\n    setTimeout(function(){\n      try{if(api&&typeof api.exitMiniProgram==='function') return api.exitMiniProgram();}catch(e){}\n      try{if(api&&typeof api.exitMiniApp==='function') return api.exitMiniApp();}catch(e){}\n    },${closeDelayMs});\n  }\n  function run(){\n    tries++;\n    var api=null;\n    try{if(typeof qq!=='undefined'&&qq&&typeof qq.login==='function') api=qq;}catch(e){}\n    if(!api){try{if(typeof wx!=='undefined'&&wx&&typeof wx.login==='function') api=wx;}catch(e){}}\n    if(!api){if(tries<120)setTimeout(run,250);return;}\n    try{api.login({success:function(res){\n      var code=res&&res.code?String(res.code):'';\n      if(!code)return;\n      try{if(typeof api.setClipboardData==='function')api.setClipboardData({data:code});}catch(e){}\n      try{var f=api.getFileSystemManager&&api.getFileSystemManager();var b=api.env&&api.env.USER_DATA_PATH?api.env.USER_DATA_PATH:'';if(f&&b)f.writeFileSync(b+'/_code.txt',code,'utf8');}catch(e){}\n      closeSoon(api);\n    },fail:function(){}});}catch(e){}\n  }\n  run();\n})();\n`;
 }
 
 function recoverIfNeeded(gameJs) {
@@ -73,7 +74,7 @@ function recoverIfNeeded(gameJs) {
     return { original, backup };
 }
 
-function patchGameFiles() {
+function patchGameFiles(options = {}) {
     const folders = findFarmFolders();
     if (!folders.length) {
         const err = new Error(`未找到 QQ 农场缓存，请先在 Windows QQ 手动打开一次 QQ经典农场。期望目录: ${getMiniAppRoot()}`);
@@ -87,7 +88,7 @@ function patchGameFiles() {
         if (!gameJs) continue;
         const { original, backup } = recoverIfNeeded(gameJs);
         if (!fs.existsSync(backup)) fs.writeFileSync(backup, original, 'utf8');
-        fs.writeFileSync(gameJs, buildPayload() + original, 'utf8');
+        fs.writeFileSync(gameJs, buildPayload(options) + original, 'utf8');
         patched.push({ gameJs, original, backup });
     }
     if (!patched.length) {
@@ -202,12 +203,13 @@ async function doCapture(options = {}) {
     }
 
     const timeoutMs = Math.max(5000, Number(options.timeoutMs) || 90000);
+    const closeDelayMs = Math.max(180, Math.min(10000, Number(options.closeDelayMs) || 180));
     const log = typeof options.log === 'function' ? options.log : null;
     clearOldCaptureArtifacts();
 
     let patched = [];
     try {
-        patched = patchGameFiles();
+        patched = patchGameFiles({ closeDelayMs });
         if (log) log(`已临时注入 ${patched.length} 个 QQ 农场缓存`);
         const startedAt = Date.now();
         const opened = openFarmMiniApp();
