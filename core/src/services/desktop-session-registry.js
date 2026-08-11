@@ -153,8 +153,7 @@ function parseAnyAnnotatedUin(rows) {
     return '';
 }
 
-function scanMainQqProcesses() {
-    const rows = getProcessSnapshot();
+function scanMainQqProcesses(rows = getProcessSnapshot()) {
     if (!rows.length) return [];
     return rows
         .filter(isMainQQ)
@@ -174,8 +173,7 @@ function getCurrentWindowsSessionId() {
     return current ? normalizeSessionId(current.sessionId) : -1;
 }
 
-function scanRuntimeSessions() {
-    const rows = getProcessSnapshot();
+function scanRuntimeSessions(rows = getProcessSnapshot()) {
     if (!rows.length) return [];
     const byPid = new Map(rows.map(row => [normalizePid(row.pid), row]));
     const roots = rows.filter(isFarmRoot);
@@ -270,9 +268,29 @@ function unbindAccount(accountId) {
     return before !== registry.bindings.length;
 }
 
+function findBoundMainQq(binding, mainQqProcesses) {
+    const expectedUin = normalizeUin(binding && binding.qqUin);
+    const savedMainPid = normalizePid(binding && binding.mainQqPid);
+
+    if (expectedUin) {
+        const exact = mainQqProcesses.find(item => normalizeUin(item.qqUin) === expectedUin);
+        if (exact) return exact;
+    }
+
+    if (!savedMainPid) return null;
+    const sameProcess = mainQqProcesses.find(item => normalizePid(item.mainQqPid) === savedMainPid) || null;
+    if (!sameProcess) return null;
+
+    const observedUin = normalizeUin(sameProcess.qqUin);
+    if (expectedUin && observedUin && observedUin !== expectedUin) return null;
+    return sameProcess;
+}
+
 function refreshBindings() {
     const registry = loadRegistry();
-    const sessions = scanRuntimeSessions();
+    const rows = getProcessSnapshot();
+    const sessions = scanRuntimeSessions(rows);
+    const mainQqProcesses = scanMainQqProcesses(rows);
     const stamp = now();
 
     registry.bindings = registry.bindings.map(binding => {
@@ -287,7 +305,27 @@ function refreshBindings() {
             runtime = sessions.find(item => item.mainQqPid === binding.mainQqPid) || null;
         }
 
+        if (runtime) {
+            const expectedUin = normalizeUin(binding.qqUin);
+            const runtimeUin = normalizeUin(runtime.qqUin);
+            if (expectedUin && runtimeUin && runtimeUin !== expectedUin) runtime = null;
+        }
+
         if (!runtime) {
+            const mainQq = findBoundMainQq(binding, mainQqProcesses);
+            if (mainQq) {
+                return normalizeBinding({
+                    ...binding,
+                    mainQqPid: mainQq.mainQqPid,
+                    farmRootPid: 0,
+                    platformChannel: '',
+                    status: 'online',
+                    needsRebind: false,
+                    lastSeenAt: stamp,
+                    updatedAt: stamp,
+                });
+            }
+
             return normalizeBinding({
                 ...binding,
                 status: 'offline',
