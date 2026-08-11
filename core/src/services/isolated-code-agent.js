@@ -6,7 +6,7 @@ const windowsRuntimeCode = require('./windows-runtime-code');
 
 const DEFAULT_PORT = 43101;
 const DEFAULT_CAPTURE_TIMEOUT_MS = 90000;
-const DEFAULT_IDENTITY_TIMEOUT_MS = 2500;
+const DEFAULT_IDENTITY_TIMEOUT_MS = 8000;
 const MAX_BODY_BYTES = 8 * 1024;
 
 function sleep(ms) {
@@ -87,6 +87,16 @@ function readJsonBody(req) {
     });
 }
 
+function getRegistrySnapshot(registry) {
+    if (!registry || typeof registry.getProcessSnapshot !== 'function') return null;
+    try {
+        const rows = registry.getProcessSnapshot();
+        return Array.isArray(rows) ? rows : null;
+    } catch {
+        return null;
+    }
+}
+
 function inspectIsolatedRuntime(options = {}) {
     const expectedUin = normalizeUin(options.expectedUin);
     const processRef = options.processRef || process;
@@ -104,10 +114,11 @@ function inspectIsolatedRuntime(options = {}) {
     let mainQqProcesses = [];
     let farmSessions = [];
     try {
-        windowsSessionId = Number(registry.getCurrentWindowsSessionId());
-        mainQqProcesses = registry.scanMainQqProcesses()
+        const rows = getRegistrySnapshot(registry);
+        windowsSessionId = Number(registry.getCurrentWindowsSessionId(rows || undefined));
+        mainQqProcesses = registry.scanMainQqProcesses(rows || undefined)
             .filter(item => Number(item.windowsSessionId) === windowsSessionId);
-        farmSessions = registry.scanRuntimeSessions()
+        farmSessions = registry.scanRuntimeSessions(rows || undefined)
             .filter(item => Number(item.windowsSessionId) === windowsSessionId);
     } catch {
         return { available: false, reason: 'agent_session_scan_failed', qqUin: expectedUin };
@@ -191,7 +202,8 @@ async function waitForCapturedRuntimeIdentity(options = {}) {
     while (Date.now() < deadline) {
         let sessions = [];
         try {
-            sessions = registry.scanRuntimeSessions()
+            const rows = getRegistrySnapshot(registry);
+            sessions = registry.scanRuntimeSessions(rows || undefined)
                 .filter(item => Number(item.windowsSessionId) === windowsSessionId);
         } catch {}
 
@@ -202,7 +214,7 @@ async function waitForCapturedRuntimeIdentity(options = {}) {
         if (knownUins.includes(expectedUin)) {
             return { ok: true, reason: 'ok' };
         }
-        await sleep(100);
+        await sleep(150);
     }
     return { ok: false, reason: 'agent_capture_identity_unverified' };
 }
