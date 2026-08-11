@@ -40,6 +40,8 @@ function main() {
     const expectedRuntime = expectedUin ? runtimeByUin.get(expectedUin) || null : null;
     const boundRuntime = boundUin ? runtimeByUin.get(boundUin) || null : null;
     const duplicateOwners = boundUin ? (bindingOwnersByUin.get(boundUin) || []) : [];
+    const codeRefreshEnabled = account.codeRefreshEnabled === true;
+    const codeRefreshMode = String(account.codeRefreshMode || '');
 
     const problems = [];
     if (!expectedUin) problems.push('account_uin_missing');
@@ -49,6 +51,8 @@ function main() {
     if (duplicateOwners.length > 1) problems.push('duplicate_binding_uin');
     if (expectedUin && !expectedRuntime) problems.push('expected_session_offline');
     if (binding && boundUin && !boundRuntime) problems.push('bound_session_offline');
+    if (!codeRefreshEnabled) problems.push('code_refresh_disabled');
+    if (codeRefreshEnabled && codeRefreshMode !== 'windows_session') problems.push('code_refresh_mode_invalid');
 
     const ok = problems.length === 0;
     if (!ok) issueCount += 1;
@@ -62,6 +66,8 @@ function main() {
       boundRuntimeOnline: !!boundRuntime,
       bindingStatus: binding ? String(binding.status || 'unknown') : 'unbound',
       needsRebind: binding ? !!binding.needsRebind : true,
+      codeRefreshEnabled,
+      codeRefreshMode,
       mainQqPid: boundRuntime ? boundRuntime.mainQqPid : Number(binding && binding.mainQqPid || 0),
       farmRootPid: boundRuntime ? boundRuntime.farmRootPid : Number(binding && binding.farmRootPid || 0),
       problems,
@@ -72,6 +78,7 @@ function main() {
     console.log(`  accountUin=${maskUin(expectedUin)} bindingUin=${maskUin(boundUin)}`);
     console.log(`  expectedSession=${expectedRuntime ? 'online' : 'offline'} boundSession=${boundRuntime ? 'online' : 'offline'}`);
     console.log(`  bindingStatus=${binding ? binding.status : 'unbound'} needsRebind=${binding ? !!binding.needsRebind : true}`);
+    console.log(`  codeRefreshEnabled=${codeRefreshEnabled} mode=${codeRefreshMode || '(none)'}`);
     console.log(`  result=${ok ? 'OK' : problems.join(',')}`);
   }
 
