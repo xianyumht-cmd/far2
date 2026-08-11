@@ -166,9 +166,8 @@ function scanMainQqProcesses(rows = getProcessSnapshot()) {
         .sort((a, b) => a.windowsSessionId - b.windowsSessionId || a.mainQqPid - b.mainQqPid);
 }
 
-function getCurrentWindowsSessionId() {
+function getCurrentWindowsSessionId(rows = getProcessSnapshot()) {
     if (process.platform !== 'win32') return -1;
-    const rows = getProcessSnapshot();
     const current = rows.find(row => normalizePid(row.pid) === normalizePid(process.pid));
     return current ? normalizeSessionId(current.sessionId) : -1;
 }
@@ -362,6 +361,7 @@ function getStatus() {
 
 module.exports = {
     REGISTRY_FILE,
+    getProcessSnapshot,
     scanMainQqProcesses,
     getCurrentWindowsSessionId,
     scanRuntimeSessions,
