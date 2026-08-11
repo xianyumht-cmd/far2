@@ -19,6 +19,7 @@
     "qr:sessions": "node scripts/qq-session-registry.js list",
     "qr:session-bind": "node scripts/qq-session-registry.js bind",
     "qr:session-unbind": "node scripts/qq-session-registry.js unbind",
+    "qr:session-auto-bind": "node scripts/qq-session-auto-bind.js",
     "build:release": "pkg . --no-bytecode --targets node18-win-x64,node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
