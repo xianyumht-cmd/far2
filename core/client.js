@@ -12,6 +12,7 @@ const {
 } = require('./src/controllers/admin');
 const { installCodeManagerApiHook } = require('./src/controllers/code-manager-api-hook');
 const { createRuntimeEngine } = require('./src/runtime/runtime-engine');
+const { createIsolatedRuntimeCodeProviderFromEnv } = require('./src/services/isolated-runtime-code-provider');
 const { createModuleLogger } = require('./src/services/logger');
 const mainLogger = createModuleLogger('main');
 
@@ -29,10 +30,16 @@ const isWorkerProcess = process.env.FARM_WORKER === '1';
 if (isWorkerProcess) {
     require('./src/core/worker');
 } else {
+    const codeRefreshProvider = createIsolatedRuntimeCodeProviderFromEnv({ processRef: process });
+    if (codeRefreshProvider) {
+        mainLogger.info('isolated QQ runtime Code Provider configured');
+    }
+
     const runtimeEngine = createRuntimeEngine({
         processRef: process,
         mainEntryPath: __filename,
         startAdminServer: startAdminServerWithCodeManagerApi,
+        codeRefreshProvider,
         onStatusSync: (accountId, status) => {
             emitRealtimeStatus(accountId, status);
         },
