@@ -132,9 +132,15 @@ $targets[$uin] = [ordered]@{
 }
 $targetsJson = $targets | ConvertTo-Json -Compress
 $targetsB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($targetsJson))
-$refreshIntervalMs = [Math]::Max(60000, $RefreshIntervalMinutes * 60000)
+
+# Production mode is event-driven: WS400 / kickout / manual requests refresh immediately,
+# while healthy accounts are not proactively re-login every hour. CodeManager currently
+# expects an interval, so keep its passive scheduled horizon far in the future.
+$eventOnlyHorizonMs = [int64]315360000000
+$refreshIntervalMs = $eventOnlyHorizonMs
 $serviceEnvironment = @(
     'FARM_CODE_AUTO_REFRESH=1',
+    'FARM_CODE_SCHEDULED_REFRESH=0',
     "FARM_CODE_REFRESH_INTERVAL_MS=$refreshIntervalMs",
     'FARM_CODE_PROVIDER_HEALTH_TIMEOUT_MS=20000',
     "FARM_CODE_PROVIDER_TARGETS_B64=$targetsB64",
@@ -146,6 +152,7 @@ Write-Host "[FAR2] Node: $nodePath"
 Write-Host "[FAR2] NSSM: $nssm"
 Write-Host "[FAR2] QQ: $($uin.Substring(0,2))****$($uin.Substring($uin.Length-2))"
 Write-Host "[FAR2] Agent: 127.0.0.1:$AgentPort"
+Write-Host '[FAR2] Refresh mode: event-only (WS400/kickout/manual); healthy periodic refresh disabled'
 
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
@@ -177,7 +184,7 @@ Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRotateBytes', '52428
 # argument handling differences in old NSSM/PowerShell combinations.
 Set-NssmEnvironmentBlock -Name $ServiceName -Entries $serviceEnvironment
 Set-Service -Name $ServiceName -StartupType Automatic
-Write-Host '[FAR2] Service environment REG_MULTI_SZ verified: 5/5'
+Write-Host '[FAR2] Service environment REG_MULTI_SZ verified: 6/6'
 
 $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $fullTaskName = "$TaskName-$uin"
@@ -207,6 +214,6 @@ Write-Host '=== FAR2 background install complete ===' -ForegroundColor Green
 Write-Host "NSSM service: $ServiceName state=$svcState startup=Automatic"
 Write-Host "Code Agent task: $fullTaskName state=$taskState trigger=AtLogOn Hidden"
 Write-Host 'WebUI: http://127.0.0.1:3007'
-Write-Host "Refresh interval: $RefreshIntervalMinutes minutes; WS 400 still triggers immediate refresh."
+Write-Host 'Refresh mode: event-only; no healthy periodic QQ Farm re-login.'
 Write-Host 'Provider target config: base64 in verified NSSM REG_MULTI_SZ environment.'
 Write-Host 'The Agent remains in the interactive user session; no visible console window is required.'
