@@ -658,9 +658,27 @@ async function handleApiCall(msg) {
                 result = getAutomation();
                 break;
             }
-            case 'doFarmOp':
-                result = await runFarmOperation(args[0]); // opType
+            case 'doFarmOp': {
+                const opType = String(args[0] || '');
+                if (opType === 'remove-all' || opType.startsWith('land:')) {
+                    if (farmTaskRunning || helpTaskRunning || stealTaskRunning) {
+                        throw new Error('后台巡田/好友任务正在执行，请稍后再试');
+                    }
+                    farmTaskRunning = true;
+                    helpTaskRunning = true;
+                    stealTaskRunning = true;
+                    try {
+                        result = await require('../services/land-controls').runLandControl(opType);
+                    } finally {
+                        farmTaskRunning = false;
+                        helpTaskRunning = false;
+                        stealTaskRunning = false;
+                    }
+                } else {
+                    result = await runFarmOperation(opType);
+                }
                 break;
+            }
             case 'buyFertilizer': {
                 const fertilizerType = args[0] || 'organic';
                 const fertilizerCount = Number(args[1]) || 0;

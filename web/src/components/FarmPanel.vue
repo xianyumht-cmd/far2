@@ -16,6 +16,8 @@ const { currentAccountId, currentAccount } = storeToRefs(accountStore)
 const { status, loading: statusLoading, realtimeConnected } = storeToRefs(statusStore)
 
 const operating = ref(false)
+const actionMessage = ref('')
+const actionError = ref('')
 const confirmVisible = ref(false)
 const confirmConfig = ref({
   title: '',
@@ -23,13 +25,27 @@ const confirmConfig = ref({
   opType: '',
 })
 
+function clearActionState() {
+  actionMessage.value = ''
+  actionError.value = ''
+}
+
+function errorText(error: any) {
+  return String(error?.response?.data?.error || error?.message || '土地操作失败')
+}
+
 async function executeOperate() {
   if (!currentAccountId.value || !confirmConfig.value.opType)
     return
   confirmVisible.value = false
   operating.value = true
+  clearActionState()
   try {
-    await farmStore.operate(currentAccountId.value, confirmConfig.value.opType)
+    const result = await farmStore.operate(currentAccountId.value, confirmConfig.value.opType)
+    actionMessage.value = String(result?.message || '操作完成，土地状态已重新读取')
+  }
+  catch (error: any) {
+    actionError.value = errorText(error)
   }
   finally {
     operating.value = false
@@ -37,21 +53,44 @@ async function executeOperate() {
 }
 
 function handleOperate(opType: string) {
-  if (!currentAccountId.value)
+  if (!currentAccountId.value || operating.value)
     return
 
   const confirmMap: Record<string, string> = {
     harvest: '确定要收获所有成熟作物吗？',
     clear: '确定要一键除草/除虫吗？',
-    plant: '确定要一键种植吗？(根据策略配置)',
-    upgrade: '确定要升级所有可升级的土地吗？(消耗金币)',
-    all: '确定要一键全收吗？(包含收获、除草、种植等)',
+    plant: '确定要一键种植吗？（根据当前策略配置）',
+    upgrade: '确定要升级所有当前可升级的土地吗？（可能消耗金币）',
+    all: '确定要一键全收吗？（包含收获、除草、种植等）',
+    'remove-all': '确定要铲除当前所有已种植作物吗？此操作不可恢复。',
   }
 
   confirmConfig.value = {
-    title: '确认操作',
+    title: opType === 'remove-all' ? '确认一键铲除' : '确认操作',
     message: confirmMap[opType] || '确定执行此操作吗？',
     opType,
+  }
+  confirmVisible.value = true
+}
+
+function handleLandOperate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | 'upgrade', land: any) {
+  if (!currentAccountId.value || operating.value || !land?.id)
+    return
+
+  const landId = Number(land.id)
+  const plantName = String(land.plantName || '').trim()
+  const label = plantName ? `土地 #${landId}（${plantName}）` : `土地 #${landId}`
+  const messages: Record<string, string> = {
+    remove: `确定铲除${label}当前作物吗？此操作不可恢复。`,
+    'fertilize-normal': `确定对${label}使用 1 次普通肥吗？`,
+    'fertilize-organic': `确定对${label}使用 1 次有机肥吗？`,
+    upgrade: `确定升级土地 #${landId} 吗？仅服务器当前仍判定满足升级条件时才会执行。`,
+  }
+
+  confirmConfig.value = {
+    title: action === 'remove' ? '确认铲除单块土地' : '确认单块土地操作',
+    message: messages[action] || `确定操作土地 #${landId} 吗？`,
+    opType: `land:${action}:${landId}`,
   }
   confirmVisible.value = true
 }
@@ -62,6 +101,7 @@ const operations = [
   { type: 'plant', label: '种植', icon: 'i-carbon-sprout', color: 'bg-green-600 hover:bg-green-700' },
   { type: 'upgrade', label: '升级土地', icon: 'i-carbon-upgrade', color: 'bg-purple-600 hover:bg-purple-700' },
   { type: 'all', label: '一键全收', icon: 'i-carbon-flash', color: 'bg-orange-600 hover:bg-orange-700' },
+  { type: 'remove-all', label: '一键铲除', icon: 'i-carbon-trash-can', color: 'bg-red-600 hover:bg-red-700' },
 ]
 
 async function refresh() {
@@ -81,6 +121,7 @@ async function refresh() {
 }
 
 watch(currentAccountId, () => {
+  clearActionState()
   refresh()
 })
 
@@ -108,13 +149,24 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-4">
+    <div v-if="actionMessage" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+      {{ actionMessage }}
+    </div>
+    <div v-if="actionError" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+      {{ actionError }}
+    </div>
+
     <div class="rounded-lg bg-white shadow dark:bg-gray-800">
-      <!-- Header with Title and Actions -->
       <div class="flex flex-col items-center justify-between gap-4 border-b border-gray-100 p-4 sm:flex-row dark:border-gray-700">
-        <h3 class="flex items-center gap-2 text-lg font-bold">
-          <div class="i-carbon-grid text-xl" />
-          土地详情
-        </h3>
+        <div>
+          <h3 class="flex items-center gap-2 text-lg font-bold">
+            <div class="i-carbon-grid text-xl" />
+            土地详情
+          </h3>
+          <div class="mt-1 text-xs text-gray-400">
+            单块铲除、普通肥、有机肥、升级均会二次确认；合种副地不会重复显示作物操作。
+          </div>
+        </div>
         <div class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           <button
             v-for="op in operations"
@@ -130,7 +182,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Summary -->
       <div class="flex flex-wrap gap-4 border-b border-gray-100 bg-gray-50 p-4 text-sm dark:border-gray-700 dark:bg-gray-900/50">
         <div class="flex items-center gap-1.5 rounded-full bg-orange-100 px-3 py-1 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
           <div class="i-carbon-clean" />
@@ -150,7 +201,6 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Grid -->
       <div class="p-4">
         <div v-if="loading || statusLoading" class="flex justify-center py-12">
           <div class="i-svg-spinners-90-ring-with-bg text-4xl text-blue-500" />
@@ -184,11 +234,13 @@ onUnmounted(() => {
           暂无土地数据
         </div>
 
-        <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3">
+        <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
           <LandCard
             v-for="land in lands"
             :key="land.id"
             :land="land"
+            :operating="operating"
+            @operate="handleLandOperate"
           />
         </div>
       </div>
