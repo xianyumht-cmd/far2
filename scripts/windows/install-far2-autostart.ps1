@@ -110,6 +110,7 @@ $targets[$uin] = [ordered]@{
     tokenEnv = $tokenEnv
 }
 $targetsJson = $targets | ConvertTo-Json -Compress
+$targetsB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($targetsJson))
 $refreshIntervalMs = [Math]::Max(60000, $RefreshIntervalMinutes * 60000)
 
 Write-Host "[FAR2] Project: $projectRoot"
@@ -145,7 +146,7 @@ Invoke-Nssm -Exe $nssm -NssmArgs @(
     'FARM_CODE_AUTO_REFRESH=1',
     "FARM_CODE_REFRESH_INTERVAL_MS=$refreshIntervalMs",
     'FARM_CODE_PROVIDER_HEALTH_TIMEOUT_MS=20000',
-    "FARM_CODE_PROVIDER_TARGETS=$targetsJson",
+    "FARM_CODE_PROVIDER_TARGETS_B64=$targetsB64",
     "$tokenEnv=$token"
 )
 Set-Service -Name $ServiceName -StartupType Automatic
@@ -179,5 +180,5 @@ Write-Host "NSSM service: $ServiceName state=$svcState startup=Automatic"
 Write-Host "Code Agent task: $fullTaskName state=$taskState trigger=AtLogOn Hidden"
 Write-Host 'WebUI: http://127.0.0.1:3007'
 Write-Host "Refresh interval: $RefreshIntervalMinutes minutes; WS 400 still triggers immediate refresh."
+Write-Host 'Provider target config: base64 (NSSM-safe).'
 Write-Host 'The Agent remains in the interactive user session; no visible console window is required.'
-Write-Host 'If old manual FAR2/Agent consoles are still running, close them now. NSSM/task restart policy will take over automatically.'
