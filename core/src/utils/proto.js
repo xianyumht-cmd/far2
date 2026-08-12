@@ -13,7 +13,9 @@ const types = {};
 async function loadProto() {
     log('系统', '正在加载 Protobuf 定义...');
     root = new protobuf.Root();
-    await root.load([
+    // Worker 的消息处理是并发的。这里必须同步完成本地 proto 文件解析和
+    // types 填充，避免 startBot() await 期间 WebUI API 抢先读取 undefined types.*。
+    root.loadSync([
         getResourcePath('proto', 'game.proto'),
         getResourcePath('proto', 'userpb.proto'),
         getResourcePath('proto', 'plantpb.proto'),
