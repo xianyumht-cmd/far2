@@ -55,9 +55,10 @@ if (isWorkerProcess) {
         },
     });
 
+    // Unattended production default: start every saved account when FAR2 starts.
+    // Set FARM_AUTO_START_ACCOUNTS=0 only when intentionally running panel-only.
     runtimeEngine.start({
         startAdminServer: true,
-        autoStartAccounts: false,
     }).catch((err) => {
         mainLogger.error('runtime bootstrap failed', { error: err && err.message ? err.message : String(err) });
     });

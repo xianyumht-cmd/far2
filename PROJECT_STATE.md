@@ -10,7 +10,7 @@
 
 ## 1. Current status
 
-FAR2 当前这一轮两条核心主线都已完成，不再作为待验收事项继续开发。
+FAR2 的 Code 自动刷新与完整好友导入两条底层主线均已完成。当前进入**无人值守稳定性 + 新业务功能**阶段。
 
 ### Phase 1 — 单账号 Windows 无人值守 Code 自动刷新
 
@@ -45,14 +45,35 @@ FAR2 当前这一轮两条核心主线都已完成，不再作为待验收事项
 
 正式记录：`docs/FRIEND_GID_HANDOFF_2026-08-13.md`。
 
+### Phase 3 — Windows 服务启动后 Worker 自动恢复
+
+**SOURCE FIX COMPLETE / LOCAL RESTART CHECK PENDING**
+
+2026-08-13 静态检查发现一个与无人值守目标冲突的历史配置：
+
+```text
+core/client.js -> runtimeEngine.start({ autoStartAccounts: false })
+```
+
+这会导致 FAR2Farm 服务本身可以启动，但正式入口不会调用 `startAllAccounts()`，因此 Windows / 服务重启后存在账号 Worker 需要人工启动的风险。
+
+当前修复：
+
+- `core/client.js` 不再显式关闭 `autoStartAccounts`；
+- Runtime Engine 默认自动启动已保存账号；
+- `FARM_AUTO_START_ACCOUNTS=0` 可显式进入 panel-only 模式；
+- CodeManager 和 startup friend importer 先启动，再启动 Worker；
+- 正式链不依赖浏览器打开或手动点击“启动账号”。
+
+下一次真实 Windows 验证只需：更新代码后重启一次 `FAR2Farm`，确认保存账号自动出现 Worker / Farm 登录日志。无需重测 Code mint、V4 好友采集或 Windows2。
+
 ## 2. Current production architecture
 
 ```text
-Windows login
-  -> FAR2Farm (NSSM service)
-       -> Runtime Engine
-       -> auto-start saved accounts
-       -> CodeManager (event-only)
+Windows / FAR2Farm service start
+  -> Runtime Engine
+       -> CodeManager + startup friend importer ready
+       -> auto-start saved accounts (default ON)
        -> Worker
 
 Interactive Windows session
@@ -151,6 +172,8 @@ core/src/services/windows-runtime-code.js
 4. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
 5. 其他历史文档。
 
-**不要再把 Code 自动刷新、好友完整导入或第二 Windows Session 验收当成默认下一步。**
+当前短期顺序：
 
-下一步应来自新的业务功能、稳定性问题或明确体验需求。
+1. 完成一次 FAR2Farm 服务重启，确认账号 Worker 自动启动；
+2. 然后进入“运行健康中心”或其他新的业务功能；
+3. 不回头重测 Windows2 / Code / V1-V3 好友采集。
