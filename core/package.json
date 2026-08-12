@@ -10,9 +10,6 @@
   "scripts": {
     "start": "node client.js",
     "dev": "node client.js",
-    "qr:test": "node scripts/qr-mode-test.js",
-    "qr:pc-bridge": "node scripts/qr-pc-bridge-test.js",
-    "qr:dual-scan": "node scripts/qr-dual-scan-test.js",
     "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "qr:process-map": "node scripts/qq-process-map-test.js",
     "qr:session-map": "node scripts/qq-session-map-test.js",
