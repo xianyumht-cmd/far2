@@ -5,7 +5,6 @@ const { getResourcePath } = require('../config/runtime-paths');
 const cryptoWasm = require('../utils/crypto-wasm');
 const windowsRuntimeCode = require('./windows-runtime-code');
 
-const APP_ID = '1112386029';
 const MARKER = '/*__FAR2_FRIEND_CAPTURE__*/';
 const ARTIFACT_NAME = '_far2_friend_frames.jsonl';
 let captureInFlight = null;
@@ -47,7 +46,7 @@ function findGameJs(folder) {
 
 function buildPayload(options = {}) {
     const captureWindowMs = Math.max(8000, Math.min(60000, Number(options.captureWindowMs) || 20000));
-    return `${MARKER}\n;(function(){\n  var tries=0;\n  var hooked=false;\n  var seenTasks=[];\n  function ascii(bytes,needle){\n    if(!bytes||!bytes.length)return false;\n    for(var i=0;i<=bytes.length-needle.length;i++){var ok=true;for(var j=0;j<needle.length;j++){if(bytes[i+j]!==needle.charCodeAt(j)){ok=false;break;}}if(ok)return true;}\n    return false;\n  }\n  function bytesOf(data){\n    try{\n      if(data instanceof ArrayBuffer)return new Uint8Array(data);\n      if(typeof ArrayBuffer!=='undefined'&&ArrayBuffer.isView&&ArrayBuffer.isView(data))return new Uint8Array(data.buffer,data.byteOffset||0,data.byteLength||0);\n      if(typeof data==='string'){var out=new Uint8Array(data.length);for(var i=0;i<data.length;i++)out[i]=data.charCodeAt(i)&255;return out;}\n    }catch(e){}\n    return null;\n  }\n  function base64(bytes,api){\n    try{if(api&&typeof api.arrayBufferToBase64==='function'){var slice=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);return api.arrayBufferToBase64(slice);}}catch(e){}\n    var chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';var out='';\n    for(var i=0;i<bytes.length;i+=3){var a=bytes[i],b=i+1<bytes.length?bytes[i+1]:0,c=i+2<bytes.length?bytes[i+2]:0;var n=(a<<16)|(b<<8)|c;out+=chars[(n>>18)&63]+chars[(n>>12)&63]+(i+1<bytes.length?chars[(n>>6)&63]:'=')+(i+2<bytes.length?chars[n&63]:'=');}\n    return out;\n  }\n  function install(api){\n    if(hooked||!api)return;\n    hooked=true;\n    var f=null,b='';\n    try{f=api.getFileSystemManager&&api.getFileSystemManager();b=api.env&&api.env.USER_DATA_PATH?api.env.USER_DATA_PATH:'';}catch(e){}\n    var out=b?b+'/${ARTIFACT_NAME}':'';\n    try{if(f&&out)f.unlinkSync(out);}catch(e){}\n    function record(data){\n      try{var bytes=bytesOf(data);if(!bytes||!bytes.length)return;if(!ascii(bytes,'FriendService')&&!ascii(bytes,'friendpb'))return;if(f&&out)f.appendFileSync(out,base64(bytes,api)+'\\n','utf8');}catch(e){}\n    }\n    function hookTask(task){\n      try{if(!task||seenTasks.indexOf(task)>=0)return task;seenTasks.push(task);if(typeof task.onMessage==='function'){var om=task.onMessage;task.onMessage=function(cb){return om.call(task,function(res){try{record(res&&res.data);}catch(e){}return cb&&cb(res);});};}}catch(e){}return task;\n    }\n    try{if(typeof api.connectSocket==='function'){var oc=api.connectSocket;api.connectSocket=function(){return hookTask(oc.apply(api,arguments));};}}catch(e){}\n    try{if(typeof api.onSocketMessage==='function'){var oo=api.onSocketMessage;api.onSocketMessage=function(cb){return oo.call(api,function(res){try{record(res&&res.data);}catch(e){}return cb&&cb(res);});};}}catch(e){}\n    try{\n      if(typeof WebSocket!=='undefined'){var NW=WebSocket;var FW=function(){var ws=new (Function.prototype.bind.apply(NW,[null].concat(Array.prototype.slice.call(arguments))))();try{if(typeof ws.addEventListener==='function')ws.addEventListener('message',function(ev){record(ev&&ev.data);});}catch(e){}return ws;};FW.prototype=NW.prototype;try{Object.setPrototypeOf(FW,NW);}catch(e){}WebSocket=FW;}\n    }catch(e){}\n    setTimeout(function(){try{if(typeof api.exitMiniProgram==='function')return api.exitMiniProgram();}catch(e){}try{if(typeof api.exitMiniApp==='function')return api.exitMiniApp();}catch(e){}},${captureWindowMs});\n  }\n  function run(){tries++;var api=null;try{if(typeof qq!=='undefined'&&qq)api=qq;}catch(e){}if(!api){try{if(typeof wx!=='undefined'&&wx)api=wx;}catch(e){}}if(api){install(api);return;}if(tries<120)setTimeout(run,50);}\n  run();\n})();\n`;
+    return `${MARKER}\n;(function(){\n  var tries=0;\n  var installedApis=[];\n  var seenTasks=[];\n  var sinks=[];\n  var webSocketHooked=false;\n  var capturedFrames=0;\n  var capturedBytes=0;\n  var maxFrames=1200;\n  var maxBytes=8*1024*1024;\n  function bytesOf(data){\n    try{\n      if(data instanceof ArrayBuffer)return new Uint8Array(data);\n      if(typeof ArrayBuffer!=='undefined'&&ArrayBuffer.isView&&ArrayBuffer.isView(data))return new Uint8Array(data.buffer,data.byteOffset||0,data.byteLength||0);\n      if(typeof data==='string'){var out=new Uint8Array(data.length);for(var i=0;i<data.length;i++)out[i]=data.charCodeAt(i)&255;return out;}\n    }catch(e){}\n    return null;\n  }\n  function base64(bytes,api){\n    try{if(api&&typeof api.arrayBufferToBase64==='function'){var slice=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);return api.arrayBufferToBase64(slice);}}catch(e){}\n    var chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';var out='';\n    for(var i=0;i<bytes.length;i+=3){var a=bytes[i],b=i+1<bytes.length?bytes[i+1]:0,c=i+2<bytes.length?bytes[i+2]:0;var n=(a<<16)|(b<<8)|c;out+=chars[(n>>18)&63]+chars[(n>>12)&63]+(i+1<bytes.length?chars[(n>>6)&63]:'=')+(i+2<bytes.length?chars[n&63]:'=');}\n    return out;\n  }\n  function addSink(api){\n    try{\n      var f=api&&api.getFileSystemManager&&api.getFileSystemManager();\n      var b=api&&api.env&&api.env.USER_DATA_PATH?api.env.USER_DATA_PATH:'';\n      if(!f||!b)return;\n      var out=b+'/${ARTIFACT_NAME}';\n      for(var i=0;i<sinks.length;i++){if(sinks[i].out===out)return;}\n      sinks.push({f:f,out:out,api:api});\n    }catch(e){}\n  }\n  function writeMeta(text){\n    try{if(!sinks.length)return;sinks[0].f.appendFileSync(sinks[0].out,'m\\t'+String(text||'').replace(/[\\r\\n\\t]+/g,' ')+'\\n','utf8');}catch(e){}\n  }\n  function record(direction,data,api){\n    try{\n      var bytes=bytesOf(data);\n      if(!bytes||!bytes.length||!sinks.length)return;\n      if(capturedFrames>=maxFrames||capturedBytes+bytes.length>maxBytes)return;\n      capturedFrames++;capturedBytes+=bytes.length;\n      var sink=sinks[0];\n      sink.f.appendFileSync(sink.out,String(direction||'i')+'\\t'+base64(bytes,api||sink.api)+'\\n','utf8');\n    }catch(e){}\n  }\n  function summarizeApiResult(name,res){\n    try{\n      var keys=[];var maxArray=0;\n      if(res&&typeof res==='object'){keys=Object.keys(res).slice(0,12);for(var i=0;i<keys.length;i++){var v=res[keys[i]];if(Array.isArray(v)&&v.length>maxArray)maxArray=v.length;}}\n      writeMeta('api='+name+' maxArray='+maxArray+' keys='+keys.join(','));\n    }catch(e){}\n  }\n  function hookSocialApi(api,name){\n    try{\n      if(!api||typeof api[name]!=='function'||api[name].__far2FriendHook)return;\n      var orig=api[name];\n      var wrapped=function(options){\n        var opts=options;\n        try{\n          if(opts&&typeof opts==='object'){\n            var next={};for(var k in opts)next[k]=opts[k];\n            var success=opts.success;\n            next.success=function(res){summarizeApiResult(name,res);return success&&success(res);};\n            opts=next;\n          }\n        }catch(e){}\n        var result=orig.call(api,opts);\n        try{if(result&&typeof result.then==='function')result.then(function(res){summarizeApiResult(name,res);return res;});}catch(e){}\n        return result;\n      };\n      wrapped.__far2FriendHook=true;\n      api[name]=wrapped;\n    }catch(e){}\n  }\n  function hookTask(task,api){\n    try{\n      if(!task||seenTasks.indexOf(task)>=0)return task;\n      seenTasks.push(task);\n      if(typeof task.onMessage==='function'){var om=task.onMessage;task.onMessage=function(cb){return om.call(task,function(res){try{record('i',res&&res.data!==undefined?res.data:res,api);}catch(e){}return cb&&cb(res);});};}\n      if(typeof task.send==='function'){var os=task.send;task.send=function(options){try{record('o',options&&options.data!==undefined?options.data:options,api);}catch(e){}return os.apply(task,arguments);};}\n    }catch(e){}\n    return task;\n  }\n  function installApi(api,label){\n    if(!api||installedApis.indexOf(api)>=0)return;\n    installedApis.push(api);\n    addSink(api);\n    try{if(typeof api.connectSocket==='function'&&!api.connectSocket.__far2FriendHook){var oc=api.connectSocket;var wc=function(){return hookTask(oc.apply(api,arguments),api);};wc.__far2FriendHook=true;api.connectSocket=wc;}}catch(e){}\n    try{if(typeof api.onSocketMessage==='function'&&!api.onSocketMessage.__far2FriendHook){var oo=api.onSocketMessage;var wo=function(cb){return oo.call(api,function(res){try{record('i',res&&res.data!==undefined?res.data:res,api);}catch(e){}return cb&&cb(res);});};wo.__far2FriendHook=true;api.onSocketMessage=wo;}}catch(e){}\n    hookSocialApi(api,'getFriendCloudStorage');\n    hookSocialApi(api,'getPotentialFriendList');\n    hookSocialApi(api,'getGroupCloudStorage');\n    hookSocialApi(api,'getUserCloudStorage');\n    writeMeta('installed='+label);\n  }\n  function installWebSocket(api){\n    if(webSocketHooked)return;\n    var g=null,NW=null;\n    try{g=typeof globalThis!=='undefined'?globalThis:null;NW=g&&g.WebSocket?g.WebSocket:(typeof WebSocket!=='undefined'?WebSocket:null);}catch(e){}\n    if(!NW)return;\n    try{\n      var FW=function(){\n        var args=Array.prototype.slice.call(arguments);\n        var ws=null;\n        try{ws=typeof Reflect!=='undefined'&&Reflect.construct?Reflect.construct(NW,args):new (Function.prototype.bind.apply(NW,[null].concat(args)))();}catch(e){return new (Function.prototype.bind.apply(NW,[null].concat(args)))();}\n        try{if(typeof ws.addEventListener==='function')ws.addEventListener('message',function(ev){record('i',ev&&ev.data,api);});}catch(e){}\n        try{if(typeof ws.send==='function'){var os=ws.send;ws.send=function(data){try{record('o',data,api);}catch(e){}return os.apply(ws,arguments);};}}catch(e){}\n        return ws;\n      };\n      FW.prototype=NW.prototype;try{Object.setPrototypeOf(FW,NW);}catch(e){}\n      if(g)g.WebSocket=FW;else WebSocket=FW;\n      webSocketHooked=true;writeMeta('installed=WebSocket');\n    }catch(e){}\n  }\n  function closeFarm(){\n    var q=null,w=null;try{if(typeof qq!=='undefined'&&qq)q=qq;}catch(e){}try{if(typeof wx!=='undefined'&&wx)w=wx;}catch(e){}\n    var list=[q,w];for(var i=0;i<list.length;i++){var api=list[i];if(!api)continue;try{if(typeof api.exitMiniProgram==='function')return api.exitMiniProgram();}catch(e){}try{if(typeof api.exitMiniApp==='function')return api.exitMiniApp();}catch(e){}}\n  }\n  function run(){\n    tries++;var q=null,w=null;\n    try{if(typeof qq!=='undefined'&&qq)q=qq;}catch(e){}\n    try{if(typeof wx!=='undefined'&&wx)w=wx;}catch(e){}\n    if(q)installApi(q,'qq');if(w)installApi(w,'wx');installWebSocket(q||w);\n    if(tries<120)setTimeout(run,50);\n  }\n  run();\n  setTimeout(closeFarm,${captureWindowMs});\n})();\n`;
 }
 
 function patchGameFiles(options = {}) {
@@ -155,8 +154,9 @@ function decodeFriendBody(body, candidates) {
     return [];
 }
 
-async function decodeFriendFrame(frame) {
+async function decodeCapturedFrame(entry) {
     const p = ensureParser();
+    const frame = entry && entry.frame ? entry.frame : entry;
     let msg;
     try {
         msg = p.GateMessage.decode(frame);
@@ -164,31 +164,50 @@ async function decodeFriendFrame(frame) {
         return null;
     }
     const meta = msg && msg.meta;
-    if (!meta || Number(meta.message_type) !== 2) return null;
+    if (!meta) return null;
+
     const serviceName = String(meta.service_name || '');
     const methodName = String(meta.method_name || '');
-    if (!/friendpb\.FriendService/i.test(serviceName) && !/FriendService/i.test(serviceName)) return null;
-    if (!msg.body || !msg.body.length) return { methodName, gids: [] };
+    const messageType = Number(meta.message_type) || 0;
+    if (!serviceName && !methodName) return null;
+
+    const decoded = {
+        direction: String(entry && entry.direction || '?'),
+        serviceName,
+        methodName,
+        messageType,
+        gids: [],
+    };
+
+    if (messageType !== 2) return decoded;
+    if (!/friendpb\.FriendService/i.test(serviceName) && !/FriendService/i.test(serviceName)) return decoded;
+    if (!msg.body || !msg.body.length) return decoded;
 
     const candidates = methodName === 'SyncAll'
         ? [p.SyncAllReply, p.GetAllReply]
         : [p.GetAllReply, p.SyncAllReply];
     const rawBody = Buffer.from(msg.body);
 
-    // Current FAR2 protocol receives response bodies as plaintext protobuf. Keep a
-    // decrypt fallback only for a future server/client variant that wraps replies too.
-    let gids = decodeFriendBody(rawBody, candidates);
-    if (gids.length > 0) return { methodName, gids };
+    decoded.gids = decodeFriendBody(rawBody, candidates);
+    if (decoded.gids.length > 0) return decoded;
 
     try {
         const decrypted = await cryptoWasm.decryptBuffer(rawBody);
-        gids = decodeFriendBody(decrypted, candidates);
+        decoded.gids = decodeFriendBody(decrypted, candidates);
     } catch {}
-    return { methodName, gids };
+    return decoded;
 }
 
-async function readCapturedFrames(seen) {
-    const frames = [];
+async function decodeFriendFrame(frame) {
+    const decoded = await decodeCapturedFrame({ direction: '?', frame });
+    if (!decoded) return null;
+    if (decoded.messageType !== 2) return null;
+    if (!/friendpb\.FriendService/i.test(decoded.serviceName) && !/FriendService/i.test(decoded.serviceName)) return null;
+    return { methodName: decoded.methodName, gids: decoded.gids };
+}
+
+async function readCapturedEntries(seen, metaLines) {
+    const entries = [];
     for (const file of listArtifactFiles()) {
         let text = '';
         try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
@@ -196,13 +215,29 @@ async function readCapturedFrames(seen) {
             const line = rawLine.trim();
             if (!line || seen.has(line)) continue;
             seen.add(line);
+
+            const tab = line.indexOf('\t');
+            const kind = tab >= 0 ? line.slice(0, tab) : 'i';
+            const payload = tab >= 0 ? line.slice(tab + 1) : line;
+            if (kind === 'm') {
+                if (metaLines && payload && !metaLines.includes(payload)) metaLines.push(payload);
+                continue;
+            }
+            if (kind !== 'i' && kind !== 'o') continue;
             try {
-                const frame = Buffer.from(line, 'base64');
-                if (frame.length > 0) frames.push(frame);
+                const frame = Buffer.from(payload, 'base64');
+                if (frame.length > 0) entries.push({ direction: kind, frame });
             } catch {}
         }
     }
-    return frames;
+    return entries;
+}
+
+function summarizeObserved(observedCounts, limit = 18) {
+    return [...observedCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([key, count]) => `${key}x${count}`);
 }
 
 async function waitForFriendGids(startedAt, timeoutMs) {
@@ -210,27 +245,48 @@ async function waitForFriendGids(startedAt, timeoutMs) {
     const seen = new Set();
     const gids = new Set();
     const methods = new Set();
+    const observedCounts = new Map();
+    const metaLines = [];
     let lastNewAt = 0;
 
     while (Date.now() < deadline) {
-        const frames = await readCapturedFrames(seen);
-        for (const frame of frames) {
-            const decoded = await decodeFriendFrame(frame);
+        const entries = await readCapturedEntries(seen, metaLines);
+        for (const entry of entries) {
+            const decoded = await decodeCapturedFrame(entry);
             if (!decoded) continue;
-            if (decoded.methodName) methods.add(decoded.methodName);
+
+            const key = `${decoded.direction}:${decoded.serviceName}.${decoded.methodName}[${decoded.messageType}]`;
+            observedCounts.set(key, (observedCounts.get(key) || 0) + 1);
+
+            if (/FriendService/i.test(decoded.serviceName) && decoded.methodName) {
+                methods.add(decoded.methodName);
+            }
             const before = gids.size;
             decoded.gids.forEach(gid => gids.add(gid));
             if (gids.size > before) lastNewAt = Date.now();
         }
 
         if (gids.size > 0 && lastNewAt > 0 && Date.now() - lastNewAt >= 1800) {
-            return { gids: [...gids], methods: [...methods], frameCount: seen.size, startedAt };
+            return {
+                gids: [...gids],
+                methods: [...methods],
+                frameCount: seen.size,
+                observed: summarizeObserved(observedCounts),
+                metaLines: metaLines.slice(0, 20),
+                startedAt,
+            };
         }
         await sleep(200);
     }
 
-    if (gids.size > 0) return { gids: [...gids], methods: [...methods], frameCount: seen.size, startedAt };
-    return null;
+    return {
+        gids: [...gids],
+        methods: [...methods],
+        frameCount: seen.size,
+        observed: summarizeObserved(observedCounts),
+        metaLines: metaLines.slice(0, 20),
+        startedAt,
+    };
 }
 
 async function doCapture(options = {}) {
@@ -258,12 +314,18 @@ async function doCapture(options = {}) {
         }
 
         const captured = await waitForFriendGids(startedAt, timeoutMs);
-        if (!captured || !captured.gids.length) {
-            const err = new Error('等待 QQ 农场 FriendService 返回好友列表超时');
+        if (!captured.gids.length) {
+            if (log) {
+                log(`好友采集未命中：frames=${captured.frameCount} observed=${captured.observed.join(' | ') || '-'} hooks=${captured.metaLines.join(' | ') || '-'}`);
+            }
+            const err = new Error('等待 QQ 农场好友数据超时');
             err.code = 'friend_capture_timeout';
+            err.captureDiagnostics = captured;
             throw err;
         }
-        if (log) log(`好友采集完成 count=${captured.gids.length} methods=${captured.methods.join(',') || '-'}`);
+        if (log) {
+            log(`好友采集完成 count=${captured.gids.length} methods=${captured.methods.join(',') || '-'} observed=${captured.observed.join(' | ') || '-'}`);
+        }
         return {
             gids: captured.gids,
             source: 'windows_qq_runtime_friend_service',
