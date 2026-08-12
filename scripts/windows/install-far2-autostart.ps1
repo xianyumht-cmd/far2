@@ -261,9 +261,13 @@ function Select-AgentPort {
     }
 
     if ($Targets.Contains($SelectedUin)) {
+        $existingUrl = [string]$Targets[$SelectedUin]['url']
         $existing = Get-PortFromTarget -Target $Targets[$SelectedUin]
         if ($existing -gt 0 -and -not $usedByOther.Contains($existing)) {
             return $existing
+        }
+        if ($existingUrl) {
+            throw "QQ $SelectedUin already has a non-loopback or invalid Provider URL. Pass -AgentPort explicitly only if you intend to replace that target with a local Windows Session Agent."
         }
     }
 
