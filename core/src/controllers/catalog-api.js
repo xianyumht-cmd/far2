@@ -26,18 +26,25 @@ function registerCatalogApi(app, options = {}) {
         return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err || 'unknown') });
     }
 
+    async function runCatalogActionForAccount(accountId, payload) {
+        if (!provider || typeof provider.getShopInfo !== 'function') {
+            const err = new Error('Catalog action unavailable');
+            err.statusCode = 503;
+            throw err;
+        }
+        return provider.getShopInfo(accountId, payload);
+    }
+
     async function runCatalogAction(req, res, action) {
         const accountId = requireAccount(req, res);
         if (!accountId) return;
         try {
-            if (!provider || typeof provider.getShopInfo !== 'function') {
-                return res.status(503).json({ ok: false, error: 'Catalog action unavailable' });
-            }
             const payload = { action, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
-            const data = await provider.getShopInfo(accountId, payload);
+            const data = await runCatalogActionForAccount(accountId, payload);
             return res.json({ ok: true, data });
         }
         catch (err) {
+            if (err && err.statusCode === 503) return res.status(503).json({ ok: false, error: err.message });
             return fail(res, err);
         }
     }
@@ -74,7 +81,32 @@ function registerCatalogApi(app, options = {}) {
     });
 
     app.post('/api/catalog/illustrated/buy-missing-seeds', async (req, res) => {
-        return runCatalogAction(req, res, 'buyAllMissingIllustratedSeeds');
+        const accountId = requireAccount(req, res);
+        if (!accountId) return;
+        const expectedBuyable = Number(req.body && req.body.expectedBuyable);
+        const expectedTotalCost = Number(req.body && req.body.expectedTotalCost);
+        if (!Number.isSafeInteger(expectedBuyable) || expectedBuyable < 0
+            || !Number.isSafeInteger(expectedTotalCost) || expectedTotalCost < 0) {
+            return res.status(400).json({ ok: false, error: 'Missing purchase confirmation snapshot' });
+        }
+        try {
+            const plan = await runCatalogActionForAccount(accountId, { action: 'getMissingSeedPurchasePlan' });
+            const actualBuyable = Number(plan && plan.summary && plan.summary.buyable) || 0;
+            const actualTotalCost = Number(plan && plan.summary && plan.summary.totalCost) || 0;
+            if (actualBuyable !== expectedBuyable || actualTotalCost !== expectedTotalCost) {
+                return res.status(409).json({
+                    ok: false,
+                    error: '购买清单已变化，请重新读取后再确认',
+                    data: { actualBuyable, actualTotalCost },
+                });
+            }
+            const data = await runCatalogActionForAccount(accountId, { action: 'buyAllMissingIllustratedSeeds' });
+            return res.json({ ok: true, data });
+        }
+        catch (err) {
+            if (err && err.statusCode === 503) return res.status(503).json({ ok: false, error: err.message });
+            return fail(res, err);
+        }
     });
 
     app.get('/api/catalog/shops', async (req, res) => {
