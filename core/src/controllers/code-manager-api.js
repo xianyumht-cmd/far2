@@ -82,7 +82,11 @@ function registerCodeManagerApi(app, options = {}) {
         const rawCodeStatus = typeof provider.getCodeManagerStatus === 'function'
             ? (provider.getCodeManagerStatus('') || {})
             : {};
-        const codeAccounts = new Map((Array.isArray(rawCodeStatus.accounts) ? rawCodeStatus.accounts : [])
+        const allCodeAccounts = Array.isArray(rawCodeStatus.accounts) ? rawCodeStatus.accounts : [];
+        const accessibleCodeAccounts = allowed
+            ? allCodeAccounts.filter(item => allowed.has(String(item.accountId || '')))
+            : allCodeAccounts;
+        const codeAccounts = new Map(accessibleCodeAccounts
             .map(item => [String(item.accountId || ''), item]));
         const accountEvents = typeof provider.getAccountLogs === 'function'
             ? (provider.getAccountLogs(300) || [])
@@ -106,6 +110,9 @@ function registerCodeManagerApi(app, options = {}) {
             const friendGidCount = friendLog ? Math.max(0, Number(friendLog.totalKnownGids ?? friendLog.capturedGidCount) || 0) : null;
             const friendOpenIdCount = friendLog ? Math.max(0, Number(friendLog.capturedOpenIdCount) || 0) : null;
             const friendImported = !!friendLog && ((friendGidCount || 0) > 0 || (friendOpenIdCount || 0) > 0);
+            const friendCapturedAt = friendLog
+                ? (Number(friendLog.capturedAt) || Number(friendLog.ts) || Date.parse(String(friendLog.time || '').replace(' ', 'T')) || 0)
+                : 0;
             const recentEvents = accountEvents
                 .filter(entry => String(entry.accountId || '') === accountId)
                 .filter(entry => /^(code_refresh_|ws_400|kickout)/.test(String(entry.action || '')))
@@ -182,7 +189,7 @@ function registerCodeManagerApi(app, options = {}) {
                     openIdCount: friendOpenIdCount,
                     addedGidCount: friendLog ? Math.max(0, Number(friendLog.addedCount) || 0) : null,
                     source: friendLog ? String(friendLog.source || '') : '',
-                    capturedAt: friendLog ? Number(friendLog.capturedAt) || 0 : 0,
+                    capturedAt: friendCapturedAt,
                 },
                 recentEvents,
             };
@@ -221,7 +228,7 @@ function registerCodeManagerApi(app, options = {}) {
                 started: !!rawCodeStatus.started,
                 globalEnabled: !!rawCodeStatus.globalEnabled,
                 provider: String(rawCodeStatus.provider || ''),
-                configuredCount: Number(rawCodeStatus.configuredCount) || 0,
+                configuredCount: accessibleCodeAccounts.length,
             },
             accounts: rows,
         };
