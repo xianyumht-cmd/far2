@@ -11,6 +11,12 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
+  // Catalog reads are intentionally serialized on the backend because they share
+  // the Farm websocket with patrol/task/friend loops. Give only these endpoints
+  // enough time to wait for the per-account catalog queue; keep all other APIs at 10s.
+  if (String(config.url || '').startsWith('/api/catalog/'))
+    config.timeout = 30000
+
   const token = tokenRef.value
   if (token) {
     config.headers['x-admin-token'] = token

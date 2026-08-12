@@ -17,6 +17,7 @@ interface IllustratedItem {
   rewardScore: number
   harvestCount: number
   hasReward: boolean
+  rewardFlag?: boolean
 }
 
 interface IllustratedData {
@@ -28,6 +29,8 @@ interface IllustratedData {
     unlocked: number
     locked: number
     rewardReady: number
+    rewardFlagged?: number
+    rewardSemanticsVerified?: boolean
     currentScore: number
     level: number
     currentTier: number
@@ -42,6 +45,7 @@ interface IllustratedData {
     schema: string
     decodeMode: string
     decodeWarning?: string
+    rewardSemantics?: string
   }
 }
 
@@ -122,7 +126,7 @@ const shopsError = ref('')
 const actionMessage = ref('')
 const actionError = ref('')
 const search = ref('')
-const illustratedFilter = ref<'all' | 'unlocked' | 'locked' | 'reward' | 'buyable'>('all')
+const illustratedFilter = ref<'all' | 'unlocked' | 'locked' | 'buyable'>('all')
 
 const planByFruitId = computed(() => {
   const map = new Map<number, PurchasePlanItem>()
@@ -138,8 +142,6 @@ const filteredIllustrated = computed(() => {
     if (illustratedFilter.value === 'unlocked' && !item.unlocked)
       return false
     if (illustratedFilter.value === 'locked' && item.unlocked)
-      return false
-    if (illustratedFilter.value === 'reward' && !item.hasReward)
       return false
     if (illustratedFilter.value === 'buyable' && !plan?.canBuy)
       return false
@@ -194,6 +196,7 @@ async function loadIllustrated() {
 }
 
 async function loadPurchasePlan() {
+  clearActionState()
   planLoading.value = true
   try {
     const res = await api.get('/api/catalog/illustrated/purchase-plan')
@@ -210,33 +213,11 @@ async function loadPurchasePlan() {
   }
 }
 
-async function loadIllustratedWorkspace() {
+async function refreshIllustratedWorkspace() {
   clearActionState()
-  await Promise.all([loadIllustrated(), loadPurchasePlan()])
-}
-
-async function claimRewards() {
-  const count = illustrated.value?.summary.rewardReady || 0
-  if (count <= 0)
-    return
-  if (!window.confirm(`当前有 ${count} 个图鉴条目可领奖。确认领取全部可领取奖励？`))
-    return
-  clearActionState()
-  actionLoading.value = 'claim'
-  try {
-    const res = await api.post('/api/catalog/illustrated/claim', {})
-    if (!res.data?.ok)
-      throw new Error(res.data?.error || '领取失败')
-    const data = res.data.data || {}
-    actionMessage.value = `图鉴奖励领取完成：返回 ${numberText(data.totalKinds || 0)} 类奖励，共 ${numberText(data.totalCount || 0)} 件。`
-    await Promise.all([loadIllustrated(), loadPurchasePlan()])
-  }
-  catch (error: any) {
-    actionError.value = errorText(error, '图鉴奖励领取失败')
-  }
-  finally {
-    actionLoading.value = ''
-  }
+  await loadIllustrated()
+  if (purchasePlan.value)
+    await loadPurchasePlan()
 }
 
 async function buyOneSeed(item: PurchasePlanItem) {
@@ -341,19 +322,19 @@ async function switchTab(tab: 'illustrated' | 'shops') {
   activeTab.value = tab
   clearActionState()
   if (tab === 'illustrated' && !illustrated.value && !illustratedLoading.value)
-    await loadIllustratedWorkspace()
+    await loadIllustrated()
   if (tab === 'shops' && !shops.value && !shopsLoading.value)
     await loadShops()
 }
 
 async function refreshCurrent() {
   if (activeTab.value === 'illustrated')
-    await loadIllustratedWorkspace()
+    await refreshIllustratedWorkspace()
   else
     await loadShops()
 }
 
-onMounted(() => loadIllustratedWorkspace())
+onMounted(() => loadIllustrated())
 </script>
 
 <template>
@@ -365,7 +346,7 @@ onMounted(() => loadIllustratedWorkspace())
           <h1 class="text-2xl font-bold">图鉴与商店</h1>
         </div>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          作物图鉴、奖励与缺失种子补齐；购买只允许当前种子商店，并自动跳过背包已有种子。
+          默认只读取作物图鉴；缺失种子和商店按需读取，避免影响正在运行的巡田、好友和任务请求。
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -432,26 +413,17 @@ onMounted(() => loadIllustratedWorkspace())
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div class="text-xs text-gray-500">当前 Tier</div><div class="mt-1 text-2xl font-bold">{{ illustrated.summary.currentTier }}</div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">可领奖</div><div class="mt-1 text-2xl font-bold text-amber-600">{{ illustrated.summary.rewardReady }}</div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <div class="text-xs text-amber-700 dark:text-amber-300">奖励状态</div>
+          <div class="mt-1 text-xl font-bold text-amber-700 dark:text-amber-300">待确认</div>
         </div>
       </div>
 
       <div v-if="illustrated" class="grid gap-3 lg:grid-cols-2">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div class="font-semibold">图鉴奖励</div>
-              <div class="mt-1 text-xs text-gray-500">一次领取当前全部可领取图鉴奖励。</div>
-            </div>
-            <button
-              class="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              :style="{ background: 'var(--theme-primary)' }"
-              :disabled="busy || illustrated.summary.rewardReady <= 0"
-              @click="claimRewards"
-            >
-              {{ actionLoading === 'claim' ? '领取中...' : `领取 ${illustrated.summary.rewardReady} 个奖励` }}
-            </button>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <div class="font-semibold text-amber-800 dark:text-amber-300">图鉴奖励暂不开放领取</div>
+          <div class="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-400">
+            当前协议里的奖励标记不能可靠区分“已领取”和“未领取”。在字段语义完成实机确认前，领取接口已锁定，不会向游戏发送领奖请求。
           </div>
         </div>
 
@@ -462,15 +434,36 @@ onMounted(() => loadIllustratedWorkspace())
               <div v-if="purchasePlan" class="mt-1 text-xs text-gray-500">
                 未解锁 {{ purchasePlan.summary.locked }} · 背包已有 {{ purchasePlan.summary.alreadyOwned }} · 可买 {{ purchasePlan.summary.buyable }} · 预计 {{ numberText(purchasePlan.summary.totalCost) }} 金币
               </div>
-              <div v-else class="mt-1 text-xs text-gray-500">{{ planLoading ? '正在分析种子商店与背包...' : '暂无购买清单' }}</div>
+              <div v-else class="mt-1 text-xs text-gray-500">
+                {{ planLoading ? '正在串行分析图鉴、种子商店和背包...' : '按需分析，不会在打开页面时自动追加多组游戏请求。' }}
+              </div>
             </div>
-            <button
-              class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
-              :disabled="busy || !purchasePlan || purchasePlan.summary.buyable <= 0"
-              @click="buyAllMissingSeeds"
-            >
-              {{ actionLoading === 'buy-all' ? '购买中...' : '一键各买 1 份' }}
-            </button>
+            <div class="flex gap-2">
+              <button
+                v-if="!purchasePlan"
+                class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                :disabled="busy"
+                @click="loadPurchasePlan"
+              >
+                {{ planLoading ? '分析中...' : '分析缺失种子' }}
+              </button>
+              <button
+                v-else
+                class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                :disabled="busy"
+                @click="loadPurchasePlan"
+              >
+                重新分析
+              </button>
+              <button
+                v-if="purchasePlan"
+                class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                :disabled="busy || purchasePlan.summary.buyable <= 0"
+                @click="buyAllMissingSeeds"
+              >
+                {{ actionLoading === 'buy-all' ? '购买中...' : '一键各买 1 份' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -486,7 +479,6 @@ onMounted(() => loadIllustratedWorkspace())
               { key: 'all', label: '全部' },
               { key: 'unlocked', label: '已解锁' },
               { key: 'locked', label: '未解锁' },
-              { key: 'reward', label: '可领奖' },
               { key: 'buyable', label: '缺失可买' },
             ]"
             :key="item.key"
@@ -515,7 +507,6 @@ onMounted(() => loadIllustratedWorkspace())
           class="relative overflow-hidden rounded-xl border bg-white p-3 dark:bg-gray-800"
           :class="item.unlocked ? 'border-gray-200 dark:border-gray-700' : 'border-dashed border-gray-300 dark:border-gray-600'"
         >
-          <div v-if="item.hasReward" class="absolute right-2 top-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">可领奖</div>
           <div class="h-20 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-900/40">
             <img v-if="item.image" :src="item.image" :alt="item.name" class="max-h-16 max-w-16 object-contain">
             <div v-else class="i-carbon-sprout text-3xl text-gray-300" />

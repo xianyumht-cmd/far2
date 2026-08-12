@@ -376,6 +376,16 @@ function createWorkerManager(options) {
         }
     }
 
+    function getWorkerApiTimeoutMs(method) {
+        // Catalog reads/actions can intentionally contain several sequential Farm RPCs.
+        // They are serialized per account by catalog-api; give that safe queue time to finish
+        // without changing the normal 10s timeout used by other admin APIs.
+        if (['getIllustrated', 'getShopProfiles', 'getShopInfo'].includes(String(method || ''))) {
+            return 30000;
+        }
+        return 10000;
+    }
+
     function callWorkerApi(accountId, method, ...args) {
         const worker = workers[accountId];
         if (!worker) return Promise.reject(new Error('账号未运行'));
@@ -385,7 +395,8 @@ function createWorkerManager(options) {
             worker.requests.set(id, { resolve, reject });
 
             // 超时处理
-            managerScheduler.setTimeoutTask(`api_timeout_${accountId}_${id}`, 10000, () => {
+            const timeoutMs = getWorkerApiTimeoutMs(method);
+            managerScheduler.setTimeoutTask(`api_timeout_${accountId}_${id}`, timeoutMs, () => {
                 if (worker.requests.has(id)) {
                     worker.requests.delete(id);
                     reject(new Error('API Timeout'));
