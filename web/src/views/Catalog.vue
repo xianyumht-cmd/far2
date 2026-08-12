@@ -5,6 +5,8 @@ import api from '@/api'
 import { useAccountStore } from '@/stores/account'
 
 interface IllustratedItem {
+  illustratedId: number
+  fruitId: number
   seedId: number
   name: string
   image: string
@@ -43,6 +45,33 @@ interface IllustratedData {
   }
 }
 
+interface PurchasePlanItem {
+  fruitId: number
+  seedId: number
+  name: string
+  image: string
+  illustratedTier: number
+  ownedCount: number
+  canBuy: boolean
+  reason: string
+  goodsId: number
+  price: number
+  itemCount: number
+  boughtNum: number
+  limitCount: number
+}
+
+interface PurchasePlan {
+  shop: { shopId: number, shopName: string, shopType: number, shopTypeLabel: string }
+  items: PurchasePlanItem[]
+  summary: {
+    locked: number
+    alreadyOwned: number
+    buyable: number
+    totalCost: number
+  }
+}
+
 interface ShopProfile {
   shopId: number
   shopName: string
@@ -52,12 +81,7 @@ interface ShopProfile {
 
 interface ShopProfilesData {
   shops: ShopProfile[]
-  summary: {
-    total: number
-    seedShops: number
-    petShops: number
-    itemShops: number
-  }
+  summary: { total: number, seedShops: number, petShops: number, itemShops: number }
 }
 
 interface ShopGoods {
@@ -76,12 +100,7 @@ interface ShopGoods {
 interface ShopInfoData {
   shopId: number
   goods: ShopGoods[]
-  summary: {
-    total: number
-    unlocked: number
-    locked: number
-    limited: number
-  }
+  summary: { total: number, unlocked: number, locked: number, limited: number }
 }
 
 const accountStore = useAccountStore()
@@ -89,33 +108,51 @@ const { currentAccount } = storeToRefs(accountStore)
 
 const activeTab = ref<'illustrated' | 'shops'>('illustrated')
 const illustrated = ref<IllustratedData | null>(null)
+const purchasePlan = ref<PurchasePlan | null>(null)
 const shops = ref<ShopProfilesData | null>(null)
 const shopInfo = ref<ShopInfoData | null>(null)
 const selectedShopId = ref(0)
 const illustratedLoading = ref(false)
+const planLoading = ref(false)
 const shopsLoading = ref(false)
 const shopInfoLoading = ref(false)
+const actionLoading = ref('')
 const illustratedError = ref('')
 const shopsError = ref('')
+const actionMessage = ref('')
+const actionError = ref('')
 const search = ref('')
-const illustratedFilter = ref<'all' | 'unlocked' | 'locked' | 'reward'>('all')
+const illustratedFilter = ref<'all' | 'unlocked' | 'locked' | 'reward' | 'buyable'>('all')
+
+const planByFruitId = computed(() => {
+  const map = new Map<number, PurchasePlanItem>()
+  for (const item of purchasePlan.value?.items || [])
+    map.set(item.fruitId, item)
+  return map
+})
 
 const filteredIllustrated = computed(() => {
   const keyword = search.value.trim().toLowerCase()
   return (illustrated.value?.items || []).filter((item) => {
+    const plan = planByFruitId.value.get(item.fruitId)
     if (illustratedFilter.value === 'unlocked' && !item.unlocked)
       return false
     if (illustratedFilter.value === 'locked' && item.unlocked)
       return false
     if (illustratedFilter.value === 'reward' && !item.hasReward)
       return false
+    if (illustratedFilter.value === 'buyable' && !plan?.canBuy)
+      return false
     if (!keyword)
       return true
-    return item.name.toLowerCase().includes(keyword) || String(item.seedId).includes(keyword)
+    return item.name.toLowerCase().includes(keyword)
+      || String(item.fruitId).includes(keyword)
+      || String(item.seedId).includes(keyword)
   })
 })
 
 const selectedShop = computed(() => (shops.value?.shops || []).find(shop => shop.shopId === selectedShopId.value) || null)
+const busy = computed(() => illustratedLoading.value || planLoading.value || shopsLoading.value || shopInfoLoading.value || !!actionLoading.value)
 
 function errorText(error: any, fallback: string) {
   return String(error?.response?.data?.error || error?.response?.data?.message || error?.message || fallback)
@@ -133,6 +170,11 @@ function conditionText(condition: { type: number, param: number }) {
   return `条件${condition.type}:${condition.param}`
 }
 
+function clearActionState() {
+  actionMessage.value = ''
+  actionError.value = ''
+}
+
 async function loadIllustrated() {
   illustratedLoading.value = true
   illustratedError.value = ''
@@ -148,6 +190,102 @@ async function loadIllustrated() {
   }
   finally {
     illustratedLoading.value = false
+  }
+}
+
+async function loadPurchasePlan() {
+  planLoading.value = true
+  try {
+    const res = await api.get('/api/catalog/illustrated/purchase-plan')
+    if (!res.data?.ok)
+      throw new Error(res.data?.error || '缺失种子分析失败')
+    purchasePlan.value = res.data.data
+  }
+  catch (error: any) {
+    purchasePlan.value = null
+    actionError.value = errorText(error, '缺失种子分析失败')
+  }
+  finally {
+    planLoading.value = false
+  }
+}
+
+async function loadIllustratedWorkspace() {
+  clearActionState()
+  await Promise.all([loadIllustrated(), loadPurchasePlan()])
+}
+
+async function claimRewards() {
+  const count = illustrated.value?.summary.rewardReady || 0
+  if (count <= 0)
+    return
+  if (!window.confirm(`当前有 ${count} 个图鉴条目可领奖。确认领取全部可领取奖励？`))
+    return
+  clearActionState()
+  actionLoading.value = 'claim'
+  try {
+    const res = await api.post('/api/catalog/illustrated/claim', {})
+    if (!res.data?.ok)
+      throw new Error(res.data?.error || '领取失败')
+    const data = res.data.data || {}
+    actionMessage.value = `图鉴奖励领取完成：返回 ${numberText(data.totalKinds || 0)} 类奖励，共 ${numberText(data.totalCount || 0)} 件。`
+    await Promise.all([loadIllustrated(), loadPurchasePlan()])
+  }
+  catch (error: any) {
+    actionError.value = errorText(error, '图鉴奖励领取失败')
+  }
+  finally {
+    actionLoading.value = ''
+  }
+}
+
+async function buyOneSeed(item: PurchasePlanItem) {
+  if (!item.canBuy || !item.goodsId)
+    return
+  if (!window.confirm(`购买「${item.name}」对应种子 1 份？\n价格：${numberText(item.price)} 金币`))
+    return
+  clearActionState()
+  actionLoading.value = `buy-${item.goodsId}`
+  try {
+    const res = await api.post('/api/catalog/illustrated/buy-seed', { goodsId: item.goodsId })
+    if (!res.data?.ok)
+      throw new Error(res.data?.error || '购买失败')
+    actionMessage.value = `已购买 ${item.name} 对应种子 1 份，价格 ${numberText(item.price)} 金币。`
+    await loadPurchasePlan()
+  }
+  catch (error: any) {
+    actionError.value = errorText(error, '购买种子失败')
+  }
+  finally {
+    actionLoading.value = ''
+  }
+}
+
+async function buyAllMissingSeeds() {
+  const summary = purchasePlan.value?.summary
+  if (!summary || summary.buyable <= 0)
+    return
+  const message = `将为当前未解锁图鉴中“背包没有、商店已解锁”的 ${summary.buyable} 种种子各买 1 份。\n预计总价：${numberText(summary.totalCost)} 金币。\n\n确认继续？`
+  if (!window.confirm(message))
+    return
+  clearActionState()
+  actionLoading.value = 'buy-all'
+  try {
+    const res = await api.post('/api/catalog/illustrated/buy-missing-seeds', {
+      expectedBuyable: summary.buyable,
+      expectedTotalCost: summary.totalCost,
+    })
+    if (!res.data?.ok)
+      throw new Error(res.data?.error || '批量购买失败')
+    const data = res.data.data || {}
+    actionMessage.value = `一键购买完成：成功 ${data.successCount || 0}，失败 ${data.failCount || 0}，预计消耗 ${numberText(data.spentEstimate || 0)} 金币。`
+    await loadPurchasePlan()
+  }
+  catch (error: any) {
+    actionError.value = errorText(error, '批量购买种子失败')
+  }
+  finally {
+    actionLoading.value = ''
   }
 }
 
@@ -201,20 +339,21 @@ async function loadShops() {
 
 async function switchTab(tab: 'illustrated' | 'shops') {
   activeTab.value = tab
+  clearActionState()
   if (tab === 'illustrated' && !illustrated.value && !illustratedLoading.value)
-    await loadIllustrated()
+    await loadIllustratedWorkspace()
   if (tab === 'shops' && !shops.value && !shopsLoading.value)
     await loadShops()
 }
 
 async function refreshCurrent() {
   if (activeTab.value === 'illustrated')
-    await loadIllustrated()
+    await loadIllustratedWorkspace()
   else
     await loadShops()
 }
 
-onMounted(() => loadIllustrated())
+onMounted(() => loadIllustratedWorkspace())
 </script>
 
 <template>
@@ -226,7 +365,7 @@ onMounted(() => loadIllustrated())
           <h1 class="text-2xl font-bold">图鉴与商店</h1>
         </div>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          当前仍是只读阶段：读取作物图鉴与商店，不领取奖励、不购买商品。
+          作物图鉴、奖励与缺失种子补齐；购买只允许当前种子商店，并自动跳过背包已有种子。
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -236,22 +375,20 @@ onMounted(() => loadIllustrated())
         <button
           class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-60"
           :style="{ background: 'var(--theme-primary)' }"
-          :disabled="illustratedLoading || shopsLoading || shopInfoLoading"
+          :disabled="busy"
           @click="refreshCurrent"
         >
-          <div class="i-carbon-renew" :class="(illustratedLoading || shopsLoading || shopInfoLoading) ? 'animate-spin' : ''" />
+          <div class="i-carbon-renew" :class="busy ? 'animate-spin' : ''" />
           重新读取
         </button>
       </div>
     </div>
 
-    <div class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-300">
-      <div class="flex items-start gap-2">
-        <div class="i-carbon-information mt-0.5 shrink-0" />
-        <div>
-          图鉴已切换到当前 V2 字段结构。确认读取稳定后，再开放“领取图鉴奖励”和“购买缺失种子”。
-        </div>
-      </div>
+    <div v-if="actionMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+      {{ actionMessage }}
+    </div>
+    <div v-if="actionError" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+      {{ actionError }}
     </div>
 
     <div class="flex gap-2 border-b border-gray-200 dark:border-gray-700">
@@ -269,40 +406,72 @@ onMounted(() => loadIllustrated())
         :style="activeTab === 'shops' ? { color: 'var(--theme-primary)' } : {}"
         @click="switchTab('shops')"
       >
-        商店探测
+        商店
       </button>
     </div>
 
     <template v-if="activeTab === 'illustrated'">
       <div v-if="illustratedError" class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
-        <div class="font-semibold text-red-700 dark:text-red-300">图鉴协议读取失败</div>
+        <div class="font-semibold text-red-700 dark:text-red-300">图鉴读取失败</div>
         <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">{{ illustratedError }}</div>
       </div>
 
       <div v-if="illustrated" class="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">图鉴总数</div>
-          <div class="mt-1 text-2xl font-bold">{{ illustrated.summary.total }}</div>
+          <div class="text-xs text-gray-500">图鉴总数</div><div class="mt-1 text-2xl font-bold">{{ illustrated.summary.total }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">已解锁</div>
-          <div class="mt-1 text-2xl font-bold text-emerald-600">{{ illustrated.summary.unlocked }}</div>
+          <div class="text-xs text-gray-500">已解锁</div><div class="mt-1 text-2xl font-bold text-emerald-600">{{ illustrated.summary.unlocked }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">当前积分</div>
-          <div class="mt-1 text-2xl font-bold">{{ numberText(illustrated.summary.currentScore) }}</div>
+          <div class="text-xs text-gray-500">当前积分</div><div class="mt-1 text-2xl font-bold">{{ numberText(illustrated.summary.currentScore) }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">图鉴等级</div>
-          <div class="mt-1 text-2xl font-bold">Lv{{ illustrated.summary.level }}</div>
+          <div class="text-xs text-gray-500">图鉴等级</div><div class="mt-1 text-2xl font-bold">Lv{{ illustrated.summary.level }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">当前 Tier</div>
-          <div class="mt-1 text-2xl font-bold">{{ illustrated.summary.currentTier }}</div>
+          <div class="text-xs text-gray-500">当前 Tier</div><div class="mt-1 text-2xl font-bold">{{ illustrated.summary.currentTier }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">可领奖</div>
-          <div class="mt-1 text-2xl font-bold text-amber-600">{{ illustrated.summary.rewardReady }}</div>
+          <div class="text-xs text-gray-500">可领奖</div><div class="mt-1 text-2xl font-bold text-amber-600">{{ illustrated.summary.rewardReady }}</div>
+        </div>
+      </div>
+
+      <div v-if="illustrated" class="grid gap-3 lg:grid-cols-2">
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div class="font-semibold">图鉴奖励</div>
+              <div class="mt-1 text-xs text-gray-500">一次领取当前全部可领取图鉴奖励。</div>
+            </div>
+            <button
+              class="rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              :style="{ background: 'var(--theme-primary)' }"
+              :disabled="busy || illustrated.summary.rewardReady <= 0"
+              @click="claimRewards"
+            >
+              {{ actionLoading === 'claim' ? '领取中...' : `领取 ${illustrated.summary.rewardReady} 个奖励` }}
+            </button>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div class="font-semibold">补齐缺失种子</div>
+              <div v-if="purchasePlan" class="mt-1 text-xs text-gray-500">
+                未解锁 {{ purchasePlan.summary.locked }} · 背包已有 {{ purchasePlan.summary.alreadyOwned }} · 可买 {{ purchasePlan.summary.buyable }} · 预计 {{ numberText(purchasePlan.summary.totalCost) }} 金币
+              </div>
+              <div v-else class="mt-1 text-xs text-gray-500">{{ planLoading ? '正在分析种子商店与背包...' : '暂无购买清单' }}</div>
+            </div>
+            <button
+              class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+              :disabled="busy || !purchasePlan || purchasePlan.summary.buyable <= 0"
+              @click="buyAllMissingSeeds"
+            >
+              {{ actionLoading === 'buy-all' ? '购买中...' : '一键各买 1 份' }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -318,6 +487,7 @@ onMounted(() => loadIllustrated())
               { key: 'unlocked', label: '已解锁' },
               { key: 'locked', label: '未解锁' },
               { key: 'reward', label: '可领奖' },
+              { key: 'buyable', label: '缺失可买' },
             ]"
             :key="item.key"
             class="rounded-lg px-3 py-1.5 text-xs font-medium"
@@ -328,33 +498,32 @@ onMounted(() => loadIllustrated())
             {{ item.label }}
           </button>
         </div>
-        <div class="relative sm:w-64">
+        <div class="relative sm:w-72">
           <div class="i-carbon-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input v-model="search" class="w-full border border-gray-200 rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm outline-none dark:border-gray-700" placeholder="搜索名称 / seedId">
+          <input v-model="search" class="w-full border border-gray-200 rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm outline-none dark:border-gray-700" placeholder="搜索名称 / 果实ID / 种子ID">
         </div>
       </div>
 
       <div v-if="illustratedLoading && !illustrated" class="flex items-center justify-center py-20 text-gray-500">
-        <div class="i-carbon-renew mr-2 animate-spin text-xl" />
-        正在读取当前作物图鉴...
+        <div class="i-carbon-renew mr-2 animate-spin text-xl" />正在读取当前作物图鉴...
       </div>
 
       <div v-else-if="illustrated" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         <div
           v-for="item in filteredIllustrated"
-          :key="item.seedId"
+          :key="item.fruitId"
           class="relative overflow-hidden rounded-xl border bg-white p-3 dark:bg-gray-800"
-          :class="item.unlocked ? 'border-gray-200 dark:border-gray-700' : 'border-dashed border-gray-300 opacity-70 dark:border-gray-600'"
+          :class="item.unlocked ? 'border-gray-200 dark:border-gray-700' : 'border-dashed border-gray-300 dark:border-gray-600'"
         >
-          <div v-if="item.hasReward" class="absolute right-2 top-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-            可领奖
-          </div>
+          <div v-if="item.hasReward" class="absolute right-2 top-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">可领奖</div>
           <div class="h-20 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-900/40">
             <img v-if="item.image" :src="item.image" :alt="item.name" class="max-h-16 max-w-16 object-contain">
             <div v-else class="i-carbon-sprout text-3xl text-gray-300" />
           </div>
           <div class="mt-3 truncate text-sm font-semibold" :title="item.name">{{ item.name }}</div>
-          <div class="mt-1 text-[11px] text-gray-400">Seed {{ item.seedId }}</div>
+          <div class="mt-1 text-[11px] text-gray-400">
+            果实 {{ item.fruitId }}<span v-if="item.seedId"> · 种子 {{ item.seedId }}</span>
+          </div>
           <div class="mt-2 flex items-center justify-between text-xs">
             <span :class="item.unlocked ? 'text-emerald-600' : 'text-gray-400'">{{ item.unlocked ? '已解锁' : '未解锁' }}</span>
             <span class="text-gray-400">Tier {{ item.illustratedTier }}</span>
@@ -362,6 +531,25 @@ onMounted(() => loadIllustrated())
           <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] text-gray-500">
             <div>奖励分 {{ numberText(item.rewardScore) }}</div>
             <div>收获 {{ numberText(item.harvestCount) }}</div>
+          </div>
+
+          <div v-if="!item.unlocked && planByFruitId.get(item.fruitId)" class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+            <template v-if="planByFruitId.get(item.fruitId)?.canBuy">
+              <div class="mb-2 flex items-center justify-between text-xs">
+                <span class="text-amber-600">缺失种子</span>
+                <span class="font-medium">{{ numberText(planByFruitId.get(item.fruitId)?.price || 0) }} 金币</span>
+              </div>
+              <button
+                class="w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-700 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                :disabled="busy"
+                @click="buyOneSeed(planByFruitId.get(item.fruitId)!)"
+              >
+                {{ actionLoading === `buy-${planByFruitId.get(item.fruitId)?.goodsId}` ? '购买中...' : '买 1 份种子' }}
+              </button>
+            </template>
+            <div v-else class="text-[11px] text-gray-400">
+              {{ planByFruitId.get(item.fruitId)?.reason || '当前不可购买' }}
+            </div>
           </div>
         </div>
       </div>
@@ -379,23 +567,15 @@ onMounted(() => loadIllustrated())
 
     <template v-else>
       <div v-if="shopsError" class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
-        <div class="font-semibold text-red-700 dark:text-red-300">商店协议读取失败</div>
+        <div class="font-semibold text-red-700 dark:text-red-300">商店读取失败</div>
         <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">{{ shopsError }}</div>
       </div>
 
       <div v-if="shops" class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">商店总数</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.total }}</div>
-        </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">种子商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.seedShops }}</div>
-        </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">道具商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.itemShops }}</div>
-        </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">宠物商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.petShops }}</div>
-        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">商店总数</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.total }}</div></div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">种子商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.seedShops }}</div></div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">道具商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.itemShops }}</div></div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">宠物商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.petShops }}</div></div>
       </div>
 
       <div v-if="shops" class="flex flex-wrap gap-2">
@@ -413,8 +593,7 @@ onMounted(() => loadIllustrated())
       </div>
 
       <div v-if="shopsLoading && !shops" class="flex items-center justify-center py-20 text-gray-500">
-        <div class="i-carbon-renew mr-2 animate-spin text-xl" />
-        正在读取商店协议...
+        <div class="i-carbon-renew mr-2 animate-spin text-xl" />正在读取商店协议...
       </div>
 
       <div v-if="selectedShop && shopInfo" class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -426,10 +605,7 @@ onMounted(() => loadIllustrated())
           <div class="text-xs text-gray-500">商品 {{ shopInfo.summary.total }} · 已解锁 {{ shopInfo.summary.unlocked }} · 限购 {{ shopInfo.summary.limited }}</div>
         </div>
 
-        <div v-if="shopInfoLoading" class="flex items-center justify-center py-12 text-gray-500">
-          <div class="i-carbon-renew mr-2 animate-spin" />读取商品中...
-        </div>
-
+        <div v-if="shopInfoLoading" class="flex items-center justify-center py-12 text-gray-500"><div class="i-carbon-renew mr-2 animate-spin" />读取商品中...</div>
         <div v-else class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div
             v-for="goods in shopInfo.goods"
@@ -449,22 +625,14 @@ onMounted(() => loadIllustrated())
               </div>
             </div>
             <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500">
-              <div>每份 ×{{ goods.itemCount || 1 }}</div>
-              <div>已买 {{ goods.boughtNum }}</div>
-              <div>{{ goods.limitCount > 0 ? `限购 ${goods.limitCount}` : '不限购' }}</div>
-              <div :class="goods.unlocked ? 'text-emerald-600' : 'text-gray-400'">{{ goods.unlocked ? '已解锁' : '未解锁' }}</div>
+              <div>每份 ×{{ goods.itemCount || 1 }}</div><div>已买 {{ goods.boughtNum }}</div>
+              <div>{{ goods.limitCount > 0 ? `限购 ${goods.limitCount}` : '不限购' }}</div><div :class="goods.unlocked ? 'text-emerald-600' : 'text-gray-400'">{{ goods.unlocked ? '已解锁' : '未解锁' }}</div>
             </div>
             <div v-if="goods.conditions.length" class="mt-2 flex flex-wrap gap-1">
-              <span v-for="condition in goods.conditions" :key="`${condition.type}-${condition.param}`" class="rounded bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
-                {{ conditionText(condition) }}
-              </span>
+              <span v-for="condition in goods.conditions" :key="`${condition.type}-${condition.param}`" class="rounded bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">{{ conditionText(condition) }}</span>
             </div>
           </div>
         </div>
-      </div>
-
-      <div v-if="shops && shops.shops.length === 0" class="rounded-xl border border-dashed border-gray-300 py-16 text-center text-sm text-gray-500 dark:border-gray-700">
-        协议请求成功，但当前服务器没有返回商店列表。
       </div>
     </template>
   </div>
