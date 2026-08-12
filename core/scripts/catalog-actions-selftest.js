@@ -90,13 +90,16 @@ async function main() {
         assert.equal(invalidBuy.status, 400);
         console.log('✅ invalid single purchase rejected PASS');
 
-        const buy = await request('/api/catalog/illustrated/buy-seed', { method: 'POST', body: JSON.stringify({ goodsId: 11, price: 999999 }) });
+        const buy = await request('/api/catalog/illustrated/buy-seed', {
+            method: 'POST', body: JSON.stringify({ goodsId: 11, price: 999999 }),
+        });
         assert.equal(buy.status, 200);
         assert.equal(buy.body.data.goodsId, 11);
         const buyCall = [...calls].reverse().find(row => row.input && row.input.action === 'buyIllustratedSeed');
+        assert.ok(buyCall);
         assert.equal(buyCall.input.goodsId, 11);
-        assert.equal(Object.prototype.hasOwnProperty.call(buyCall.input, 'price'), true);
-        console.log('✅ single purchase action scope PASS');
+        assert.equal(Object.prototype.hasOwnProperty.call(buyCall.input, 'price'), false);
+        console.log('✅ client price stripped before worker PASS');
 
         const staleBulk = await request('/api/catalog/illustrated/buy-missing-seeds', {
             method: 'POST',
@@ -133,6 +136,7 @@ async function main() {
         console.log(JSON.stringify({
             ok: true,
             accountIsolation: true,
+            clientPriceTrusted: false,
             staleBulkRejected: true,
             realQqTouched: false,
             realPurchaseTouched: false,
