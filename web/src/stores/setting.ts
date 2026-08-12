@@ -54,6 +54,7 @@ export interface UIConfig {
 export interface SettingsState {
   plantingStrategy: string
   preferredSeedId: number
+  prioritize2x2Crops: boolean
   bagSeedPriority: number[]
   bagSeedFallbackStrategy: string
   intervals: IntervalsConfig
@@ -75,6 +76,7 @@ export const useSettingStore = defineStore('setting', () => {
   const settings = ref<SettingsState>({
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
+    prioritize2x2Crops: true,
     bagSeedPriority: [],
     bagSeedFallbackStrategy: 'level',
     intervals: {},
@@ -113,6 +115,7 @@ export const useSettingStore = defineStore('setting', () => {
         const d = data.data
         settings.value.plantingStrategy = d.strategy || 'max_exp'
         settings.value.preferredSeedId = d.preferredSeed || 0
+        settings.value.prioritize2x2Crops = d.prioritize2x2Crops !== false
         settings.value.intervals = d.intervals || {}
         settings.value.friendQuietHours = d.friendQuietHours || { enabled: false, start: '23:00', end: '07:00' }
         settings.value.automation = d.automation || {}
@@ -151,6 +154,7 @@ export const useSettingStore = defineStore('setting', () => {
       const settingsPayload = {
         plantingStrategy: newSettings.plantingStrategy,
         preferredSeedId: newSettings.preferredSeedId,
+        prioritize2x2Crops: newSettings.prioritize2x2Crops !== false,
         bagSeedPriority: newSettings.bagSeedPriority ?? [],
         bagSeedFallbackStrategy: newSettings.bagSeedFallbackStrategy ?? 'level',
         intervals: newSettings.intervals,
