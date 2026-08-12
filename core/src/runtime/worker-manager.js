@@ -190,6 +190,12 @@ function createWorkerManager(options) {
         });
     }
 
+    function syncConfigToWorker(accountId) {
+        const current = workers[accountId];
+        if (!current || !current.process) return;
+        current.process.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(accountId) });
+    }
+
     function handleWorkerMessage(accountId, msg) {
         const worker = workers[accountId];
         if (!worker) return;
@@ -309,6 +315,49 @@ function createWorkerManager(options) {
                 else req.resolve(result);
                 worker.requests.delete(id);
             }
+        } else if (msg.type === 'known_friend_gids_sync') {
+            const incoming = Array.isArray(msg.gids) ? msg.gids : [];
+            const normalized = [];
+            const seen = new Set();
+            for (const raw of incoming) {
+                const gid = Number(raw) || 0;
+                if (gid <= 0 || seen.has(gid)) continue;
+                seen.add(gid);
+                normalized.push(gid);
+            }
+            if (normalized.length > 0) {
+                const { getKnownFriendGids, setKnownFriendGids } = require('../models/store');
+                const before = getKnownFriendGids(accountId);
+                const saved = setKnownFriendGids(accountId, normalized);
+                if (saved.length !== before.length || saved.some((gid, index) => gid !== before[index])) {
+                    log('好友', `已持久化好友 GID：${before.length} -> ${saved.length}`, {
+                        accountId: String(accountId),
+                        accountName: worker.name,
+                        event: '好友GID持久化',
+                        beforeCount: before.length,
+                        afterCount: saved.length,
+                    });
+                }
+                syncConfigToWorker(accountId);
+            }
+        } else if (msg.type === 'known_friend_gid_remove') {
+            const gid = Number(msg.gid) || 0;
+            if (gid > 0) {
+                const { getKnownFriendGids, setKnownFriendGids } = require('../models/store');
+                const before = getKnownFriendGids(accountId);
+                const next = before.filter(item => Number(item) !== gid);
+                if (next.length !== before.length) {
+                    setKnownFriendGids(accountId, next);
+                    log('好友', `已持久化移除失效好友 GID: ${msg.friendName || `GID:${gid}`}`, {
+                        accountId: String(accountId),
+                        accountName: worker.name,
+                        friendGid: gid,
+                        friendName: msg.friendName,
+                        reason: msg.reason,
+                    });
+                    syncConfigToWorker(accountId);
+                }
+            }
         } else if (msg.type === 'friend_blacklist_add') {
             const gid = Number(msg.gid) || 0;
             if (gid > 0) {
@@ -322,10 +371,7 @@ function createWorkerManager(options) {
                     reason: msg.reason,
                 });
                 // 同步配置到 worker 进程
-                const worker_process = workers[accountId];
-                if (worker_process && worker_process.process) {
-                    worker_process.process.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(accountId) });
-                }
+                syncConfigToWorker(accountId);
             }
         }
     }
