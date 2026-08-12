@@ -7,25 +7,6 @@ param(
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-function Find-Nssm {
-    param([string]$ProjectRoot)
-    $candidates = @(
-        $env:NSSM_EXE,
-        (Join-Path $ProjectRoot 'tools\nssm-2.24\win64\nssm.exe'),
-        'D:\Program Files\nssm-2.24\nssm.exe',
-        'D:\project2\lolapisevers\tools\nssm-2.24\win64\nssm.exe',
-        'C:\tools\nssm\win64\nssm.exe'
-    )
-    try {
-        $cmd = Get-Command nssm.exe -ErrorAction Stop
-        $candidates = @($cmd.Source) + $candidates
-    } catch {}
-    foreach ($candidate in $candidates) {
-        if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
-    }
-    return ''
-}
-
 function Mask-Uin {
     param([string]$Uin)
     if ($Uin -notmatch '^\d{5,12}$') { return '' }
@@ -87,27 +68,42 @@ if ([string]::IsNullOrWhiteSpace($token)) {
     }
 }
 
-$nssm = Find-Nssm -ProjectRoot $projectRoot
-if ($nssm -and $svc) {
+if ($svc) {
+    $parametersKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName\Parameters"
     try {
-        $serviceEnv = @(& $nssm get $ServiceName AppEnvironmentExtra 2>$null)
+        $serviceEnv = @((Get-ItemProperty -Path $parametersKey -Name 'AppEnvironmentExtra' -ErrorAction Stop).AppEnvironmentExtra)
         $hasAuto = [bool]($serviceEnv | Where-Object { $_ -eq 'FARM_CODE_AUTO_REFRESH=1' })
         $hasB64 = [bool]($serviceEnv | Where-Object { $_ -like 'FARM_CODE_PROVIDER_TARGETS_B64=*' })
         $hasRaw = [bool]($serviceEnv | Where-Object { $_ -like 'FARM_CODE_PROVIDER_TARGETS=*' })
         $hasServiceToken = [bool]($serviceEnv | Where-Object { $_ -like "$TokenEnv=*" })
-        Write-Host "Service provider env: auto=$hasAuto targetsB64=$hasB64 targetsRaw=$hasRaw token=$hasServiceToken"
+        $hasTimeout = [bool]($serviceEnv | Where-Object { $_ -eq 'FARM_CODE_PROVIDER_HEALTH_TIMEOUT_MS=20000' })
+        $count = $serviceEnv.Count
+        Write-Host "Service provider env: auto=$hasAuto targetsB64=$hasB64 targetsRaw=$hasRaw token=$hasServiceToken healthTimeout=$hasTimeout entries=$count source=REG_MULTI_SZ"
+
+        if ($hasB64) {
+            $b64Entry = $serviceEnv | Where-Object { $_ -like 'FARM_CODE_PROVIDER_TARGETS_B64=*' } | Select-Object -First 1
+            $b64 = $b64Entry.Substring('FARM_CODE_PROVIDER_TARGETS_B64='.Length)
+            try {
+                $decoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) | ConvertFrom-Json
+                $keys = @($decoded.PSObject.Properties.Name)
+                $maskedKeys = @($keys | ForEach-Object { Mask-Uin -Uin ([string]$_) })
+                Write-Host "Service provider targets: decoded=True count=$($keys.Count) qq=$($maskedKeys -join ',')"
+            } catch {
+                Write-Host 'Service provider targets: decoded=False'
+            }
+        }
     } catch {
-        Write-Host 'Service provider env: CHECK FAILED'
+        Write-Host "Service provider env: CHECK FAILED source=REG_MULTI_SZ error=$($_.Exception.Message)"
     }
 }
 
 $stdout = Join-Path $projectRoot 'core\data\service.stdout.log'
 if (Test-Path -LiteralPath $stdout) {
-    $matches = @(Get-Content -LiteralPath $stdout -Tail 120 -Encoding UTF8 | Where-Object {
-        $_ -match 'isolated QQ runtime Code Provider configured|targeted Provider remains pending|CodeManager'
+    $matches = @(Get-Content -LiteralPath $stdout -Tail 160 -Encoding UTF8 | Where-Object {
+        $_ -match 'isolated QQ runtime Code Provider configured|targeted Provider remains pending|CodeManager|Provider'
     })
     if ($matches.Count) {
         Write-Host 'Recent provider/runtime lines:'
-        $matches | Select-Object -Last 8 | ForEach-Object { Write-Host $_ }
+        $matches | Select-Object -Last 10 | ForEach-Object { Write-Host $_ }
     }
 }
