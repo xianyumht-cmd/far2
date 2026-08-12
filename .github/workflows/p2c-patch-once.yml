@@ -45,7 +45,7 @@ jobs:
               "const LEGACY_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];\nconst DEFAULT_FERTILIZER_LAND_TYPES = ['purple', ...LEGACY_FERTILIZER_LAND_TYPES];\nconst FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);",
               'store fertilizer constants',
           )
-          old_normalize = """function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
+          old = """function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
               const source = Array.isArray(input) ? input : fallback;
               const normalized = [];
               for (const item of source) {
@@ -56,7 +56,7 @@ jobs:
               }
               return normalized;
           }"""
-          new_normalize = """function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
+          new = """function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_TYPES) {
               const source = Array.isArray(input) ? input : fallback;
               const normalized = [];
               for (const item of source) {
@@ -65,12 +65,12 @@ jobs:
                   if (normalized.includes(value)) continue;
                   normalized.push(value);
               }
-              const isLegacyAllSelected = normalized.length === LEGACY_FERTILIZER_LAND_TYPES.length
+              const legacyAllSelected = normalized.length === LEGACY_FERTILIZER_LAND_TYPES.length
                   && LEGACY_FERTILIZER_LAND_TYPES.every(type => normalized.includes(type));
-              if (isLegacyAllSelected) normalized.unshift('purple');
+              if (legacyAllSelected) normalized.unshift('purple');
               return normalized;
           }"""
-          text = replace_once(text, old_normalize, new_normalize, 'store fertilizer normalize')
+          text = replace_once(text, old, new, 'store fertilizer normalize')
           text = replace_once(
               text,
               "    plantingStrategy: 'max_exp',\n    preferredSeedId: 0,",
@@ -103,7 +103,7 @@ jobs:
           )
           write(path, text)
 
-          # ---------- farm.js ----------
+          # ---------- farm.js: small integration only ----------
           path = 'core/src/services/farm.js'
           text = read(path)
           text = replace_once(
@@ -115,313 +115,50 @@ jobs:
           text = replace_once(
               text,
               "const { selectReady2x2Groups, validate2x2PlantReply } = require('./farm-2x2');",
-              "const { clear2x2Reservation, select2x2Reservations, validate2x2PlantReply } = require('./farm-2x2');",
-              'farm 2x2 import',
+              "const { selectReady2x2Groups, validate2x2PlantReply } = require('./farm-2x2');\nconst { runPrioritized2x2Prepass } = require('./farm-2x2-priority');",
+              'farm 2x2 prepass import',
           )
-
-          bag_start = text.index('async function plantFromBagSeeds(landsToPlant) {')
-          bag_end = text.index('\nasync function findBestSeed(overrideStrategy)', bag_start)
-          new_bag_block = r'''let last2x2WaitingSignature = '';
-          let last2x2LockedSignature = '';
-
-          async function plantPrioritized2x2Seeds(landsToPlant) {
-              const targetLandIds = [...new Set((Array.isArray(landsToPlant) ? landsToPlant : [])
-                  .map(id => toNum(id))
-                  .filter(Boolean))];
-              if (targetLandIds.length === 0) {
-                  return { remainingLandIds: [], plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
-              }
-
-              if (!getPrioritize2x2Crops()) {
-                  clear2x2Reservation();
-                  last2x2WaitingSignature = '';
-                  last2x2LockedSignature = '';
-                  return { remainingLandIds: targetLandIds, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
-              }
-
-              let bagSeeds;
-              try {
-                  bagSeeds = await getBagSeeds();
-              } catch (e) {
-                  logWarn('种植', `读取 2x2 背包种子失败，继续原种植策略: ${e.message}`, {
-                      module: 'farm',
-                      event: '种植2x2作物',
-                      result: 'bag_load_error',
-                  });
-                  return { remainingLandIds: targetLandIds, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
-              }
-
-              const state = getUserState();
-              const sorted2x2Seeds = sortBagSeedsForPlanting(
-                  (Array.isArray(bagSeeds) ? bagSeeds : []).filter(seed => Number(seed && seed.count) > 0 && Number(seed && seed.plantSize) === 2),
-                  getBagSeedPriority(),
-              );
-              const lockedSeeds = sorted2x2Seeds.filter(seed => Number(seed.requiredLevel || 0) > Number(state.level || 0));
-              const usableSeeds = sorted2x2Seeds
-                  .filter(seed => Number(seed.requiredLevel || 0) <= Number(state.level || 0))
-                  .map(seed => ({ ...seed, remainingCount: Math.max(0, Number(seed.count) || 0) }));
-
-              const lockedSignature = lockedSeeds.map(seed => `${seed.seedId}:${seed.requiredLevel}`).join('|');
-              if (lockedSignature && lockedSignature !== last2x2LockedSignature) {
-                  log('种植', `已跳过当前等级未解锁的 2x2 背包种子: ${lockedSeeds.map(seed => seed.name || seed.seedId).join('、')}`, {
-                      module: 'farm',
-                      event: '种植2x2作物',
-                      result: 'skip_locked',
-                      seedIds: lockedSeeds.map(seed => seed.seedId),
-                      userLevel: Number(state.level || 0),
-                  });
-              }
-              last2x2LockedSignature = lockedSignature;
-
-              const desiredCount = usableSeeds.reduce((sum, seed) => sum + seed.remainingCount, 0);
-              if (desiredCount <= 0) {
-                  clear2x2Reservation();
-                  last2x2WaitingSignature = '';
-                  return { remainingLandIds: targetLandIds, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
-              }
-
-              let latestLands;
-              try {
-                  const latest = await getAllLands();
-                  latestLands = Array.isArray(latest && latest.lands) ? latest.lands : [];
-              } catch (e) {
-                  logWarn('种植', `检查 2x2 土地状态失败，继续原种植策略: ${e.message}`, {
-                      module: 'farm',
-                      event: '种植2x2作物',
-                      result: 'land_probe_error',
-                  });
-                  return { remainingLandIds: targetLandIds, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
-              }
-
-              const plan = select2x2Reservations(latestLands, targetLandIds, desiredCount);
-              const reservedSet = new Set(plan.reservedLandIds || []);
-              const remainingLandIds = targetLandIds.filter(id => !reservedSet.has(id));
-              const plantedLandIds = [];
-              let totalPlanted = 0;
-              let occupiedCount = 0;
-
-              for (const group of (plan.readyGroups || [])) {
-                  const seed = usableSeeds.find(item => item.remainingCount > 0);
-                  if (!seed) break;
-                  try {
-                      const result = await plant2x2Seed(seed.seedId, group);
-                      seed.remainingCount--;
-                      totalPlanted++;
-                      plantedLandIds.push(result.masterLandId || group.masterLandId);
-                      occupiedCount += (result.occupiedLandIds || group.landIds).length;
-                      log('种植', `已优先种植 2x2 作物 ${seed.name}，主地块#${result.masterLandId || group.masterLandId}，占地 ${(result.occupiedLandIds || group.landIds).join(',')}`, {
-                          module: 'farm',
-                          event: '种植2x2作物',
-                          result: 'ok',
-                          seedId: seed.seedId,
-                          masterLandId: result.masterLandId || group.masterLandId,
-                          landIds: result.occupiedLandIds || group.landIds,
-                      });
-                  } catch (e) {
-                      // 失败时保留这一组空地，不让 1x1 立即填回去；下一轮继续重试，避免破坏 2x2 机会。
-                      logWarn('种植', `2x2 作物 ${seed.name}(${seed.seedId}) 种植失败，已保留该组土地等待重试: ${e.message}`, {
-                          module: 'farm',
-                          event: '种植2x2作物',
-                          result: 'error_reserved',
-                          seedId: seed.seedId,
-                          landIds: group.landIds,
-                      });
-                  }
-                  await sleep(100);
-              }
-
-              if (plan.waitingGroup) {
-                  const waitingEmpty = plan.waitingGroup.landIds.filter(id => targetLandIds.includes(id));
-                  const signature = `${plan.waitingGroup.key}:${waitingEmpty.join(',')}`;
-                  if (signature !== last2x2WaitingSignature) {
-                      log('种植', `已为 2x2 作物预留一组土地，等待其余地块自然清空: ${plan.waitingGroup.landIds.join(',')}`, {
-                          module: 'farm',
-                          event: '预留2x2土地',
-                          result: 'waiting',
-                          landIds: plan.waitingGroup.landIds,
-                          emptyLandIds: waitingEmpty,
-                      });
-                  }
-                  last2x2WaitingSignature = signature;
-              } else {
-                  last2x2WaitingSignature = '';
-              }
-
-              return {
-                  remainingLandIds,
-                  plantedLandIds: [...new Set(plantedLandIds)],
-                  totalPlanted,
-                  occupiedCount,
-              };
-          }
-
-          async function plantFromBagSeeds(landsToPlant) {
-              const targetLandIds = (Array.isArray(landsToPlant) ? landsToPlant : []).map(id => Number(id)).filter(id => id > 0);
-              if (targetLandIds.length === 0) {
-                  return { remainingLandIds: [], fallbackAllowed: false, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
-              }
-
-              const bagSeeds = await getBagSeeds();
-              const allBagSeeds = Array.isArray(bagSeeds) ? bagSeeds : [];
-              const usableSeeds = sortBagSeedsForPlanting(
-                  allBagSeeds.filter(seed => Number(seed && seed.count) > 0 && Number(seed && seed.plantSize) === 1),
-                  getBagSeedPriority(),
-              );
-
-              if (usableSeeds.length === 0) {
-                  const hasAnyBagSeed = allBagSeeds.some(seed => Number(seed && seed.count) > 0);
-                  log('种植', hasAnyBagSeed
-                      ? '背包中没有可用的 1x1 种子，准备按第二优先策略补种'
-                      : '背包种子已用完，准备按第二优先策略补种', {
-                      module: 'farm',
-                      event: '种植种子',
-                      result: 'fallback_ready',
-                      strategy: 'bag_priority',
-                  });
-                  return { remainingLandIds: targetLandIds, fallbackAllowed: true, plantedLandIds: [], totalPlanted: 0, occupiedCount: 0 };
-              }
-
-              let remainingLandIds = [...targetLandIds];
-              let fallbackAllowed = true;
-              let totalPlanted = 0;
-              let occupiedCount = 0;
-              const plantedLandIds = [];
-              const usedSeedLogs = [];
-
-              for (const seed of usableSeeds) {
-                  if (remainingLandIds.length === 0) break;
-                  const maxPlantCount = Math.min(Number(seed.count || 0), remainingLandIds.length);
-                  if (maxPlantCount <= 0) continue;
-
-                  const result = await plantSeeds(seed.seedId, remainingLandIds, { maxPlantCount });
-                  const currentOccupied = (Array.isArray(result.occupiedLandIds) ? result.occupiedLandIds : []).map(Number).filter(id => id > 0);
-                  const currentPlantedLandIds = (Array.isArray(result.plantedLandIds) ? result.plantedLandIds : []).map(Number).filter(id => id > 0);
-                  if (result.planted > 0) {
-                      totalPlanted += result.planted;
-                      occupiedCount += currentOccupied.length > 0 ? currentOccupied.length : result.planted;
-                      plantedLandIds.push(...currentPlantedLandIds);
-                      remainingLandIds = remainingLandIds.filter(id => !currentOccupied.includes(id));
-                      usedSeedLogs.push(`${seed.name}x${result.planted}`);
-                  }
-
-                  if (result.planted < maxPlantCount && remainingLandIds.length > 0) {
-                      fallbackAllowed = false;
-                      logWarn('种植', `背包种子 ${seed.name} 实际种植 ${result.planted}/${maxPlantCount}，为避免误购商店种子，本轮不执行第二优先策略`, {
-                          module: 'farm',
-                          event: '种植种子',
-                          result: 'partial_bag_failure',
-                          seedId: seed.seedId,
-                          requested: maxPlantCount,
-                          planted: result.planted,
-                      });
-                  }
-              }
-
-              if (usedSeedLogs.length > 0) {
-                  log('种植', `已按背包优先策略种植 1x1: ${usedSeedLogs.join('，')}`, {
-                      module: 'farm',
-                      event: '种植种子',
-                      result: 'ok',
-                      strategy: 'bag_priority',
-                      count: totalPlanted,
-                      occupiedCount,
-                  });
-              }
-
-              return {
-                  remainingLandIds,
-                  fallbackAllowed,
-                  plantedLandIds: [...new Set(plantedLandIds)],
-                  totalPlanted,
-                  occupiedCount,
-              };
-          }
-          '''
-          text = text[:bag_start] + new_bag_block + text[bag_end:]
-
-          auto_start = text.index('async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {')
-          auto_end = text.index('\nasync function plantFromShop(landsToPlant, state, overrideStrategy)', auto_start)
-          new_auto = r'''async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
-              let landsToPlant = [...emptyLandIds];
-              const state = getUserState();
-
-              if (deadLandIds.length > 0) {
-                  try {
-                      await removePlant(deadLandIds);
-                      log('铲除', `已铲除 ${deadLandIds.length} 块 (${deadLandIds.join(',')})`, {
-                          module: 'farm', event: '铲除植物', result: 'ok', count: deadLandIds.length
-                      });
-                      landsToPlant.push(...deadLandIds);
-                  } catch (e) {
-                      logWarn('铲除', `批量铲除失败: ${e.message}`, {
-                          module: 'farm', event: '铲除植物', result: 'error'
-                      });
-                      landsToPlant.push(...deadLandIds);
-                  }
-              }
-
-              landsToPlant = [...new Set(landsToPlant.map(id => toNum(id)).filter(Boolean))];
+          fn_start = text.index('async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {')
+          fn_end = text.index('\nasync function plantFromShop(landsToPlant, state, overrideStrategy)', fn_start)
+          block = text[fn_start:fn_end]
+          block = replace_once(
+              block,
+              '    const landsToPlant = [...emptyLandIds];',
+              '    let landsToPlant = [...emptyLandIds];',
+              'farm mutable landsToPlant',
+          )
+          marker = "    const accountStrategy = String(getPlantingStrategy() || '').trim();"
+          prepass = """    landsToPlant = [...new Set(landsToPlant.map(id => toNum(id)).filter(Boolean))];
               if (landsToPlant.length === 0) return;
 
-              // 2x2 是独立前置策略：不要求主策略切到 bag_priority。
-              // 最多预留一组未清空土地，剩余空地继续原来的主种植策略。
               try {
-                  const twoByTwoResult = await plantPrioritized2x2Seeds(landsToPlant);
-                  landsToPlant = twoByTwoResult.remainingLandIds || landsToPlant;
-                  if (twoByTwoResult.plantedLandIds && twoByTwoResult.plantedLandIds.length > 0) {
-                      await runFertilizerByConfig(twoByTwoResult.plantedLandIds);
+                  const twoByTwo = await runPrioritized2x2Prepass({
+                      enabled: getPrioritize2x2Crops(),
+                      landIds: landsToPlant,
+                      getBagSeeds,
+                      bagSeedPriority: getBagSeedPriority(),
+                      userLevel: Number(state.level || 0),
+                      getAllLands,
+                      plant2x2Seed,
+                      log,
+                      logWarn,
+                      sleep,
+                  });
+                  landsToPlant = twoByTwo.remainingLandIds || landsToPlant;
+                  if (twoByTwo.plantedLandIds && twoByTwo.plantedLandIds.length > 0) {
+                      await runFertilizerByConfig(twoByTwo.plantedLandIds);
                   }
               } catch (e) {
                   logWarn('种植', `2x2 优先链异常，继续原种植策略: ${e.message}`, {
-                      module: 'farm',
-                      event: '种植2x2作物',
-                      result: 'prepass_error',
+                      module: 'farm', event: '种植2x2作物', result: 'prepass_error',
                   });
               }
 
               if (landsToPlant.length === 0) return;
-              const accountStrategy = String(getPlantingStrategy() || '').trim();
 
-              if (accountStrategy === 'bag_priority') {
-                  let bagResult;
-                  try {
-                      bagResult = await plantFromBagSeeds(landsToPlant);
-                  } catch (e) {
-                      logWarn('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${e.message}`, {
-                          module: 'farm',
-                          event: '种植种子',
-                          result: 'bag_load_error',
-                      });
-                      return { plantedLands: [] };
-                  }
-
-                  const plantedLands = bagResult.plantedLandIds || [];
-                  if (bagResult.fallbackAllowed && bagResult.remainingLandIds.length > 0) {
-                      const fallbackStrategy = getBagSeedFallbackStrategy() || 'level';
-                      log('种植', `开始按第二优先策略"${getPlantingStrategyLabel(fallbackStrategy)}"补种剩余空地`, {
-                          module: 'farm',
-                          event: '种植种子',
-                          result: 'fallback_start',
-                          strategy: fallbackStrategy,
-                          remainingCount: bagResult.remainingLandIds.length,
-                      });
-                      const shopResult = await plantFromShop(bagResult.remainingLandIds, state, fallbackStrategy);
-                      plantedLands.push(...(shopResult.plantedLands || []));
-                  }
-
-                  if (plantedLands.length > 0) {
-                      await runFertilizerByConfig(plantedLands);
-                  }
-                  return;
-              }
-
-              const shopResult = await plantFromShop(landsToPlant, state);
-              if (shopResult.plantedLands && shopResult.plantedLands.length > 0) {
-                  await runFertilizerByConfig(shopResult.plantedLands);
-              }
-          }
-          '''
-          text = text[:auto_start] + new_auto + text[auto_end:]
+          """
+          block = replace_once(block, marker, prepass + marker, 'farm independent 2x2 prepass')
+          text = text[:fn_start] + block + text[fn_end:]
           write(path, text)
 
           # ---------- Settings.vue ----------
@@ -459,7 +196,7 @@ jobs:
           )
           norm_start = text.index('function normalizeFertilizerLandTypes(input: unknown) {')
           norm_end = text.index('\n\nconst localAutomationSettings', norm_start)
-          new_norm = r'''function normalizeFertilizerLandTypes(input: unknown) {
+          text = text[:norm_start] + """function normalizeFertilizerLandTypes(input: unknown) {
             const source = Array.isArray(input) ? input : allFertilizerLandTypes
             const normalized: string[] = []
             for (const item of source) {
@@ -469,19 +206,18 @@ jobs:
               if (!normalized.includes(value))
                 normalized.push(value)
             }
-            const isLegacyAllSelected = normalized.length === legacyFertilizerLandTypes.length
+            const legacyAllSelected = normalized.length === legacyFertilizerLandTypes.length
               && legacyFertilizerLandTypes.every(type => normalized.includes(type))
-            if (isLegacyAllSelected)
+            if (legacyAllSelected)
               normalized.unshift('purple')
             return normalized
-          }'''
-          text = text[:norm_start] + new_norm + text[norm_end:]
-          strategy_select = '''              <BaseSelect
-                v-model="localStrategySettings.plantingStrategy"
-                label="种植策略"
-                :options="plantingStrategyOptions"
-              />'''
-          strategy_with_switch = strategy_select + '''
+          }""" + text[norm_end:]
+
+          # Insert the switch after the actual planting-strategy select without depending on indentation.
+          needle = 'v-model="localStrategySettings.plantingStrategy"'
+          select_pos = text.index(needle)
+          select_end = text.index('/>', select_pos) + 2
+          switch_block = """
               <div class="md:col-span-2 rounded-lg border border-violet-200 bg-violet-50/70 p-3 dark:border-violet-800/50 dark:bg-violet-900/20">
                 <BaseSwitch
                   v-model="localStrategySettings.prioritize2x2Crops"
@@ -490,11 +226,20 @@ jobs:
                 <p class="mt-1 text-xs text-violet-700/90 dark:text-violet-300/90">
                   独立于上方主策略。背包有 2×2 种子时优先安排；没有完整空位时最多只预留一组土地，其余土地继续原策略。
                 </p>
-              </div>'''
-          text = replace_once(text, strategy_select, strategy_with_switch, 'settings 2x2 switch template')
-          text = text.replace('先按下方顺序消耗背包中的 1x1 种子；背包种子不足时，再按"第二优先策略"补种。',
-                              '2×2 由上方独立开关优先处理；这里控制 1×1 背包种子的顺序，背包不足时再按“第二优先策略”补种。')
-          text = text.replace('class="grid grid-cols-2 gap-2 md:grid-cols-4"', 'class="grid grid-cols-2 gap-2 md:grid-cols-5"', 1)
+              </div>"""
+          text = text[:select_end] + switch_block + text[select_end:]
+          text = text.replace(
+              '先按下方顺序消耗背包中的 1x1 种子；背包种子不足时，再按"第二优先策略"补种。',
+              '2×2 由上方独立开关优先处理；这里控制 1×1 背包种子的顺序，背包不足时再按“第二优先策略”补种。',
+              1,
+          )
+          scope_pos = text.index('施肥范围')
+          grid_pos = text.index('class="grid grid-cols-2 gap-2 md:grid-cols-4"', scope_pos)
+          text = text[:grid_pos] + text[grid_pos:].replace(
+              'class="grid grid-cols-2 gap-2 md:grid-cols-4"',
+              'class="grid grid-cols-2 gap-2 md:grid-cols-5"',
+              1,
+          )
           write(path, text)
           PY
 
@@ -502,6 +247,8 @@ jobs:
         shell: bash
         run: |
           node --check core/src/models/store.js
+          node --check core/src/services/farm-2x2.js
+          node --check core/src/services/farm-2x2-priority.js
           node --check core/src/services/farm.js
           node core/scripts/planting-2x2-selftest.js
           git diff --check
