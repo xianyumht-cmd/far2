@@ -13,6 +13,7 @@
     "startup:scope-selftest": "node scripts/startup-account-scope-selftest.js",
     "illustrated:proto-selftest": "node scripts/illustrated-proto-selftest.js",
     "catalog:actions-selftest": "node scripts/catalog-actions-selftest.js",
+    "land:controls-selftest": "node scripts/land-controls-selftest.js",
     "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "qr:process-map": "node scripts/qq-process-map-test.js",
     "qr:session-map": "node scripts/qq-session-map-test.js",
