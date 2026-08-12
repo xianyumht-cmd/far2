@@ -3,7 +3,7 @@ const os = require('node:os');
 const path = require('node:path');
 const process = require('node:process');
 const { createIsolatedCodeAgent } = require('../src/services/isolated-code-agent');
-const { captureFarmFriendGids } = require('../src/services/windows-runtime-friends');
+const { captureFarmFriendGids } = require('../src/services/windows-runtime-friends-v2');
 
 function maskUin(value) {
     const text = String(value || '').trim();
@@ -30,7 +30,10 @@ function alreadyCapturedThisBoot(file, bootStartedAt) {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
         const priorBoot = Number(parsed && parsed.bootStartedAt) || 0;
         const gids = Array.isArray(parsed && parsed.gids) ? parsed.gids : [];
-        return gids.length > 0 && priorBoot > 0 && Math.abs(priorBoot - bootStartedAt) < 60 * 1000;
+        const openIds = Array.isArray(parsed && parsed.openIds) ? parsed.openIds : [];
+        return (gids.length > 0 || openIds.length > 0)
+            && priorBoot > 0
+            && Math.abs(priorBoot - bootStartedAt) < 60 * 1000;
     } catch {
         return false;
     }
@@ -84,15 +87,16 @@ async function captureStartupFriends(agent) {
         }
 
         writeFriendArtifact(artifact, {
-            version: 1,
+            version: 2,
             qqUin: String(agent.expectedUin),
             bootStartedAt,
             capturedAt: Date.now(),
             gids: Array.isArray(captured.gids) ? captured.gids : [],
-            source: captured.source || 'windows_qq_runtime_friend_service',
+            openIds: Array.isArray(captured.openIds) ? captured.openIds : [],
+            source: captured.source || 'windows_qq_runtime_friend_capture_v2',
             methods: Array.isArray(captured.methods) ? captured.methods : [],
         });
-        console.log(`[FAR2 Friend Import] capture ok count=${captured.gids.length} methods=${captured.methods.join(',') || '-'}`);
+        console.log(`[FAR2 Friend Import] capture ok gids=${captured.gids.length} openIds=${captured.openIds.length} methods=${captured.methods.join(',') || '-'}`);
     } catch (err) {
         const reason = err && err.code ? err.code : (err && err.message ? err.message : String(err || 'unknown'));
         console.log(`[FAR2 Friend Import] capture failed: ${reason}`);
