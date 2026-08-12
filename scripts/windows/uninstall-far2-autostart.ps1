@@ -41,4 +41,4 @@ if ($svc) {
     }
 }
 
-Write-Host 'FAR2 后台自启已移除。账号数据、Code、Web 配置均未删除。' -ForegroundColor Green
+Write-Host 'FAR2 background autostart removed. Account data, Code and Web settings were kept.' -ForegroundColor Green
