@@ -114,6 +114,23 @@ function createStartupRuntimeFriendImport(options = {}) {
         });
     }
 
+    function triggerRunningWorkerFriendSync(accountId) {
+        const worker = workers && workers[accountId];
+        const proc = worker && worker.process;
+        if (!proc || typeof proc.send !== 'function') return false;
+        try {
+            proc.send({
+                type: 'api_call',
+                id: `startup_runtime_friend_sync_${Date.now()}`,
+                method: 'getFriends',
+                args: [true],
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     function importOne(account) {
         const accountId = String(account && account.id || '').trim();
         const uin = normalizeUin(account && (account.uin || account.qq));
@@ -134,7 +151,11 @@ function createStartupRuntimeFriendImport(options = {}) {
         importedAccounts.add(accountId);
         if (addedCount > 0) broadcastConfigToWorkers(accountId);
 
-        log('好友', `QQ 小程序启动好友导入：直接 GID ${artifact.gids.length} 个，openId ${artifact.openIds.length} 个，新增 GID ${addedCount} 个，当前 GID 共 ${merged.length} 个`, {
+        const workerResyncTriggered = (savedOpenIds || addedCount > 0)
+            ? triggerRunningWorkerFriendSync(accountId)
+            : false;
+
+        log('好友', `QQ 小程序启动好友导入：直接 GID ${artifact.gids.length} 个，openId ${artifact.openIds.length} 个，新增 GID ${addedCount} 个，当前 GID 共 ${merged.length} 个${workerResyncTriggered ? '；已通知运行中账号立即重同步' : ''}`, {
             accountId,
             accountName: account.name || accountId,
             module: 'friend',
@@ -143,6 +164,7 @@ function createStartupRuntimeFriendImport(options = {}) {
             capturedGidCount: artifact.gids.length,
             capturedOpenIdCount: artifact.openIds.length,
             openIdsSaved: savedOpenIds,
+            workerResyncTriggered,
             addedCount,
             totalKnownGids: merged.length,
             source: artifact.source,
