@@ -3,7 +3,7 @@ const os = require('node:os');
 const path = require('node:path');
 const process = require('node:process');
 const { createIsolatedCodeAgent } = require('../src/services/isolated-code-agent');
-const { captureFarmFriendGids } = require('../src/services/windows-runtime-friends-v3');
+const { captureFarmFriendGids } = require('../src/services/windows-runtime-friends-v4');
 
 function maskUin(value) {
     const text = String(value || '').trim();
@@ -87,13 +87,13 @@ async function captureStartupFriends(agent) {
         }
 
         writeFriendArtifact(artifact, {
-            version: 3,
+            version: 4,
             qqUin: String(agent.expectedUin),
             bootStartedAt,
             capturedAt: Date.now(),
             gids: Array.isArray(captured.gids) ? captured.gids : [],
             openIds: Array.isArray(captured.openIds) ? captured.openIds : [],
-            source: captured.source || 'windows_qq_runtime_friend_capture_v3',
+            source: captured.source || 'windows_qq_runtime_friend_capture_v4',
             methods: Array.isArray(captured.methods) ? captured.methods : [],
         });
         console.log(`[FAR2 Friend Import] capture ok gids=${captured.gids.length} openIds=${captured.openIds.length} methods=${captured.methods.join(',') || '-'}`);
