@@ -59,23 +59,19 @@ async function main() {
                 wsError: null,
             };
         },
-        getLogs(accountRef) {
-            const id = this.resolveAccountId(accountRef);
-            if (id !== '1') return [];
-            return [
-                {
-                    accountId: '1',
-                    tag: '好友',
-                    event: 'QQ小程序启动好友导入',
-                    capturedGidCount: 103,
-                    capturedOpenIdCount: 275,
-                    totalKnownGids: 103,
-                    addedCount: 0,
+        getRuntimeFriendStatus(account) {
+            const id = String(account && account.id || '');
+            if (id === '1') {
+                return {
+                    imported: true,
+                    gidCount: 103,
+                    openIdCount: 275,
                     source: 'windows_qq_runtime_friend_capture_v4',
-                    ts: 1700000005000,
-                    time: '2026-08-13 02:00:05',
-                },
-            ];
+                    capturedAt: 1700000005000,
+                    methods: ['GetShareKey', 'SyncAll'],
+                };
+            }
+            return { imported: false, gidCount: 0, openIdCount: 0, source: '', capturedAt: 0, methods: [] };
         },
         getAccountLogs() {
             return [
