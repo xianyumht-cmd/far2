@@ -71,8 +71,8 @@ async function captureStartupFriends(agent) {
     try {
         console.log(`[FAR2 Friend Import] capture start qq=${maskUin(agent.expectedUin)}`);
         const captured = await captureFarmFriendGids({
-            timeoutMs: 30000,
-            captureWindowMs: 20000,
+            timeoutMs: 55000,
+            captureWindowMs: 45000,
             log: message => console.log(`[FAR2 Friend Import] ${message}`),
         });
 
