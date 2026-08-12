@@ -22,6 +22,12 @@ const seedItemMap = new Map();  // seed_id -> item(type=5)
 const seedImageMap = new Map(); // seed_id -> image url
 const seedAssetImageMap = new Map(); // asset_name (Crop_xxx) -> image url
 
+// 当前线上已确认存在、但旧 Plant.json 尚未收录的种子元数据。
+// 只用于“按 seedId 查询 / 背包识别”，不会注入 getAllSeeds() 的商店候选。
+const MISSING_SEED_FALLBACKS = new Map([
+    [20046, { name: '爱心果', size: 2 }],
+]);
+
 /**
  * 加载配置文件
  */
@@ -153,6 +159,28 @@ function getLevelExpProgress(level, totalExp) {
 
 // ============ 植物配置相关 ============
 
+function buildMissingSeedFallback(seedId) {
+    const id = Number(seedId) || 0;
+    const fallback = MISSING_SEED_FALLBACKS.get(id);
+    if (!fallback) return null;
+
+    const item = itemInfoMap.get(id) || null;
+    const rawName = String((fallback && fallback.name) || (item && item.name) || `种子${id}`);
+    const name = rawName.replace(/种子$/u, '').trim() || `种子${id}`;
+    return {
+        id: 1000000 + id,
+        name,
+        seed_id: id,
+        land_level_need: Math.max(0, Number(item && item.level) || 0),
+        seasons: 1,
+        grow_phases: '',
+        exp: 0,
+        size: Math.max(1, Number(fallback.size) || 1),
+        fruit: null,
+        config_fallback: true,
+    };
+}
+
 /**
  * 根据植物ID获取植物信息
  * @param {number} plantId - 植物ID
@@ -166,7 +194,8 @@ function getPlantById(plantId) {
  * @param {number} seedId - 种子ID
  */
 function getPlantBySeedId(seedId) {
-    return seedToPlant.get(seedId);
+    const id = Number(seedId) || 0;
+    return seedToPlant.get(id) || buildMissingSeedFallback(id);
 }
 
 /**
@@ -183,7 +212,7 @@ function getPlantName(plantId) {
  * @param {number} seedId - 种子ID
  */
 function getPlantNameBySeedId(seedId) {
-    const plant = seedToPlant.get(seedId);
+    const plant = getPlantBySeedId(seedId);
     return plant ? plant.name : `种子${seedId}`;
 }
 
@@ -314,6 +343,20 @@ function getItemById(itemId) {
     return itemInfoMap.get(Number(itemId) || 0);
 }
 
+function isSeedItem(itemId) {
+    return seedItemMap.has(Number(itemId) || 0);
+}
+
+function getSeedLevel(seedId) {
+    const item = seedItemMap.get(Number(seedId) || 0);
+    return item ? (Number(item.level) || 0) : 0;
+}
+
+function getSeedPlantSize(seedId) {
+    const plant = getPlantBySeedId(seedId);
+    return Math.max(1, Number(plant && plant.size) || 1);
+}
+
 function getSeedPrice(seedId) {
     const item = seedItemMap.get(Number(seedId) || 0);
     return item ? (Number(item.price) || 0) : 0;
@@ -351,6 +394,9 @@ module.exports = {
     getPlantByFruitId,
     getItemById,
     getItemImageById,
+    isSeedItem,
+    getSeedLevel,
+    getSeedPlantSize,
     getSeedPrice,
     getFruitPrice,
     getSeedImageBySeedId,
