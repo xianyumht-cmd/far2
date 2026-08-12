@@ -29,8 +29,10 @@ async function main() {
             const action = String(input && input.action || '');
             if (action === 'getMissingSeedPurchasePlan') return Promise.resolve(JSON.parse(JSON.stringify(plan)));
             if (action === 'claimIllustratedRewards') return Promise.resolve({ totalKinds: 3, totalCount: 9, items: [], bonusItems: [] });
-            if (action === 'buyIllustratedSeed') return Promise.resolve({ goodsId: Number(input.goodsId), price: 10, count: 1 });
-            if (action === 'buyAllMissingIllustratedSeeds') return Promise.resolve({ requested: 2, successCount: 2, failCount: 0, spentEstimate: 30, results: [] });
+            if (action === 'buyIllustratedSeed') {
+                const goodsId = Number(input.goodsId);
+                return Promise.resolve({ goodsId, price: goodsId === 12 ? 20 : 10, count: 1 });
+            }
             throw new Error(`unexpected action ${action}`);
         },
     };
@@ -71,6 +73,10 @@ async function main() {
         return { status: response.status, body };
     }
 
+    function purchaseCalls() {
+        return calls.filter(row => row.input && row.input.action === 'buyIllustratedSeed');
+    }
+
     try {
         console.log('Catalog Actions API Self-Test');
         console.log('安全: fake provider / random localhost port，不访问 QQ、不购买真实商品。\n');
@@ -90,12 +96,12 @@ async function main() {
         assert.equal(invalidBuy.status, 400);
         console.log('✅ invalid single purchase rejected PASS');
 
-        const beforeOutOfPlan = calls.filter(row => row.input && row.input.action === 'buyIllustratedSeed').length;
+        const beforeOutOfPlan = purchaseCalls().length;
         const outOfPlan = await request('/api/catalog/illustrated/buy-seed', {
             method: 'POST', body: JSON.stringify({ goodsId: 99 }),
         });
         assert.equal(outOfPlan.status, 409);
-        assert.equal(calls.filter(row => row.input && row.input.action === 'buyIllustratedSeed').length, beforeOutOfPlan);
+        assert.equal(purchaseCalls().length, beforeOutOfPlan);
         console.log('✅ out-of-plan single purchase rejected PASS');
 
         const buy = await request('/api/catalog/illustrated/buy-seed', {
@@ -103,35 +109,44 @@ async function main() {
         });
         assert.equal(buy.status, 200);
         assert.equal(buy.body.data.goodsId, 11);
-        const buyCall = [...calls].reverse().find(row => row.input && row.input.action === 'buyIllustratedSeed');
+        const buyCall = purchaseCalls().at(-1);
         assert.ok(buyCall);
         assert.equal(buyCall.input.goodsId, 11);
         assert.equal(Object.prototype.hasOwnProperty.call(buyCall.input, 'price'), false);
         console.log('✅ client price stripped before worker PASS');
 
+        const beforeStaleBulk = purchaseCalls().length;
         const staleBulk = await request('/api/catalog/illustrated/buy-missing-seeds', {
             method: 'POST',
             body: JSON.stringify({ expectedBuyable: 2, expectedTotalCost: 29 }),
         });
         assert.equal(staleBulk.status, 409);
-        assert.equal(calls.filter(row => row.input && row.input.action === 'buyAllMissingIllustratedSeeds').length, 0);
+        assert.equal(purchaseCalls().length, beforeStaleBulk);
         console.log('✅ stale bulk confirmation rejected PASS');
 
+        const beforeBulk = purchaseCalls().length;
         const bulk = await request('/api/catalog/illustrated/buy-missing-seeds', {
             method: 'POST',
             body: JSON.stringify({ expectedBuyable: 2, expectedTotalCost: 30 }),
         });
         assert.equal(bulk.status, 200);
+        assert.equal(bulk.body.data.requested, 2);
         assert.equal(bulk.body.data.successCount, 2);
-        assert.equal(calls.filter(row => row.input && row.input.action === 'buyAllMissingIllustratedSeeds').length, 1);
-        console.log('✅ exact bulk confirmation PASS');
+        assert.equal(bulk.body.data.failCount, 0);
+        assert.equal(bulk.body.data.spentEstimate, 30);
+        const bulkCalls = purchaseCalls().slice(beforeBulk);
+        assert.deepEqual(bulkCalls.map(row => row.input.goodsId), [11, 12]);
+        assert.equal(bulkCalls.some(row => Object.prototype.hasOwnProperty.call(row.input, 'price')), false);
+        console.log('✅ exact bulk confirmation + fixed targets PASS');
 
         plan = { ...plan, summary: { ...plan.summary, buyable: 1, totalCost: 10 } };
+        const beforeChangedBulk = purchaseCalls().length;
         const changedBulk = await request('/api/catalog/illustrated/buy-missing-seeds', {
             method: 'POST',
             body: JSON.stringify({ expectedBuyable: 2, expectedTotalCost: 30 }),
         });
         assert.equal(changedBulk.status, 409);
+        assert.equal(purchaseCalls().length, beforeChangedBulk);
         console.log('✅ server-side recheck PASS');
 
         const forbidden = await request('/api/catalog/illustrated/claim', {
@@ -146,6 +161,7 @@ async function main() {
             accountIsolation: true,
             outOfPlanPurchaseRejected: true,
             clientPriceTrusted: false,
+            fixedBulkTargetList: true,
             staleBulkRejected: true,
             realQqTouched: false,
             realPurchaseTouched: false,
