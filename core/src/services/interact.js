@@ -27,6 +27,7 @@ const DEFAULT_FRIEND_DISCOVERY_INTERVAL_MS = 5 * 60 * 1000;
 const MIN_FRIEND_DISCOVERY_INTERVAL_MS = 30 * 1000;
 let lastFriendDiscoveryAt = 0;
 let friendDiscoveryPromise = null;
+let friendDiscoveryLogged = false;
 
 function getActionLabel(actionType) {
     return ACTION_LABELS[actionType] || '互动';
@@ -171,6 +172,10 @@ async function syncFullFriendGids(force = false) {
             if (!sent) {
                 applyConfigSnapshot({ knownFriendGids: merged }, { persist: true, accountId });
             }
+        }
+
+        if (addedCount > 0 || !friendDiscoveryLogged) {
+            friendDiscoveryLogged = true;
             log('好友', `QQ 好友 GID 自动发现：新增 ${addedCount} 个，当前 ${merged.length} 个 (SyncAll=${discovered.sourceCounts.syncAll}, GetAll=${discovered.sourceCounts.getAll})`, {
                 module: 'friend',
                 event: '好友GID自动发现',
