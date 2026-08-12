@@ -19,6 +19,12 @@ function groupKey(landIds) {
         .join('-');
 }
 
+function isLiveEmptyLand(land) {
+    if (!land || !land.unlocked) return false;
+    const plant = land.plant;
+    return !plant || !Array.isArray(plant.phases) || plant.phases.length === 0;
+}
+
 /**
  * QQ 农场当前 24 块地按 4 列 x 6 行排列。
  * 2x2 Plant 请求的锚点/master 是左下角。
@@ -77,19 +83,22 @@ function overlaps(left, occupiedSet) {
 
 /**
  * 只挑“当前四块都已经空闲”的组合；不主动铲地，也不预留仍在生长的土地。
- * 这样首版 2x2 支持不会改变现有作物生命周期。
+ * emptyLandIds 是上一阶段候选，AllLands 当前快照仍需再次确认四块真实为空。
  */
 function selectReady2x2Groups(lands, emptyLandIds, limit = 1) {
     const max = Math.max(0, Number.parseInt(limit, 10) || 0);
     if (max <= 0) return [];
 
+    const list = Array.isArray(lands) ? lands : [];
+    const landMap = new Map(list.map(land => [toId(land && land.id), land]).filter(([id]) => id > 0));
     const empty = new Set((Array.isArray(emptyLandIds) ? emptyLandIds : []).map(toId).filter(Boolean));
     if (empty.size < 4) return [];
 
-    const active = getActive2x2Footprints(lands);
+    const active = getActive2x2Footprints(list);
     const activeOccupied = new Set(active.flatMap(row => row.landIds));
-    const candidates = build2x2LandGroups(lands)
+    const candidates = build2x2LandGroups(list)
         .filter(group => group.landIds.every(id => empty.has(id)))
+        .filter(group => group.landIds.every(id => isLiveEmptyLand(landMap.get(id))))
         .filter(group => !overlaps(group.landIds, activeOccupied))
         .sort((a, b) => a.masterLandId - b.masterLandId);
 
@@ -149,6 +158,7 @@ module.exports = {
     FARM_COLUMNS,
     FARM_ROWS,
     groupKey,
+    isLiveEmptyLand,
     build2x2LandGroups,
     getActive2x2Footprints,
     selectReady2x2Groups,
