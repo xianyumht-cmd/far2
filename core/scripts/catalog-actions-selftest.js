@@ -12,6 +12,14 @@ async function main() {
     let activeProviderCalls = 0;
     let maxProviderCalls = 0;
     let buyActionCount = 0;
+    let plan = {
+        shop: { shopId: 2, shopName: '种子商店', shopType: 2, shopTypeLabel: '种子商店' },
+        items: [
+            { fruitId: 40001, seedId: 20001, name: '测试作物A', canBuy: true, goodsId: 11, price: 10, ownedCount: 0 },
+            { fruitId: 40002, seedId: 20002, name: '测试作物B', canBuy: true, goodsId: 12, price: 20, ownedCount: 0 },
+        ],
+        summary: { locked: 2, alreadyOwned: 0, buyable: 2, totalCost: 30 },
+    };
 
     async function tracked(method, accountId, fn) {
         activeProviderCalls++;
@@ -26,48 +34,35 @@ async function main() {
         }
     }
 
-    const illustratedData = {
-        items: [
-            { fruitId: 40001, seedId: 20001, name: '测试作物A', unlocked: false, hasReward: true, illustratedTier: 1 },
-            { fruitId: 40002, seedId: 20002, name: '测试作物B', unlocked: false, hasReward: true, illustratedTier: 1 },
-        ],
-        summary: { total: 2, unlocked: 0, locked: 2, rewardReady: 2 },
-        protocol: { version: 2 },
-    };
-
     const provider = {
         getIllustrated(accountId) {
-            return tracked('getIllustrated', accountId, () => JSON.parse(JSON.stringify(illustratedData)));
+            return tracked('getIllustrated', accountId, () => ({
+                items: [
+                    { fruitId: 40001, seedId: 20001, name: '测试作物A', unlocked: false, hasReward: true, illustratedTier: 1 },
+                    { fruitId: 40002, seedId: 20002, name: '测试作物B', unlocked: false, hasReward: true, illustratedTier: 1 },
+                ],
+                summary: { total: 2, unlocked: 0, locked: 2, rewardReady: 2 },
+                protocol: { version: 2 },
+            }));
         },
         getShopProfiles(accountId) {
-            return tracked('getShopProfiles', accountId, () => ({
-                shops: [{ shopId: 2, shopName: '种子商店', shopType: 2, shopTypeLabel: '种子商店' }],
-                summary: { total: 1, seedShops: 1, petShops: 0, itemShops: 0 },
-            }));
+            return tracked('getShopProfiles', accountId, () => ({ shops: [], summary: { total: 0 } }));
         },
         getShopInfo(accountId, input) {
             if (typeof input === 'number') {
-                return tracked('getShopInfo', accountId, () => ({
-                    shopId: input,
-                    goods: [
-                        { goodsId: 11, itemId: 20001, name: '种子A', price: 10, itemCount: 1, boughtNum: 0, limitCount: 0, unlocked: true },
-                        { goodsId: 12, itemId: 20002, name: '种子B', price: 20, itemCount: 1, boughtNum: 0, limitCount: 0, unlocked: true },
-                    ],
-                    summary: { total: 2, unlocked: 2, locked: 0, limited: 0 },
-                }));
+                return tracked('getShopInfo', accountId, () => ({ shopId: input, goods: [], summary: { total: 0 } }));
             }
             const action = String(input && input.action || '');
             return tracked(`action:${action}`, accountId, () => {
+                if (action === 'getMissingSeedPurchasePlan') return JSON.parse(JSON.stringify(plan));
                 if (action === 'claimIllustratedRewards') throw new Error('claim action must be locked at HTTP layer');
                 if (action === 'buyIllustratedSeed') {
                     buyActionCount++;
-                    return { goodsId: Number(input.goodsId), price: Number(input.goodsId) === 11 ? 10 : 20, count: 1 };
+                    const goodsId = Number(input.goodsId);
+                    return { goodsId, price: goodsId === 12 ? 20 : 10, count: 1 };
                 }
                 throw new Error(`unexpected action ${action}`);
             });
-        },
-        getBagSeeds(accountId) {
-            return tracked('getBagSeeds', accountId, () => []);
         },
     };
 
@@ -111,6 +106,8 @@ async function main() {
         console.log('Catalog Actions API Self-Test');
         console.log('安全: fake provider / random localhost port，不访问 QQ、不购买真实商品。\n');
 
+        // Simulate the current page starting illustrated + purchase-plan together.
+        // The controller must serialize those provider/Worker calls for one account.
         const [illustrated, purchasePlan] = await Promise.all([
             request('/api/catalog/illustrated'),
             request('/api/catalog/illustrated/purchase-plan'),
@@ -124,9 +121,8 @@ async function main() {
         assert.equal(purchasePlan.body.data.summary.buyable, 2);
         assert.equal(purchasePlan.body.data.summary.totalCost, 30);
         assert.equal(maxProviderCalls, 1);
-        console.log('✅ concurrent page loads serialized PASS');
+        console.log('✅ concurrent page calls serialized PASS');
         console.log('✅ reward semantics masked until verified PASS');
-        console.log('✅ purchase plan uses sequential live sources PASS');
 
         const claim = await request('/api/catalog/illustrated/claim', { method: 'POST', body: '{}' });
         assert.equal(claim.status, 409);
@@ -134,7 +130,9 @@ async function main() {
         assert.equal(calls.some(row => row.method === 'action:claimIllustratedRewards'), false);
         console.log('✅ unverified reward mutation locked PASS');
 
-        const invalidBuy = await request('/api/catalog/illustrated/buy-seed', { method: 'POST', body: JSON.stringify({ goodsId: 0 }) });
+        const invalidBuy = await request('/api/catalog/illustrated/buy-seed', {
+            method: 'POST', body: JSON.stringify({ goodsId: 0 }),
+        });
         assert.equal(invalidBuy.status, 400);
         console.log('✅ invalid single purchase rejected PASS');
 
@@ -154,12 +152,26 @@ async function main() {
         assert.equal(buy.body.data.price, 10);
         console.log('✅ client price ignored PASS');
 
+        const beforeStaleBulk = buyActionCount;
         const staleBulk = await request('/api/catalog/illustrated/buy-missing-seeds', {
             method: 'POST',
             body: JSON.stringify({ expectedBuyable: 2, expectedTotalCost: 29 }),
         });
         assert.equal(staleBulk.status, 409);
+        assert.equal(buyActionCount, beforeStaleBulk);
         console.log('✅ stale bulk confirmation rejected PASS');
+
+        plan = {
+            ...plan,
+            items: plan.items.slice(0, 1),
+            summary: { ...plan.summary, buyable: 1, totalCost: 10 },
+        };
+        const changedBulk = await request('/api/catalog/illustrated/buy-missing-seeds', {
+            method: 'POST',
+            body: JSON.stringify({ expectedBuyable: 2, expectedTotalCost: 30 }),
+        });
+        assert.equal(changedBulk.status, 409);
+        console.log('✅ server-side plan change rejected PASS');
 
         const forbidden = await request('/api/catalog/illustrated/claim', {
             method: 'POST', body: '{}', headers: { 'x-account-id': '2' },
