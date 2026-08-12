@@ -59,7 +59,8 @@ const PUSHOO_CHANNELS = new Set([
     'discord', 'wxpusher',
 ]);
 
-const DEFAULT_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
+const LEGACY_FERTILIZER_LAND_TYPES = ['gold', 'black', 'red', 'normal'];
+const DEFAULT_FERTILIZER_LAND_TYPES = ['purple', ...LEGACY_FERTILIZER_LAND_TYPES];
 const FERTILIZER_LAND_TYPE_SET = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
 const INTERVAL_MAX_SEC = 86400;
 const DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC = 300;
@@ -147,6 +148,7 @@ const DEFAULT_ACCOUNT_CONFIG = {
     },
     plantingStrategy: 'max_exp',
     preferredSeedId: 0,
+    prioritize2x2Crops: true,
     intervals: {
         farm: 2,
         farmMin: 20,
@@ -287,6 +289,9 @@ function normalizeFertilizerLandTypes(input, fallback = DEFAULT_FERTILIZER_LAND_
         if (normalized.includes(value)) continue;
         normalized.push(value);
     }
+    const legacyAllSelected = normalized.length === LEGACY_FERTILIZER_LAND_TYPES.length
+        && LEGACY_FERTILIZER_LAND_TYPES.every(type => normalized.includes(type));
+    if (legacyAllSelected) normalized.unshift('purple');
     return normalized;
 }
 
@@ -325,6 +330,7 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
         preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
+        prioritize2x2Crops: base.prioritize2x2Crops !== false,
         plantBlacklist: rawPlantBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         stealDelaySeconds: Math.max(0, Math.min(300, Number(base.stealDelaySeconds) || 0)),
         plantOrderRandom: !!(base.plantOrderRandom),
@@ -372,6 +378,10 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
 
     if (src.preferredSeedId !== undefined && src.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
+    }
+
+    if (src.prioritize2x2Crops !== undefined && src.prioritize2x2Crops !== null) {
+        cfg.prioritize2x2Crops = !!src.prioritize2x2Crops;
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -855,6 +865,10 @@ function getPlantingStrategy(accountId) {
     return getAccountConfigSnapshot(accountId).plantingStrategy;
 }
 
+function getPrioritize2x2Crops(accountId) {
+    return getAccountConfigSnapshot(accountId).prioritize2x2Crops !== false;
+}
+
 function getBagSeedPriority(accountId) {
     return [...(getAccountConfigSnapshot(accountId).bagSeedPriority || [])];
 }
@@ -1298,6 +1312,7 @@ module.exports = {
     isAutomationOn,
     getPreferredSeed,
     getPlantingStrategy,
+    getPrioritize2x2Crops,
     getBagSeedPriority,
     getBagSeedFallbackStrategy,
     getIntervals,

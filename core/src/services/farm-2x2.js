@@ -1,6 +1,8 @@
 const FARM_COLUMNS = 4;
 const FARM_ROWS = 6;
 
+let reservedWaitingGroupKey = '';
+
 function toId(value) {
     const direct = Number(value);
     if (Number.isSafeInteger(direct) && direct > 0) return direct;
@@ -81,9 +83,95 @@ function overlaps(left, occupiedSet) {
     return left.some(id => occupiedSet.has(id));
 }
 
+function selectMaximumNonOverlappingGroups(groups, limit) {
+    const candidates = [...(Array.isArray(groups) ? groups : [])]
+        .sort((a, b) => a.masterLandId - b.masterLandId);
+    const max = Math.max(0, Number.parseInt(limit, 10) || 0);
+    if (max <= 0 || candidates.length === 0) return [];
+
+    let best = [];
+    function search(index, selected, occupied) {
+        if (selected.length > best.length) best = [...selected];
+        if (selected.length >= max || index >= candidates.length) return;
+        if (selected.length + (candidates.length - index) <= best.length) return;
+
+        const group = candidates[index];
+        if (!overlaps(group.landIds, occupied)) {
+            const nextOccupied = new Set(occupied);
+            group.landIds.forEach(id => nextOccupied.add(id));
+            search(index + 1, [...selected, group], nextOccupied);
+        }
+        search(index + 1, selected, occupied);
+    }
+
+    search(0, [], new Set());
+    return best;
+}
+
+function clear2x2Reservation() {
+    reservedWaitingGroupKey = '';
+}
+
 /**
- * 只挑“当前四块都已经空闲”的组合；不主动铲地，也不预留仍在生长的土地。
- * emptyLandIds 是上一阶段候选，AllLands 当前快照仍需再次确认四块真实为空。
+ * 规划本轮 2x2：
+ * - 已经完整空闲的组合可以直接选中多组；
+ * - 还没完全空闲的组合最多只预留一组；
+ * - 预留优先沿用上一轮，避免每轮换地；否则优先选择当前空地最多的组合。
+ */
+function select2x2Reservations(lands, emptyLandIds, desiredCount = 1) {
+    const max = Math.max(0, Number.parseInt(desiredCount, 10) || 0);
+    if (max <= 0) {
+        clear2x2Reservation();
+        return { readyGroups: [], waitingGroup: null, reservedLandIds: [] };
+    }
+
+    const list = Array.isArray(lands) ? lands : [];
+    const landMap = new Map(list.map(land => [toId(land && land.id), land]).filter(([id]) => id > 0));
+    const empty = new Set((Array.isArray(emptyLandIds) ? emptyLandIds : []).map(toId).filter(Boolean));
+    const activeOccupied = new Set(getActive2x2Footprints(list).flatMap(row => row.landIds));
+    const candidates = build2x2LandGroups(list)
+        .filter(group => !overlaps(group.landIds, activeOccupied));
+
+    const readyCandidates = candidates
+        .filter(group => group.landIds.every(id => empty.has(id)))
+        .filter(group => group.landIds.every(id => isLiveEmptyLand(landMap.get(id))));
+    const readyGroups = selectMaximumNonOverlappingGroups(readyCandidates, max);
+    const occupiedByReady = new Set(readyGroups.flatMap(group => group.landIds));
+
+    let waitingGroup = null;
+    if (readyGroups.length < max) {
+        const waitingCandidates = candidates
+            .filter(group => !group.landIds.every(id => empty.has(id) && isLiveEmptyLand(landMap.get(id))))
+            .filter(group => !overlaps(group.landIds, occupiedByReady))
+            .map(group => ({
+                ...group,
+                emptyCount: group.landIds.filter(id => empty.has(id) && isLiveEmptyLand(landMap.get(id))).length,
+            }))
+            .sort((a, b) => {
+                const aReserved = a.key === reservedWaitingGroupKey ? 1 : 0;
+                const bReserved = b.key === reservedWaitingGroupKey ? 1 : 0;
+                if (aReserved !== bReserved) return bReserved - aReserved;
+                if (a.emptyCount !== b.emptyCount) return b.emptyCount - a.emptyCount;
+                return a.masterLandId - b.masterLandId;
+            });
+        waitingGroup = waitingCandidates[0] || null;
+    }
+
+    reservedWaitingGroupKey = waitingGroup ? waitingGroup.key : '';
+    const reservedLandIds = [
+        ...readyGroups.flatMap(group => group.landIds),
+        ...(waitingGroup ? waitingGroup.landIds : []),
+    ];
+
+    return {
+        readyGroups,
+        waitingGroup,
+        reservedLandIds: [...new Set(reservedLandIds)],
+    };
+}
+
+/**
+ * 兼容首版调用：只返回当前可立即种植的 2x2 组合，不产生等待预留。
  */
 function selectReady2x2Groups(lands, emptyLandIds, limit = 1) {
     const max = Math.max(0, Number.parseInt(limit, 10) || 0);
@@ -94,23 +182,12 @@ function selectReady2x2Groups(lands, emptyLandIds, limit = 1) {
     const empty = new Set((Array.isArray(emptyLandIds) ? emptyLandIds : []).map(toId).filter(Boolean));
     if (empty.size < 4) return [];
 
-    const active = getActive2x2Footprints(list);
-    const activeOccupied = new Set(active.flatMap(row => row.landIds));
+    const activeOccupied = new Set(getActive2x2Footprints(list).flatMap(row => row.landIds));
     const candidates = build2x2LandGroups(list)
         .filter(group => group.landIds.every(id => empty.has(id)))
         .filter(group => group.landIds.every(id => isLiveEmptyLand(landMap.get(id))))
-        .filter(group => !overlaps(group.landIds, activeOccupied))
-        .sort((a, b) => a.masterLandId - b.masterLandId);
-
-    const selected = [];
-    const selectedOccupied = new Set();
-    for (const group of candidates) {
-        if (selected.length >= max) break;
-        if (overlaps(group.landIds, selectedOccupied)) continue;
-        selected.push(group);
-        for (const id of group.landIds) selectedOccupied.add(id);
-    }
-    return selected;
+        .filter(group => !overlaps(group.landIds, activeOccupied));
+    return selectMaximumNonOverlappingGroups(candidates, max);
 }
 
 function validate2x2PlantReply(reply, group) {
@@ -161,6 +238,9 @@ module.exports = {
     isLiveEmptyLand,
     build2x2LandGroups,
     getActive2x2Footprints,
+    selectMaximumNonOverlappingGroups,
+    clear2x2Reservation,
+    select2x2Reservations,
     selectReady2x2Groups,
     validate2x2PlantReply,
 };

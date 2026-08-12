@@ -208,6 +208,7 @@ const currentAccountName = computed(() => {
 const localStrategySettings = ref({
   plantingStrategy: 'max_exp',
   preferredSeedId: 0,
+  prioritize2x2Crops: true,
   bagSeedPriority: [] as number[],
   bagSeedFallbackStrategy: 'level',
   stealDelaySeconds: 0,
@@ -275,7 +276,7 @@ async function fetchBagSeeds() {
       headers: { 'x-account-id': currentAccountId.value },
     })
     if (res.data.ok) {
-      bagSeeds.value = (res.data.data || []).filter((s: BagSeedItem) => s.plantSize === 1)
+      bagSeeds.value = (res.data.data || []).filter((s: BagSeedItem) => Number(s.count) > 0)
     }
   }
   catch (e: any) {
@@ -352,7 +353,7 @@ function dropBagSeed(seedId: number, event: DragEvent) {
 }
 
 watchEffect(() => {
-  if (localStrategySettings.value.plantingStrategy === 'bag_priority' && currentAccountId.value) {
+  if ((localStrategySettings.value.plantingStrategy === 'bag_priority' || localStrategySettings.value.prioritize2x2Crops) && currentAccountId.value) {
     fetchBagSeeds()
   }
 })
@@ -443,6 +444,7 @@ function syncLocalStrategySettings() {
     localStrategySettings.value = JSON.parse(JSON.stringify({
       plantingStrategy: settings.value.plantingStrategy,
       preferredSeedId: settings.value.preferredSeedId,
+      prioritize2x2Crops: settings.value.prioritize2x2Crops !== false,
       bagSeedPriority: settings.value.bagSeedPriority ?? [],
       bagSeedFallbackStrategy: settings.value.bagSeedFallbackStrategy ?? 'level',
       stealDelaySeconds: settings.value.stealDelaySeconds ?? 0,
@@ -496,9 +498,11 @@ watch(currentAccountId, async () => {
 // ==================== 自动控制 ====================
 const automationSaving = ref(false)
 
-const allFertilizerLandTypes = ['gold', 'black', 'red', 'normal']
+const legacyFertilizerLandTypes = ['gold', 'black', 'red', 'normal']
+const allFertilizerLandTypes = ['purple', ...legacyFertilizerLandTypes]
 
 const fertilizerLandTypeOptions = [
+  { label: '紫土地', value: 'purple' },
   { label: '金土地', value: 'gold' },
   { label: '黑土地', value: 'black' },
   { label: '红土地', value: 'red' },
@@ -512,10 +516,13 @@ function normalizeFertilizerLandTypes(input: unknown) {
     const value = String(item || '').trim().toLowerCase()
     if (!allFertilizerLandTypes.includes(value))
       continue
-    if (normalized.includes(value))
-      continue
-    normalized.push(value)
+    if (!normalized.includes(value))
+      normalized.push(value)
   }
+  const legacyAllSelected = normalized.length === legacyFertilizerLandTypes.length
+    && legacyFertilizerLandTypes.every(type => normalized.includes(type))
+  if (legacyAllSelected)
+    normalized.unshift('purple')
   return normalized
 }
 
@@ -1072,6 +1079,15 @@ async function handleTestOffline() {
                 label="种植策略"
                 :options="plantingStrategyOptions"
               />
+    <div class="md:col-span-2 rounded-lg border border-violet-200 bg-violet-50/70 p-3 dark:border-violet-800/50 dark:bg-violet-900/20">
+      <BaseSwitch
+        v-model="localStrategySettings.prioritize2x2Crops"
+        label="优先种植背包 2×2 作物"
+      />
+      <p class="mt-1 text-xs text-violet-700/90 dark:text-violet-300/90">
+        独立于上方主策略。背包有 2×2 种子时优先安排；没有完整空位时最多只预留一组土地，其余土地继续原策略。
+      </p>
+    </div>
               <BaseSelect
                 v-if="localStrategySettings.plantingStrategy === 'preferred'"
                 v-model="localStrategySettings.preferredSeedId"
@@ -1110,7 +1126,7 @@ async function handleTestOffline() {
                       背包种子优先顺序
                     </div>
                     <p class="mt-1 text-xs text-amber-700/90 dark:text-amber-300/90">
-                      先按下方顺序消耗背包中的 1x1 种子；背包种子不足时，再按"第二优先策略"补种。
+                      2×2 由上方独立开关优先处理；这里控制 1×1 背包种子的顺序，背包不足时再按“第二优先策略”补种。
                     </p>
                   </div>
                   <button
@@ -1375,7 +1391,7 @@ async function handleTestOffline() {
                 <div class="mb-2 text-sm text-amber-800 font-medium dark:text-amber-300">
                   施肥范围
                 </div>
-                <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
+                <div class="grid grid-cols-2 gap-2 md:grid-cols-5">
                   <label
                     v-for="option in fertilizerLandTypeOptions"
                     :key="option.value"
