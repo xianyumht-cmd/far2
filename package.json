@@ -6,6 +6,7 @@
     "dev:web": "pnpm -C web dev",
     "dev": "pnpm build:web && pnpm dev:core",
     "startup:scope-selftest": "pnpm -C core startup:scope-selftest",
+    "illustrated:proto-selftest": "pnpm -C core illustrated:proto-selftest",
     "qr:runtime-code": "pnpm -C core qr:runtime-code",
     "qr:process-map": "pnpm -C core qr:process-map",
     "qr:session-map": "pnpm -C core qr:session-map",
