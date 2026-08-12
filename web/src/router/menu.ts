@@ -23,6 +23,13 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/HealthCenter.vue'),
   },
   {
+    path: 'catalog',
+    name: 'catalog',
+    label: '图鉴',
+    icon: 'i-carbon-book',
+    component: () => import('@/views/Catalog.vue'),
+  },
+  {
     path: 'personal',
     name: 'personal',
     label: '个人',

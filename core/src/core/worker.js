@@ -624,6 +624,15 @@ async function handleApiCall(msg) {
             case 'getSeeds':
                 result = await getAvailableSeeds();
                 break;
+            case 'getIllustrated':
+                result = await require('../services/catalog').getIllustratedOverview();
+                break;
+            case 'getShopProfiles':
+                result = await require('../services/catalog').getShopProfilesOverview();
+                break;
+            case 'getShopInfo':
+                result = await require('../services/catalog').getShopInfoOverview(args[0]);
+                break;
             case 'getBag':
                 result = await require('../services/warehouse').getBagDetail();
                 break;

@@ -80,6 +80,35 @@ async function main() {
                 { accountId: '2', time: '2026-08-13 02:00:00', action: 'code_refresh_failed', msg: 'bob-only-event', reason: 'private' },
             ];
         },
+        getIllustrated(accountRef) {
+            const id = this.resolveAccountId(accountRef);
+            return Promise.resolve({
+                items: id === '1'
+                    ? [{ seedId: 20003, name: '胡萝卜', image: '/fake.png', unlocked: true, planted: true, plantedCount: 12, harvestCount: 9, category: 1, hasReward: false }]
+                    : [{ seedId: 29999, name: 'bob-private-seed', image: '', unlocked: false, planted: false, plantedCount: 0, harvestCount: 0, category: 9, hasReward: false }],
+                summary: { total: 1, unlocked: id === '1' ? 1 : 0, locked: id === '1' ? 0 : 1, planted: id === '1' ? 1 : 0, rewardReady: 0 },
+                protocol: { service: 'gamepb.illustratedpb.IllustratedService', method: 'GetIllustratedListV2', version: 2 },
+            });
+        },
+        getShopProfiles(accountRef) {
+            const id = this.resolveAccountId(accountRef);
+            return Promise.resolve({
+                shops: id === '1'
+                    ? [{ shopId: 2, shopName: '种子商店', shopType: 2, shopTypeLabel: '种子商店' }]
+                    : [{ shopId: 99, shopName: 'bob-private-shop', shopType: 2, shopTypeLabel: '种子商店' }],
+                summary: { total: 1, seedShops: 1, petShops: 0, itemShops: 0 },
+            });
+        },
+        getShopInfo(accountRef, shopId) {
+            const id = this.resolveAccountId(accountRef);
+            return Promise.resolve({
+                shopId: Number(shopId),
+                goods: id === '1'
+                    ? [{ goodsId: 100, itemId: 20003, name: '胡萝卜', image: '/fake.png', itemCount: 1, price: 10, boughtNum: 0, limitCount: 0, unlocked: true, conditions: [] }]
+                    : [{ goodsId: 999, itemId: 29999, name: 'bob-private-goods', image: '', itemCount: 1, price: 1, boughtNum: 0, limitCount: 0, unlocked: true, conditions: [] }],
+                summary: { total: 1, unlocked: 1, locked: 0, limited: 0 },
+            });
+        },
         getCodeManagerStatus(accountRef = '') {
             const rows = accounts.map(item => ({
                 accountId: item.id,
@@ -161,7 +190,7 @@ async function main() {
 
     try {
         console.log('QQ Farm CodeManager API Self-Test');
-        console.log('安全: fake accounts / fake status / random localhost port，不访问 QQ、不读取 Farm Code。\n');
+        console.log('安全: fake accounts / fake catalog / fake status / random localhost port，不访问 QQ、不读取 Farm Code。\n');
 
         const status = await request('/api/code-manager/status');
         assert.equal(status.status, 200);
@@ -183,6 +212,34 @@ async function main() {
         assert.equal(health.body.data.summary.connected, 1);
         assert.equal(JSON.stringify(health.body).includes('bob-only-event'), false);
         console.log('✅ runtime health scope + friend/code summary PASS');
+
+        const illustrated = await request('/api/catalog/illustrated', { headers: { 'x-account-id': '1' } });
+        assert.equal(illustrated.status, 200);
+        assert.equal(illustrated.body.data.summary.total, 1);
+        assert.equal(illustrated.body.data.items[0].name, '胡萝卜');
+        assert.equal(JSON.stringify(illustrated.body).includes('bob-private-seed'), false);
+        console.log('✅ illustrated read-only route PASS');
+
+        const shops = await request('/api/catalog/shops', { headers: { 'x-account-id': '1' } });
+        assert.equal(shops.status, 200);
+        assert.equal(shops.body.data.shops[0].shopType, 2);
+        assert.equal(JSON.stringify(shops.body).includes('bob-private-shop'), false);
+        console.log('✅ shop profiles read-only route PASS');
+
+        const shopInfo = await request('/api/catalog/shops/2', { headers: { 'x-account-id': '1' } });
+        assert.equal(shopInfo.status, 200);
+        assert.equal(shopInfo.body.data.shopId, 2);
+        assert.equal(shopInfo.body.data.goods[0].itemId, 20003);
+        assert.equal(JSON.stringify(shopInfo.body).includes('bob-private-goods'), false);
+        console.log('✅ shop info read-only route PASS');
+
+        const catalogForbidden = await request('/api/catalog/illustrated', { headers: { 'x-account-id': '2' } });
+        assert.equal(catalogForbidden.status, 403);
+        console.log('✅ catalog cross-account access denied PASS');
+
+        const invalidShop = await request('/api/catalog/shops/not-a-number', { headers: { 'x-account-id': '1' } });
+        assert.equal(invalidShop.status, 400);
+        console.log('✅ invalid shop id rejected PASS');
 
         const ownConfig = await request('/api/code-manager/config', { headers: { 'x-account-id': '1' } });
         assert.equal(ownConfig.status, 200);
@@ -219,16 +276,21 @@ async function main() {
         assert.equal(adminHealth.body.data.codeManager.configuredCount, 2);
         console.log('✅ admin health scope PASS');
 
-        const serialized = JSON.stringify({ status, health, ownConfig, forbidden, update, refresh, adminStatus, adminHealth });
+        const serialized = JSON.stringify({ status, health, illustrated, shops, shopInfo, catalogForbidden, invalidShop, ownConfig, forbidden, update, refresh, adminStatus, adminHealth });
         assert.equal(/SELFTEST_FRESH|SELFTEST_OLD/i.test(serialized), false);
-        console.log('✅ response credential privacy PASS');
+        assert.equal(serialized.includes('bob-private-seed'), false);
+        assert.equal(serialized.includes('bob-private-shop'), false);
+        assert.equal(serialized.includes('bob-private-goods'), false);
+        console.log('✅ response credential/catalog privacy PASS');
 
         console.log('\n=== RESULT ===');
         console.log(JSON.stringify({
             ok: true,
-            routeCount: 5,
+            routeCount: 8,
             accountIsolation: true,
             runtimeHealthIsolation: true,
+            catalogReadOnly: true,
+            catalogIsolation: true,
             realQqTouched: false,
             realFarmCodeTouched: false,
         }, null, 2));

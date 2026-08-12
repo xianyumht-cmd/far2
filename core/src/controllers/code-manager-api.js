@@ -1,4 +1,5 @@
 const { buildRuntimeHealth } = require('../services/runtime-health');
+const { registerCatalogApi } = require('./catalog-api');
 
 function registerCodeManagerApi(app, options = {}) {
     const {
@@ -10,6 +11,8 @@ function registerCodeManagerApi(app, options = {}) {
     } = options;
 
     if (!app) throw new Error('CodeManager API requires express app');
+
+    registerCatalogApi(app, options);
 
     function requireAccount(req, res) {
         const accountId = typeof getAccId === 'function' ? getAccId(req) : '';
