@@ -56,11 +56,10 @@
 ## 2. 当前生产链
 
 ```text
-Windows 登录
-  -> FAR2Farm NSSM 服务
-       -> Runtime Engine
-       -> 自动启动已保存账号
-       -> CodeManager(event-only)
+Windows / FAR2Farm service start
+  -> Runtime Engine
+       -> CodeManager / friend importer ready first
+       -> auto-start saved accounts (default ON)
        -> Worker
 
 Windows 用户会话
@@ -80,6 +79,20 @@ Code 失效
   -> 新 Code 成功后替换 Worker
   -> 自动恢复 Farm 登录
 ```
+
+### 2.1 2026-08-13 无人值守启动闭环修复
+
+静态收口检查发现：`core/client.js` 仍显式传入 `autoStartAccounts: false`，与本文此前描述的“FAR2Farm 启动后自动启动已保存账号”不一致。
+
+当前源码已经修正：
+
+- 正式 `core/client.js` 不再关闭账号自动启动；
+- Runtime Engine 默认自动启动全部已保存账号；
+- 如确实只想启动 Web 面板，可显式设置 `FARM_AUTO_START_ACCOUNTS=0`；
+- CodeManager 与 startup friend importer 先启动，再启动 Worker，确保无人值守启动时恢复/导入基础设施先就绪；
+- 不依赖浏览器打开或手动点击“启动账号”。
+
+该项属于**稳定性缺陷修复**，不是新的 Code/好友实验。源码修复完成后，只需在真实 Windows 服务环境做一次服务重启确认账号自动上线即可。
 
 ## 3. 第二 QQ / 第二 Windows Session 的定位
 
