@@ -1,18 +1,21 @@
-const { getPlantNameBySeedId, getSeedImageBySeedId, getItemById, getItemImageById } = require('../config/gameConfig');
+const {
+    getPlantNameBySeedId,
+    getSeedImageBySeedId,
+    getItemById,
+    getItemImageById,
+    getFruitName,
+    getPlantByFruitId,
+} = require('../config/gameConfig');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toLong, toNum } = require('../utils/utils');
+const { toLong, toNum, sleep } = require('../utils/utils');
+const { getBagSeeds } = require('./warehouse');
 
-const SHOP_TYPE_LABELS = {
-    1: '道具商店',
-    2: '种子商店',
-    3: '宠物商店',
-};
-
-const ILLUSTRATED_TYPE_LABELS = {
-    1: '作物图鉴',
-    2: '变异图鉴',
-};
+const SHOP_TYPE_LABELS = { 1: '道具商店', 2: '种子商店', 3: '宠物商店' };
+const ILLUSTRATED_TYPE_LABELS = { 1: '作物图鉴', 2: '变异图鉴' };
+const SEED_SHOP_TYPE = 2;
+const BULK_BUY_DELAY_MS = 250;
+const BULK_BUY_LIMIT = 100;
 
 function normalizeConditions(conds) {
     return (Array.isArray(conds) ? conds : []).map(cond => ({
@@ -34,6 +37,24 @@ function buildCatalogItemImage(itemId) {
     const id = toNum(itemId);
     if (!id) return '';
     return getSeedImageBySeedId(id) || getItemImageById(id) || '';
+}
+
+function buildIllustratedIdentity(rawId) {
+    const fruitId = toNum(rawId);
+    const plant = getPlantByFruitId(fruitId);
+    const seedId = toNum(plant && plant.seed_id);
+    const item = getItemById(fruitId);
+    let name = item && item.name ? String(item.name) : '';
+    if (!name) {
+        const fruitName = getFruitName(fruitId);
+        name = fruitName && fruitName !== `果实${fruitId}` ? fruitName : `图鉴作物${fruitId}`;
+    }
+    return {
+        fruitId,
+        seedId,
+        name,
+        image: getItemImageById(fruitId) || (seedId ? getSeedImageBySeedId(seedId) : ''),
+    };
 }
 
 function readVarint(buffer, offset) {
@@ -60,21 +81,18 @@ function scanProtobufMessage(input) {
         const field = Number(tag.value >> 3n);
         const wire = Number(tag.value & 0x7n);
         if (field <= 0) throw new Error(`invalid protobuf field at offset ${pos}`);
-
         if (wire === 0) {
             const value = readVarint(buffer, pos);
             fields.push({ field, wire, value: value.value });
             pos = value.next;
-            continue;
         }
-        if (wire === 1) {
+        else if (wire === 1) {
             const end = pos + 8;
             if (end > buffer.length) throw new Error(`truncated fixed64 field ${field}`);
             fields.push({ field, wire, bytes: buffer.subarray(pos, end) });
             pos = end;
-            continue;
         }
-        if (wire === 2) {
+        else if (wire === 2) {
             const len = readVarint(buffer, pos);
             const length = Number(len.value);
             const start = len.next;
@@ -84,16 +102,16 @@ function scanProtobufMessage(input) {
             }
             fields.push({ field, wire, bytes: buffer.subarray(start, end) });
             pos = end;
-            continue;
         }
-        if (wire === 5) {
+        else if (wire === 5) {
             const end = pos + 4;
             if (end > buffer.length) throw new Error(`truncated fixed32 field ${field}`);
             fields.push({ field, wire, bytes: buffer.subarray(pos, end) });
             pos = end;
-            continue;
         }
-        throw new Error(`unsupported protobuf wire type ${wire} at offset ${pos}`);
+        else {
+            throw new Error(`unsupported protobuf wire type ${wire} at offset ${pos}`);
+        }
     }
     return fields;
 }
@@ -126,19 +144,18 @@ function decodeIllustratedWireFallback(replyBody) {
     const items = fields
         .filter(row => row.field === 1 && row.wire === 2 && row.bytes)
         .map((row) => {
-            const itemFields = scanProtobufMessage(row.bytes);
+            const f = scanProtobufMessage(row.bytes);
             return {
-                seed_id: varintField(itemFields, 1),
-                illustrated_tier: varintField(itemFields, 2),
-                unlocked: varintField(itemFields, 3) > 0,
-                reward_score: varintField(itemFields, 4),
-                harvest_count: varintField(itemFields, 5),
-                reward_info: itemFields.find(item => item.field === 6 && item.wire === 2)?.bytes || Buffer.alloc(0),
-                has_reward: varintField(itemFields, 7) > 0,
+                seed_id: varintField(f, 1),
+                illustrated_tier: varintField(f, 2),
+                unlocked: varintField(f, 3) > 0,
+                reward_score: varintField(f, 4),
+                harvest_count: varintField(f, 5),
+                reward_info: f.find(item => item.field === 6 && item.wire === 2)?.bytes || Buffer.alloc(0),
+                has_reward: varintField(f, 7) > 0,
             };
         })
         .filter(item => item.seed_id > 0);
-
     return {
         items,
         current_score: varintField(fields, 2),
@@ -152,11 +169,13 @@ function decodeIllustratedWireFallback(replyBody) {
 
 function normalizeIllustratedReply(reply, illustratedType, decodeMode, decodeWarning = '') {
     const items = (Array.isArray(reply && reply.items) ? reply.items : []).map((item) => {
-        const seedId = toNum(item && item.seed_id);
+        const identity = buildIllustratedIdentity(item && item.seed_id);
         return {
-            seedId,
-            name: getPlantNameBySeedId(seedId),
-            image: getSeedImageBySeedId(seedId),
+            illustratedId: identity.fruitId,
+            fruitId: identity.fruitId,
+            seedId: identity.seedId,
+            name: identity.name,
+            image: identity.image,
             illustratedType,
             illustratedTypeLabel: ILLUSTRATED_TYPE_LABELS[illustratedType] || `图鉴${illustratedType}`,
             illustratedTier: toNum(item && item.illustrated_tier),
@@ -166,7 +185,6 @@ function normalizeIllustratedReply(reply, illustratedType, decodeMode, decodeWar
             hasReward: !!(item && item.has_reward),
         };
     });
-
     return {
         illustratedType,
         illustratedTypeLabel: ILLUSTRATED_TYPE_LABELS[illustratedType] || `图鉴${illustratedType}`,
@@ -198,39 +216,50 @@ async function getIllustratedOverview(options = {}) {
     if (!types.GetIllustratedListV2Request || !types.GetIllustratedListV2Reply) {
         throw new Error('Illustrated V2 protobuf 未加载');
     }
-
     const illustratedType = Number(options.illustratedType) === 2 ? 2 : 1;
     const body = types.GetIllustratedListV2Request.encode(
-        types.GetIllustratedListV2Request.create({
-            refresh: options.refresh !== false,
-            illustrated_type: illustratedType,
-        }),
+        types.GetIllustratedListV2Request.create({ refresh: options.refresh !== false, illustrated_type: illustratedType }),
     ).finish();
     const { body: replyBody } = await sendMsgAsync(
-        'gamepb.illustratedpb.IllustratedService',
-        'GetIllustratedListV2',
-        body,
+        'gamepb.illustratedpb.IllustratedService', 'GetIllustratedListV2', body,
     );
-
     try {
-        const reply = types.GetIllustratedListV2Reply.decode(replyBody);
-        return normalizeIllustratedReply(reply, illustratedType, 'protobufjs');
+        return normalizeIllustratedReply(types.GetIllustratedListV2Reply.decode(replyBody), illustratedType, 'protobufjs');
     }
     catch (err) {
-        const fallback = decodeIllustratedWireFallback(replyBody);
         return normalizeIllustratedReply(
-            fallback,
-            illustratedType,
-            'wire-fallback',
+            decodeIllustratedWireFallback(replyBody), illustratedType, 'wire-fallback',
             err && err.message ? err.message : 'protobuf decode failed',
         );
     }
 }
 
+function normalizeRewardItem(item) {
+    const id = toNum(item && item.id);
+    return { id, count: toNum(item && item.count), name: buildCatalogItemName(id), image: buildCatalogItemImage(id) };
+}
+
+async function claimIllustratedRewards() {
+    if (!types.ClaimAllRewardsV2Request || !types.ClaimAllRewardsV2Reply) throw new Error('Illustrated reward protobuf 未加载');
+    const body = types.ClaimAllRewardsV2Request.encode(
+        types.ClaimAllRewardsV2Request.create({ only_claimable: true }),
+    ).finish();
+    const { body: replyBody } = await sendMsgAsync(
+        'gamepb.illustratedpb.IllustratedService', 'ClaimAllRewardsV2', body,
+    );
+    const reply = types.ClaimAllRewardsV2Reply.decode(replyBody);
+    const items = (Array.isArray(reply && reply.items) ? reply.items : []).map(normalizeRewardItem);
+    const bonusItems = (Array.isArray(reply && reply.bonus_items) ? reply.bonus_items : []).map(normalizeRewardItem);
+    return {
+        items,
+        bonusItems,
+        totalKinds: items.length + bonusItems.length,
+        totalCount: [...items, ...bonusItems].reduce((sum, row) => sum + Math.max(0, row.count), 0),
+    };
+}
+
 async function getShopProfilesOverview() {
-    if (!types.ShopProfilesRequest || !types.ShopProfilesReply) {
-        throw new Error('ShopProfiles protobuf 未加载');
-    }
+    if (!types.ShopProfilesRequest || !types.ShopProfilesReply) throw new Error('ShopProfiles protobuf 未加载');
     const body = types.ShopProfilesRequest.encode(types.ShopProfilesRequest.create({})).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.shoppb.ShopService', 'ShopProfiles', body);
     const reply = types.ShopProfilesReply.decode(replyBody);
@@ -251,10 +280,8 @@ async function getShopProfilesOverview() {
     };
 }
 
-async function getShopInfoOverview(shopId) {
-    if (!types.ShopInfoRequest || !types.ShopInfoReply) {
-        throw new Error('ShopInfo protobuf 未加载');
-    }
+async function getShopInfoById(shopId) {
+    if (!types.ShopInfoRequest || !types.ShopInfoReply) throw new Error('ShopInfo protobuf 未加载');
     const id = toNum(shopId);
     if (!id) throw new Error('Invalid shopId');
     const body = types.ShopInfoRequest.encode(types.ShopInfoRequest.create({ shop_id: toLong(id) })).finish();
@@ -263,16 +290,11 @@ async function getShopInfoOverview(shopId) {
     const goods = (Array.isArray(reply && reply.goods_list) ? reply.goods_list : []).map((row) => {
         const itemId = toNum(row && row.item_id);
         return {
-            goodsId: toNum(row && row.id),
-            itemId,
-            name: buildCatalogItemName(itemId),
-            image: buildCatalogItemImage(itemId),
-            itemCount: toNum(row && row.item_count),
-            price: toNum(row && row.price),
-            boughtNum: toNum(row && row.bought_num),
-            limitCount: toNum(row && row.limit_count),
-            unlocked: !!(row && row.unlocked),
-            conditions: normalizeConditions(row && row.conds),
+            goodsId: toNum(row && row.id), itemId,
+            name: buildCatalogItemName(itemId), image: buildCatalogItemImage(itemId),
+            itemCount: toNum(row && row.item_count), price: toNum(row && row.price),
+            boughtNum: toNum(row && row.bought_num), limitCount: toNum(row && row.limit_count),
+            unlocked: !!(row && row.unlocked), conditions: normalizeConditions(row && row.conds),
         };
     });
     return {
@@ -287,10 +309,141 @@ async function getShopInfoOverview(shopId) {
     };
 }
 
+async function getSeedShopSnapshot() {
+    const profiles = await getShopProfilesOverview();
+    const seedShop = profiles.shops.find(shop => shop.shopType === SEED_SHOP_TYPE);
+    if (!seedShop || !seedShop.shopId) throw new Error('当前服务器未返回种子商店');
+    return { seedShop, info: await getShopInfoById(seedShop.shopId) };
+}
+
+async function getMissingSeedPurchasePlan() {
+    const [illustrated, seedShopSnapshot, bagSeeds] = await Promise.all([
+        getIllustratedOverview({ illustratedType: 1, refresh: true }),
+        getSeedShopSnapshot(),
+        getBagSeeds(),
+    ]);
+    const bagCountBySeed = new Map(
+        (Array.isArray(bagSeeds) ? bagSeeds : []).map(row => [toNum(row && row.seedId), toNum(row && row.count)]),
+    );
+    const goodsByItemId = new Map(seedShopSnapshot.info.goods.map(row => [toNum(row.itemId), row]));
+    const items = illustrated.items.filter(item => !item.unlocked).map((item) => {
+        const ownedCount = bagCountBySeed.get(item.seedId) || 0;
+        const goods = item.seedId ? goodsByItemId.get(item.seedId) : null;
+        const limitRemaining = goods && goods.limitCount > 0 ? Math.max(0, goods.limitCount - goods.boughtNum) : null;
+        let reason = '';
+        if (!item.seedId) reason = '本地配置暂未映射到种子ID';
+        else if (ownedCount > 0) reason = '背包已有该种子';
+        else if (!goods) reason = '种子商店未找到该商品';
+        else if (!goods.unlocked) reason = '商店尚未解锁';
+        else if (limitRemaining === 0) reason = '已达限购';
+        const canBuy = !!goods && !!goods.unlocked && ownedCount <= 0 && limitRemaining !== 0;
+        return {
+            fruitId: item.fruitId, seedId: item.seedId, name: item.name,
+            image: item.image || (goods && goods.image) || '', illustratedTier: item.illustratedTier,
+            ownedCount, canBuy, reason,
+            goodsId: goods ? goods.goodsId : 0, price: goods ? goods.price : 0,
+            itemCount: goods ? Math.max(1, goods.itemCount || 1) : 0,
+            boughtNum: goods ? goods.boughtNum : 0, limitCount: goods ? goods.limitCount : 0,
+        };
+    });
+    const buyable = items.filter(item => item.canBuy);
+    return {
+        shop: seedShopSnapshot.seedShop,
+        items,
+        summary: {
+            locked: items.length,
+            alreadyOwned: items.filter(item => item.ownedCount > 0).length,
+            buyable: buyable.length,
+            totalCost: buyable.reduce((sum, item) => sum + Math.max(0, item.price), 0),
+        },
+    };
+}
+
+async function sendBuyGoods(goodsId, price) {
+    if (!types.BuyGoodsRequest || !types.BuyGoodsReply) throw new Error('BuyGoods protobuf 未加载');
+    const body = types.BuyGoodsRequest.encode(types.BuyGoodsRequest.create({
+        goods_id: toLong(goodsId), num: toLong(1), price: toLong(price),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.shoppb.ShopService', 'BuyGoods', body);
+    return types.BuyGoodsReply.decode(replyBody);
+}
+
+function normalizePurchaseReply(goods, reply) {
+    return {
+        goodsId: goods.goodsId,
+        seedId: goods.itemId,
+        name: goods.name,
+        price: goods.price,
+        count: Math.max(1, goods.itemCount || 1),
+        getItems: (Array.isArray(reply && reply.get_items) ? reply.get_items : []).map(normalizeRewardItem),
+        costItems: (Array.isArray(reply && reply.cost_items) ? reply.cost_items : []).map(normalizeRewardItem),
+    };
+}
+
+async function buySeedGoodsSafely(goodsId) {
+    const id = toNum(goodsId);
+    if (!id) throw new Error('Invalid goodsId');
+    const { info } = await getSeedShopSnapshot();
+    const goods = info.goods.find(row => row.goodsId === id);
+    if (!goods) throw new Error('该商品不属于当前种子商店');
+    if (!goods.unlocked) throw new Error('该种子商品尚未解锁');
+    if (goods.limitCount > 0 && goods.boughtNum >= goods.limitCount) throw new Error('该种子商品已达限购');
+    const bagSeeds = await getBagSeeds();
+    const owned = (Array.isArray(bagSeeds) ? bagSeeds : []).find(row => toNum(row && row.seedId) === goods.itemId);
+    if (owned && toNum(owned.count) > 0) throw new Error('背包已有该种子，本功能不会重复购买');
+    return normalizePurchaseReply(goods, await sendBuyGoods(goods.goodsId, goods.price));
+}
+
+async function buyAllMissingIllustratedSeeds() {
+    const plan = await getMissingSeedPurchasePlan();
+    const targets = plan.items.filter(item => item.canBuy).slice(0, BULK_BUY_LIMIT);
+    const results = [];
+    for (const item of targets) {
+        try {
+            const reply = await sendBuyGoods(item.goodsId, item.price);
+            results.push({ ...item, ok: true, purchase: normalizePurchaseReply({
+                goodsId: item.goodsId, itemId: item.seedId, name: item.name,
+                price: item.price, itemCount: item.itemCount,
+            }, reply) });
+        }
+        catch (err) {
+            results.push({ ...item, ok: false, error: err && err.message ? err.message : String(err || 'unknown') });
+        }
+        if (targets.length > 1) await sleep(BULK_BUY_DELAY_MS);
+    }
+    return {
+        requested: targets.length,
+        successCount: results.filter(row => row.ok).length,
+        failCount: results.filter(row => !row.ok).length,
+        spentEstimate: results.filter(row => row.ok).reduce((sum, row) => sum + Math.max(0, row.price), 0),
+        results,
+    };
+}
+
+async function runCatalogAction(input) {
+    const action = String(input && input.action || '').trim();
+    if (action === 'claimIllustratedRewards') return claimIllustratedRewards();
+    if (action === 'getMissingSeedPurchasePlan') return getMissingSeedPurchasePlan();
+    if (action === 'buyIllustratedSeed') return buySeedGoodsSafely(input.goodsId);
+    if (action === 'buyAllMissingIllustratedSeeds') return buyAllMissingIllustratedSeeds();
+    throw new Error(`Unsupported catalog action: ${action || '(empty)'}`);
+}
+
+async function getShopInfoOverview(shopIdOrAction) {
+    if (shopIdOrAction && typeof shopIdOrAction === 'object' && !Array.isArray(shopIdOrAction)) {
+        return runCatalogAction(shopIdOrAction);
+    }
+    return getShopInfoById(shopIdOrAction);
+}
+
 module.exports = {
     getIllustratedOverview,
+    claimIllustratedRewards,
     getShopProfilesOverview,
     getShopInfoOverview,
+    getMissingSeedPurchasePlan,
+    buySeedGoodsSafely,
+    buyAllMissingIllustratedSeeds,
     SHOP_TYPE_LABELS,
     ILLUSTRATED_TYPE_LABELS,
 };
