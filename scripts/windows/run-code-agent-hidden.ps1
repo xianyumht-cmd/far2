@@ -41,7 +41,7 @@ $cloak = $null
 try {
     $cloakArgs = @(
         '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
-        '-File', ('"{0}"' -f $cloakScript)
+        '-File', ('"{0}"' -f $cloakScript).Replace('\"', '"')
     ) -join ' '
     $cloak = Start-Process -FilePath 'powershell.exe' -ArgumentList $cloakArgs -WindowStyle Hidden -PassThru
 
