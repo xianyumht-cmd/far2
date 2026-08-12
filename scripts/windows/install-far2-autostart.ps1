@@ -58,9 +58,7 @@ function Read-EnabledQqAccount {
     $enabled = @($accounts | Where-Object {
         $platform = if ($_.platform) { [string]$_.platform } else { 'qq' }
         $mode = if ($_.codeRefreshMode) { [string]$_.codeRefreshMode } else { '' }
-        $platform.ToLowerInvariant() -eq 'qq' -and
-            $_.codeRefreshEnabled -eq $true -and
-            $mode.ToLowerInvariant() -eq 'windows_session'
+        ($platform.ToLowerInvariant() -eq 'qq') -and ($_.codeRefreshEnabled -eq $true) -and ($mode.ToLowerInvariant() -eq 'windows_session')
     })
 
     if ($enabled.Count -ne 1) {
