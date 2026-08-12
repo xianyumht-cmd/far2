@@ -39,9 +39,10 @@ Set-Location -LiteralPath $coreDir
 # 不改变 QQ/QQEX 进程归属，也不绕过 UIN/SessionId 校验。
 $cloak = $null
 try {
+    $quotedCloak = '"' + $cloakScript + '"'
     $cloakArgs = @(
         '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass',
-        '-File', ('"{0}"' -f $cloakScript).Replace('\"', '"')
+        '-File', $quotedCloak
     ) -join ' '
     $cloak = Start-Process -FilePath 'powershell.exe' -ArgumentList $cloakArgs -WindowStyle Hidden -PassThru
 
