@@ -76,6 +76,42 @@ FAR2Farm service restart
 
 当前单机生产约束为只运行一个目标 QQ；其他保存账号不要求在同一 Windows 实例同时在线，因此不作为本轮失败项，也不需要 Windows2 验收。
 
+### Phase 4 — 运行健康中心
+
+**SOURCE IMPLEMENTED / LOCAL UI CHECK PENDING**
+
+第一版已经实现，目标是不用翻完整日志就能判断当前挂机链是否健康。
+
+新增：
+
+```text
+GET /api/runtime-health
+web/src/views/HealthCenter.vue
+/health
+```
+
+当前页面只读展示：
+
+- 可访问账号总数；
+- Worker 是否运行；
+- Farm 是否在线、等级与本次在线时长；
+- CodeManager / Provider 当前状态；
+- 最近一次 Code 刷新结果；
+- QQ 好友池本次启动导入的 GID / openId 数量；
+- 最近 WS400 / kickout / Code 刷新恢复事件；
+- 总体“正常 / 需要关注 / 需要处理 / 空闲”判断。
+
+安全约束：
+
+- 健康页只读，不提供强制重启或强制刷新按钮；
+- 不返回 Farm Code / Provider token；
+- 普通用户只能看到自己可访问账号；
+- 顶部汇总数量也按账号权限过滤，不泄露其他用户账号数量；
+- “账号未运行”默认是 idle，不直接判定为故障；
+- 好友数字读取当前进程已有启动导入日志，不额外请求游戏服务器。
+
+已扩展 `qr:code-manager-api-selftest` 覆盖健康接口账号隔离、好友数量和恢复事件字段。当前执行环境不能运行仓库依赖，因此源码合并后需在真实 Windows checkout 执行一次 `pnpm build:web` + API self-test + 页面查看完成本地验收。
+
 ## 2. Current production architecture
 
 ```text
@@ -103,6 +139,11 @@ Code recovery path
   -> old Worker stopped
   -> replacement Worker starts
   -> Farm login recovers
+
+Observability path
+  -> DataProvider existing runtime state/logs
+  -> /api/runtime-health (permission-filtered, read-only)
+  -> /health WebUI
 ```
 
 ## 3. Second QQ / second Windows Session
@@ -145,6 +186,19 @@ core/src/services/windows-runtime-code.js
 
 保留 Provider、CodeManager、Session Registry 和 runtime-code 相关安全自测/诊断工具。
 
+### Runtime health
+
+第一版健康中心代码：
+
+```text
+core/src/controllers/code-manager-api.js
+core/scripts/qq-code-manager-api-selftest.js
+web/src/views/HealthCenter.vue
+web/src/router/menu.ts
+```
+
+健康中心必须保持只读优先，不能为了“方便修复”绕过现有 exact-UIN / Session 身份保护。
+
 ## 5. Removed rejected experiments
 
 2026-08-13 收口阶段已删除：
@@ -183,4 +237,11 @@ core/src/services/windows-runtime-code.js
 
 **不要再把 Code 自动刷新、好友完整导入、Windows 服务自动恢复或第二 Windows Session 验收当成默认下一步。**
 
-下一步优先进入“运行健康中心”等新的可观测性 / 业务功能。
+当前最近任务：
+
+1. 本地更新运行健康中心；
+2. 执行 `pnpm qr:code-manager-api-selftest`；
+3. 执行 `pnpm build:web`；
+4. 重启 `FAR2Farm`；
+5. 打开 `/health` 确认账号 232 显示 Worker/Farm/Code/好友池健康状态；
+6. 验收后再进入下一项业务功能。
