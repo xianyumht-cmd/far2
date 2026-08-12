@@ -80,7 +80,21 @@ function registerCatalogApi(app, options = {}) {
         if (!Number.isSafeInteger(goodsId) || goodsId <= 0) {
             return res.status(400).json({ ok: false, error: 'Invalid goodsId' });
         }
-        return sendAction(res, accountId, { action: 'buyIllustratedSeed', goodsId });
+        try {
+            const plan = await runCatalogActionForAccount(accountId, { action: 'getMissingSeedPurchasePlan' });
+            const allowed = Array.isArray(plan && plan.items)
+                ? plan.items.find(item => Number(item && item.goodsId) === goodsId && item.canBuy === true)
+                : null;
+            if (!allowed) {
+                return res.status(409).json({ ok: false, error: '该商品不在当前缺失图鉴可购买清单中，请重新读取' });
+            }
+            const data = await runCatalogActionForAccount(accountId, { action: 'buyIllustratedSeed', goodsId });
+            return res.json({ ok: true, data });
+        }
+        catch (err) {
+            if (err && err.statusCode === 503) return res.status(503).json({ ok: false, error: err.message });
+            return fail(res, err);
+        }
     });
 
     app.post('/api/catalog/illustrated/buy-missing-seeds', async (req, res) => {
