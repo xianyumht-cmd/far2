@@ -73,12 +73,16 @@ if ($svc) {
     try {
         $serviceEnv = @((Get-ItemProperty -Path $parametersKey -Name 'AppEnvironmentExtra' -ErrorAction Stop).AppEnvironmentExtra)
         $hasAuto = [bool]($serviceEnv | Where-Object { $_ -eq 'FARM_CODE_AUTO_REFRESH=1' })
+        $eventOnly = [bool]($serviceEnv | Where-Object { $_ -eq 'FARM_CODE_SCHEDULED_REFRESH=0' })
         $hasB64 = [bool]($serviceEnv | Where-Object { $_ -like 'FARM_CODE_PROVIDER_TARGETS_B64=*' })
         $hasRaw = [bool]($serviceEnv | Where-Object { $_ -like 'FARM_CODE_PROVIDER_TARGETS=*' })
         $hasServiceToken = [bool]($serviceEnv | Where-Object { $_ -like "$TokenEnv=*" })
         $hasTimeout = [bool]($serviceEnv | Where-Object { $_ -eq 'FARM_CODE_PROVIDER_HEALTH_TIMEOUT_MS=20000' })
+        $intervalEntry = $serviceEnv | Where-Object { $_ -like 'FARM_CODE_REFRESH_INTERVAL_MS=*' } | Select-Object -First 1
+        $intervalMs = if ($intervalEntry) { $intervalEntry.Substring('FARM_CODE_REFRESH_INTERVAL_MS='.Length) } else { '' }
         $count = $serviceEnv.Count
-        Write-Host "Service provider env: auto=$hasAuto targetsB64=$hasB64 targetsRaw=$hasRaw token=$hasServiceToken healthTimeout=$hasTimeout entries=$count source=REG_MULTI_SZ"
+        Write-Host "Service provider env: auto=$hasAuto eventOnly=$eventOnly targetsB64=$hasB64 targetsRaw=$hasRaw token=$hasServiceToken healthTimeout=$hasTimeout entries=$count source=REG_MULTI_SZ"
+        Write-Host "Service refresh mode: eventOnly=$eventOnly passiveIntervalMs=$intervalMs"
 
         if ($hasB64) {
             $b64Entry = $serviceEnv | Where-Object { $_ -like 'FARM_CODE_PROVIDER_TARGETS_B64=*' } | Select-Object -First 1
