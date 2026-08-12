@@ -1,6 +1,5 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
-# 只允许当前 Windows 登录 Session 一个窗口隐藏器实例。
 $mutex = New-Object System.Threading.Mutex($false, 'Local\FAR2FarmWindowCloak')
 if (-not $mutex.WaitOne(0, $false)) { exit 0 }
 
@@ -28,7 +27,9 @@ public static class Far2WindowApi {
         $children = @{}
         foreach ($row in $rows) {
             $ppid = [int]$row.ParentProcessId
-            if (-not $children.ContainsKey($ppid)) { $children[$ppid] = New-Object System.Collections.ArrayList }
+            if (-not $children.ContainsKey($ppid)) {
+                $children[$ppid] = New-Object System.Collections.ArrayList
+            }
             [void]$children[$ppid].Add($row)
         }
 
@@ -40,6 +41,7 @@ public static class Far2WindowApi {
             $queue = New-Object System.Collections.Queue
             $queue.Enqueue($root)
             $isFarm = $false
+
             while ($queue.Count -gt 0) {
                 $item = $queue.Dequeue()
                 [void]$tree.Add($item)
@@ -60,6 +62,7 @@ public static class Far2WindowApi {
         $qq = @(Get-Process -Name QQ -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $selfSession })
         $needRefresh = $false
         $current = New-Object 'System.Collections.Generic.HashSet[int]'
+
         foreach ($proc in $qq) {
             [void]$current.Add([int]$proc.Id)
             if (-not $knownPids.Contains([int]$proc.Id)) { $needRefresh = $true }
@@ -73,13 +76,10 @@ public static class Far2WindowApi {
         }
 
         foreach ($proc in $qq) {
+            if (-not $farmPids.Contains([int]$proc.Id)) { continue }
             $handle = $proc.MainWindowHandle
             if ($handle -eq 0) { continue }
-            $looksLikeFarm = $farmPids.Contains([int]$proc.Id) -or ([string]$proc.MainWindowTitle -match '经典农场|QQ农场|农场')
-            if (-not $looksLikeFarm) { continue }
 
-            # 不真正“无头”运行 QQ，而是把临时小程序窗口移出可见桌面并禁止抢焦点。
-            # QQ/QQEX 仍处于当前交互式 Session，因此 qq.login() 和 UIN 校验保持原样。
             [Far2WindowApi]::SetWindowPos(
                 $handle,
                 [IntPtr]::Zero,
