@@ -240,5 +240,6 @@ module.exports = {
     getQqexRoot,
     getMiniAppRoot,
     findFarmFolders,
+    openFarmMiniApp,
     isLikelyCode,
 };
