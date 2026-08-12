@@ -1,7 +1,15 @@
-const { getPlantNameBySeedId, getSeedImageBySeedId, getItemById, getItemImageById } = require('../config/gameConfig');
+const {
+    getPlantNameBySeedId,
+    getSeedImageBySeedId,
+    getItemById,
+    getItemImageById,
+    getFruitName,
+    getPlantByFruitId,
+} = require('../config/gameConfig');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { toLong, toNum } = require('../utils/utils');
+const { toLong, toNum, sleep } = require('../utils/utils');
+const { getBagSeeds } = require('./warehouse');
 
 const SHOP_TYPE_LABELS = {
     1: '道具商店',
@@ -13,6 +21,10 @@ const ILLUSTRATED_TYPE_LABELS = {
     1: '作物图鉴',
     2: '变异图鉴',
 };
+
+const SEED_SHOP_TYPE = 2;
+const BULK_BUY_DELAY_MS = 250;
+const BULK_BUY_LIMIT = 100;
 
 function normalizeConditions(conds) {
     return (Array.isArray(conds) ? conds : []).map(cond => ({
@@ -34,6 +46,24 @@ function buildCatalogItemImage(itemId) {
     const id = toNum(itemId);
     if (!id) return '';
     return getSeedImageBySeedId(id) || getItemImageById(id) || '';
+}
+
+function buildIllustratedIdentity(rawId) {
+    const fruitId = toNum(rawId);
+    const plant = getPlantByFruitId(fruitId);
+    const seedId = toNum(plant && plant.seed_id);
+    const item = getItemById(fruitId);
+    let name = item && item.name ? String(item.name) : '';
+    if (!name) {
+        const fruitName = getFruitName(fruitId);
+        name = fruitName && fruitName !== `果实${fruitId}` ? fruitName : `图鉴作物${fruitId}`;
+    }
+    return {
+        fruitId,
+        seedId,
+        name,
+        image: getItemImageById(fruitId) || (seedId ? getSeedImageBySeedId(seedId) : ''),
+    };
 }
 
 function readVarint(buffer, offset) {
@@ -152,11 +182,14 @@ function decodeIllustratedWireFallback(replyBody) {
 
 function normalizeIllustratedReply(reply, illustratedType, decodeMode, decodeWarning = '') {
     const items = (Array.isArray(reply && reply.items) ? reply.items : []).map((item) => {
-        const seedId = toNum(item && item.seed_id);
+        const identity = buildIllustratedIdentity(item && item.seed_id);
         return {
-            seedId,
-            name: getPlantNameBySeedId(seedId),
-            image: getSeedImageBySeedId(seedId),
+            // Current server field name is seed_id, but for crop illustrated it is the fruit/catalog id.
+            illustratedId: identity.fruitId,
+            fruitId: identity.fruitId,
+            seedId: identity.seedId,
+            name: identity.name,
+            image: identity.image,
             illustratedType,
             illustratedTypeLabel: ILLUSTRATED_TYPE_LABELS[illustratedType] || `图鉴${illustratedType}`,
             illustratedTier: toNum(item && item.illustrated_tier),
@@ -227,6 +260,39 @@ async function getIllustratedOverview(options = {}) {
     }
 }
 
+function normalizeRewardItem(item) {
+    const id = toNum(item && item.id);
+    return {
+        id,
+        count: toNum(item && item.count),
+        name: buildCatalogItemName(id),
+        image: buildCatalogItemImage(id),
+    };
+}
+
+async function claimIllustratedRewards() {
+    if (!types.ClaimAllRewardsV2Request || !types.ClaimAllRewardsV2Reply) {
+        throw new Error('Illustrated reward protobuf 未加载');
+    }
+    const body = types.ClaimAllRewardsV2Request.encode(
+        types.ClaimAllRewardsV2Request.create({ only_claimable: true }),
+    ).finish();
+    const { body: replyBody } = await sendMsgAsync(
+        'gamepb.illustratedpb.IllustratedService',
+        'ClaimAllRewardsV2',
+        body,
+    );
+    const reply = types.ClaimAllRewardsV2Reply.decode(replyBody);
+    const items = (Array.isArray(reply && reply.items) ? reply.items : []).map(normalizeRewardItem);
+    const bonusItems = (Array.isArray(reply && reply.bonus_items) ? reply.bonus_items : []).map(normalizeRewardItem);
+    return {
+        items,
+        bonusItems,
+        totalKinds: items.length + bonusItems.length,
+        totalCount: [...items, ...bonusItems].reduce((sum, row) => sum + Math.max(0, row.count), 0),
+    };
+}
+
 async function getShopProfilesOverview() {
     if (!types.ShopProfilesRequest || !types.ShopProfilesReply) {
         throw new Error('ShopProfiles protobuf 未加载');
@@ -287,10 +353,153 @@ async function getShopInfoOverview(shopId) {
     };
 }
 
+async function getSeedShopSnapshot() {
+    const profiles = await getShopProfilesOverview();
+    const seedShop = profiles.shops.find(shop => shop.shopType === SEED_SHOP_TYPE);
+    if (!seedShop || !seedShop.shopId) throw new Error('当前服务器未返回种子商店');
+    const info = await getShopInfoOverview(seedShop.shopId);
+    return { seedShop, info };
+}
+
+async function getMissingSeedPurchasePlan() {
+    const [illustrated, seedShopSnapshot, bagSeeds] = await Promise.all([
+        getIllustratedOverview({ illustratedType: 1, refresh: true }),
+        getSeedShopSnapshot(),
+        getBagSeeds(),
+    ]);
+
+    const bagCountBySeed = new Map(
+        (Array.isArray(bagSeeds) ? bagSeeds : []).map(row => [toNum(row && row.seedId), toNum(row && row.count)]),
+    );
+    const goodsByItemId = new Map(
+        seedShopSnapshot.info.goods.map(row => [toNum(row.itemId), row]),
+    );
+
+    const items = illustrated.items
+        .filter(item => !item.unlocked)
+        .map((item) => {
+            const ownedCount = bagCountBySeed.get(item.seedId) || 0;
+            const goods = item.seedId ? goodsByItemId.get(item.seedId) : null;
+            const limitRemaining = goods && goods.limitCount > 0
+                ? Math.max(0, goods.limitCount - goods.boughtNum)
+                : null;
+            let reason = '';
+            if (!item.seedId) reason = '本地配置暂未映射到种子ID';
+            else if (ownedCount > 0) reason = '背包已有该种子';
+            else if (!goods) reason = '种子商店未找到该商品';
+            else if (!goods.unlocked) reason = '商店尚未解锁';
+            else if (limitRemaining === 0) reason = '已达限购';
+
+            const canBuy = !!goods && !!goods.unlocked && ownedCount <= 0 && limitRemaining !== 0;
+            return {
+                fruitId: item.fruitId,
+                seedId: item.seedId,
+                name: item.name,
+                image: item.image || (goods && goods.image) || '',
+                illustratedTier: item.illustratedTier,
+                ownedCount,
+                canBuy,
+                reason,
+                goodsId: goods ? goods.goodsId : 0,
+                price: goods ? goods.price : 0,
+                itemCount: goods ? Math.max(1, goods.itemCount || 1) : 0,
+                boughtNum: goods ? goods.boughtNum : 0,
+                limitCount: goods ? goods.limitCount : 0,
+            };
+        });
+
+    const buyable = items.filter(item => item.canBuy);
+    return {
+        shop: seedShopSnapshot.seedShop,
+        items,
+        summary: {
+            locked: items.length,
+            alreadyOwned: items.filter(item => item.ownedCount > 0).length,
+            buyable: buyable.length,
+            totalCost: buyable.reduce((sum, item) => sum + Math.max(0, item.price), 0),
+        },
+    };
+}
+
+async function sendBuyGoods(goodsId, price) {
+    if (!types.BuyGoodsRequest || !types.BuyGoodsReply) throw new Error('BuyGoods protobuf 未加载');
+    const body = types.BuyGoodsRequest.encode(types.BuyGoodsRequest.create({
+        goods_id: toLong(goodsId),
+        num: toLong(1),
+        price: toLong(price),
+    })).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.shoppb.ShopService', 'BuyGoods', body);
+    return types.BuyGoodsReply.decode(replyBody);
+}
+
+function normalizePurchaseReply(goods, reply) {
+    return {
+        goodsId: goods.goodsId,
+        seedId: goods.itemId,
+        name: goods.name,
+        price: goods.price,
+        count: Math.max(1, goods.itemCount || 1),
+        getItems: (Array.isArray(reply && reply.get_items) ? reply.get_items : []).map(normalizeRewardItem),
+        costItems: (Array.isArray(reply && reply.cost_items) ? reply.cost_items : []).map(normalizeRewardItem),
+    };
+}
+
+async function buySeedGoodsSafely(goodsId) {
+    const id = toNum(goodsId);
+    if (!id) throw new Error('Invalid goodsId');
+    const { info } = await getSeedShopSnapshot();
+    const goods = info.goods.find(row => row.goodsId === id);
+    if (!goods) throw new Error('该商品不属于当前种子商店');
+    if (!goods.unlocked) throw new Error('该种子商品尚未解锁');
+    if (goods.limitCount > 0 && goods.boughtNum >= goods.limitCount) throw new Error('该种子商品已达限购');
+
+    const bagSeeds = await getBagSeeds();
+    const owned = (Array.isArray(bagSeeds) ? bagSeeds : []).find(row => toNum(row && row.seedId) === goods.itemId);
+    if (owned && toNum(owned.count) > 0) throw new Error('背包已有该种子，本功能不会重复购买');
+
+    const reply = await sendBuyGoods(goods.goodsId, goods.price);
+    return normalizePurchaseReply(goods, reply);
+}
+
+async function buyAllMissingIllustratedSeeds() {
+    const plan = await getMissingSeedPurchasePlan();
+    const targets = plan.items.filter(item => item.canBuy).slice(0, BULK_BUY_LIMIT);
+    const results = [];
+
+    for (const item of targets) {
+        try {
+            const reply = await sendBuyGoods(item.goodsId, item.price);
+            results.push({ ...item, ok: true, purchase: normalizePurchaseReply({
+                goodsId: item.goodsId,
+                itemId: item.seedId,
+                name: item.name,
+                price: item.price,
+                itemCount: item.itemCount,
+            }, reply) });
+        }
+        catch (err) {
+            results.push({ ...item, ok: false, error: err && err.message ? err.message : String(err || 'unknown') });
+        }
+        if (targets.length > 1) await sleep(BULK_BUY_DELAY_MS);
+    }
+
+    return {
+        requested: targets.length,
+        successCount: results.filter(row => row.ok).length,
+        failCount: results.filter(row => !row.ok).length,
+        spentEstimate: results.filter(row => row.ok).reduce((sum, row) => sum + Math.max(0, row.price), 0),
+        results,
+    };
+}
+
 module.exports = {
     getIllustratedOverview,
+    claimIllustratedRewards,
     getShopProfilesOverview,
     getShopInfoOverview,
+    getMissingSeedPurchasePlan,
+    buySeedGoodsSafely,
+    buyAllMissingIllustratedSeeds,
     SHOP_TYPE_LABELS,
     ILLUSTRATED_TYPE_LABELS,
 };
