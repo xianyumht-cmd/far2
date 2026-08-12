@@ -16,6 +16,13 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Dashboard.vue'),
   },
   {
+    path: 'health',
+    name: 'health',
+    label: '健康',
+    icon: 'i-carbon-health-status',
+    component: () => import('@/views/HealthCenter.vue'),
+  },
+  {
     path: 'personal',
     name: 'personal',
     label: '个人',

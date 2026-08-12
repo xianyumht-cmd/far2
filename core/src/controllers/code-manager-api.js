@@ -1,3 +1,5 @@
+const { buildRuntimeHealth } = require('../services/runtime-health');
+
 function registerCodeManagerApi(app, options = {}) {
     const {
         provider,
@@ -38,6 +40,21 @@ function registerCodeManagerApi(app, options = {}) {
             accounts: allowed ? accounts.filter(item => allowed.has(String(item.accountId || ''))) : accounts,
         };
     }
+
+    app.get('/api/runtime-health', (req, res) => {
+        try {
+            return res.json({
+                ok: true,
+                data: buildRuntimeHealth({
+                    provider,
+                    req,
+                    getAccessibleAccountIds,
+                }),
+            });
+        } catch (err) {
+            return fail(res, err);
+        }
+    });
 
     app.get('/api/code-manager/status', (req, res) => {
         try {

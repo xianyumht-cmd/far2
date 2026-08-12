@@ -5,8 +5,29 @@ const { installCodeManagerApiHook } = require('../src/controllers/code-manager-a
 
 async function main() {
     const accounts = [
-        { id: '1', name: '4476', username: 'alice', codeRefreshEnabled: true, codeRefreshMode: 'windows_session' },
-        { id: '2', name: '232', username: 'bob', codeRefreshEnabled: true, codeRefreshMode: 'windows_session' },
+        {
+            id: '1',
+            name: '4476',
+            username: 'alice',
+            platform: 'qq',
+            running: true,
+            codeRefreshEnabled: true,
+            codeRefreshMode: 'windows_session',
+            lastCodeRefreshAt: 1700000000000,
+            lastCodeRefreshOk: true,
+            lastCodeRefreshReason: 'ws_400',
+            lastCodeRefreshError: '',
+            lastCodeSource: 'isolated_qq_runtime',
+        },
+        {
+            id: '2',
+            name: '232',
+            username: 'bob',
+            platform: 'qq',
+            running: false,
+            codeRefreshEnabled: true,
+            codeRefreshMode: 'windows_session',
+        },
     ];
     const triggered = [];
 
@@ -17,15 +38,68 @@ async function main() {
             const found = accounts.find(item => item.id === text || item.name === text);
             return found ? found.id : text;
         },
+        getStatus(accountRef) {
+            const id = this.resolveAccountId(accountRef);
+            if (id === '1') {
+                return {
+                    accountId: '1',
+                    accountName: '4476',
+                    connection: { connected: true },
+                    status: { name: 'Alice Farm', level: 112 },
+                    uptime: 3600,
+                    wsError: null,
+                };
+            }
+            return {
+                accountId: id,
+                accountName: '232',
+                connection: { connected: false },
+                status: { name: '', level: 0 },
+                uptime: 0,
+                wsError: null,
+            };
+        },
+        getRuntimeFriendStatus(account) {
+            const id = String(account && account.id || '');
+            if (id === '1') {
+                return {
+                    imported: true,
+                    gidCount: 103,
+                    openIdCount: 275,
+                    source: 'windows_qq_runtime_friend_capture_v4',
+                    capturedAt: 1700000005000,
+                    methods: ['GetShareKey', 'SyncAll'],
+                };
+            }
+            return { imported: false, gidCount: 0, openIdCount: 0, source: '', capturedAt: 0, methods: [] };
+        },
+        getAccountLogs() {
+            return [
+                { accountId: '1', time: '2026-08-13 02:00:10', action: 'code_refresh_ok', msg: 'Farm Code 刷新成功', reason: 'ws_400' },
+                { accountId: '1', time: '2026-08-13 02:00:01', action: 'ws_400', msg: '连接被拒绝，可能需要更新 Code', reason: 'ws_400' },
+                { accountId: '2', time: '2026-08-13 02:00:00', action: 'code_refresh_failed', msg: 'bob-only-event', reason: 'private' },
+            ];
+        },
         getCodeManagerStatus(accountRef = '') {
             const rows = accounts.map(item => ({
                 accountId: item.id,
                 accountName: item.name,
                 qqUin: item.id === '1' ? '44****56' : '23****72',
-                state: { state: 'waiting_provider' },
+                sessionStatus: item.id === '1' ? 'online' : 'unbound',
+                sessionIdentityOk: item.id === '1',
+                needsRebind: item.id !== '1',
+                refreshing: false,
+                state: { state: item.id === '1' ? 'ready' : 'waiting_session' },
             }));
             const id = accountRef ? this.resolveAccountId(accountRef) : '';
-            return { enabled: false, provider: 'targeted_provider_pending', accounts: id ? rows.filter(item => item.accountId === id) : rows };
+            return {
+                enabled: true,
+                started: true,
+                globalEnabled: true,
+                provider: 'isolated_qq_runtime',
+                configuredCount: rows.length,
+                accounts: id ? rows.filter(item => item.accountId === id) : rows,
+            };
         },
         getCodeRefreshConfig(accountRef = '') {
             const build = item => ({ accountId: item.id, accountName: item.name, enabled: item.codeRefreshEnabled === true, mode: item.codeRefreshMode || '' });
@@ -95,6 +169,21 @@ async function main() {
         assert.equal(status.body.data.accounts[0].accountId, '1');
         console.log('✅ status permission filter PASS');
 
+        const health = await request('/api/runtime-health');
+        assert.equal(health.status, 200);
+        assert.equal(health.body.data.accounts.length, 1);
+        assert.equal(health.body.data.accounts[0].accountId, '1');
+        assert.equal(health.body.data.accounts[0].farm.connected, true);
+        assert.equal(health.body.data.accounts[0].friends.gidCount, 103);
+        assert.equal(health.body.data.accounts[0].friends.openIdCount, 275);
+        assert.equal(health.body.data.accounts[0].recentEvents.length, 2);
+        assert.equal(health.body.data.codeManager.configuredCount, 1);
+        assert.equal(health.body.data.summary.accounts, 1);
+        assert.equal(health.body.data.summary.running, 1);
+        assert.equal(health.body.data.summary.connected, 1);
+        assert.equal(JSON.stringify(health.body).includes('bob-only-event'), false);
+        console.log('✅ runtime health scope + friend/code summary PASS');
+
         const ownConfig = await request('/api/code-manager/config', { headers: { 'x-account-id': '1' } });
         assert.equal(ownConfig.status, 200);
         assert.equal(ownConfig.body.data.accountId, '1');
@@ -124,15 +213,22 @@ async function main() {
         assert.equal(adminStatus.body.data.accounts.length, 2);
         console.log('✅ admin status scope PASS');
 
-        const serialized = JSON.stringify({ status, ownConfig, forbidden, update, refresh, adminStatus });
+        const adminHealth = await request('/api/runtime-health', { headers: { 'x-test-role': 'admin', 'x-test-user': 'admin' } });
+        assert.equal(adminHealth.status, 200);
+        assert.equal(adminHealth.body.data.accounts.length, 2);
+        assert.equal(adminHealth.body.data.codeManager.configuredCount, 2);
+        console.log('✅ admin health scope PASS');
+
+        const serialized = JSON.stringify({ status, health, ownConfig, forbidden, update, refresh, adminStatus, adminHealth });
         assert.equal(/SELFTEST_FRESH|SELFTEST_OLD/i.test(serialized), false);
         console.log('✅ response credential privacy PASS');
 
         console.log('\n=== RESULT ===');
         console.log(JSON.stringify({
             ok: true,
-            routeCount: 4,
+            routeCount: 5,
             accountIsolation: true,
+            runtimeHealthIsolation: true,
             realQqTouched: false,
             realFarmCodeTouched: false,
         }, null, 2));
