@@ -7,10 +7,12 @@
 > Branch: `main`
 >
 > Current authoritative baseline: `docs/PRODUCTION_BASELINE_2026-08-13.md`
+>
+> Current feature roadmap: `docs/FEATURE_GAP_AUDIT_2026-08-13.md`
 
 ## 1. Current status
 
-FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。当前进入**新业务功能 / 运行可观测性**阶段。
+FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。运行健康中心第一版也已完成实机查看。当前进入**稳定性收尾 + 后续私有版本功能差异追赶**阶段。
 
 ### Phase 1 — 单账号 Windows 无人值守 Code 自动刷新
 
@@ -76,13 +78,30 @@ FAR2Farm service restart
 
 当前单机生产约束为只运行一个目标 QQ；其他保存账号不要求在同一 Windows 实例同时在线，因此不作为本轮失败项，也不需要 Windows2 验收。
 
+### Phase 4 — 运行健康中心
+
+**V1 IMPLEMENTED / VISUALLY VERIFIED**
+
+当前 `/health` 已能统一显示：
+
+- Worker；
+- Farm 在线/等级；
+- Code 自动恢复；
+- QQ 好友池 GID/openId；
+- 最近 WS400/Code 恢复事件；
+- 权限隔离后的账号汇总。
+
+实机显示 `232`：Farm Lv112、Code 恢复可用、好友池 103 GID / 275 openId。
+
+健康页同时暴露一个 P0 收尾问题：当前 `startAllAccounts()` 会把保存的 `4476` Worker 也启动，但本机生产规则只应自动启动当前 Provider target 对应 QQ。该问题进入下一项稳定性修复，不影响已验收的 `232` 生产链。
+
 ## 2. Current production architecture
 
 ```text
 Windows / FAR2Farm service start
   -> Runtime Engine
        -> CodeManager + startup friend importer ready
-       -> auto-start saved accounts (default ON)
+       -> auto-start saved accounts
        -> Worker
 
 Interactive Windows session
@@ -104,6 +123,8 @@ Code recovery path
   -> replacement Worker starts
   -> Farm login recovers
 ```
+
+> P0 修复后，上面的 `auto-start saved accounts` 应收紧为：存在 Provider targets 时只自动启动匹配 target UIN 的账号；无 targets 的通用部署保持原语义。
 
 ## 3. Second QQ / second Windows Session
 
@@ -169,18 +190,39 @@ core/src/services/windows-runtime-code.js
 - renderer restart / kill；
 - PID / window order 猜账号；
 - preload / 注入捷径绕过当前隔离设计；
-- Friend Capture V1 / V2 / V3。
+- Friend Capture V1 / V2 / V3；
+- 秒偷 / 蹲守 / 自动刷变异等后续版本自己已删除的功能。
 
-## 7. How to continue from here
+## 7. Current feature roadmap
+
+后续私有版功能差异审计已经固定到：
+
+```text
+docs/FEATURE_GAP_AUDIT_2026-08-13.md
+```
+
+该审计覆盖后续更新日志 2026-04-13 ～ 2026-06-26，并将功能分为：已有、部分基础、缺失、FAR2 已替代、判废、需当前协议验证。
+
+当前顺序：
+
+1. **P0：生产 Provider target 范围内自动启动 Worker**，解决 `4476` 被一起拉起的问题；
+2. **P1：图鉴 + 种子商店**，利用仓库现有 `illustratedpb.proto` / `shoppb.proto` / Shop RPC；
+3. **P2：单土地操作 + 紫土地**；
+4. **P3：变异只读展示**；
+5. **P4：宠物 / 狗狗**；
+6. **P5：个人生涯 / 装扮 / 通用活动框架**。
+
+## 8. How to continue from here
 
 后续新对话按下面优先级判断项目状态：
 
 1. 当前 `main` 源码；
 2. `docs/PRODUCTION_BASELINE_2026-08-13.md`；
-3. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
-4. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
-5. 其他历史文档。
+3. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
+4. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
+5. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
+6. 其他历史文档。
 
-**不要再把 Code 自动刷新、好友完整导入、Windows 服务自动恢复或第二 Windows Session 验收当成默认下一步。**
+**不要再把 Code 自动刷新、好友完整导入、Windows2 验收当成默认下一步。**
 
-下一步优先进入“运行健康中心”等新的可观测性 / 业务功能。
+新的默认推进顺序是：P0 Worker 启动范围收尾 → P1 图鉴/种子商店。
