@@ -22,12 +22,45 @@ function normalizeGids(values) {
     return result;
 }
 
+function normalizeOpenIds(values) {
+    const result = [];
+    const seen = new Set();
+    for (const raw of (Array.isArray(values) ? values : [])) {
+        const value = String(raw || '').trim();
+        if (value.length < 4 || value.length > 256 || seen.has(value)) continue;
+        seen.add(value);
+        result.push(value);
+    }
+    return result;
+}
+
 function getBootStartedAt() {
     return Math.max(0, Date.now() - Math.round(os.uptime() * 1000));
 }
 
 function getArtifactPath(uin) {
     return getDataFile(`runtime-friend-gids-${uin}.json`);
+}
+
+function getAccountOpenIdsPath(accountId) {
+    const safe = String(accountId || '').replace(/[^\w-]/g, '_');
+    return getDataFile(`runtime-friend-openids-${safe}.json`);
+}
+
+function writeAccountOpenIds(accountId, artifact) {
+    const openIds = normalizeOpenIds(artifact && artifact.openIds);
+    if (!openIds.length) return false;
+    const file = getAccountOpenIdsPath(accountId);
+    const temp = `${file}.tmp-${process.pid}`;
+    fs.writeFileSync(temp, JSON.stringify({
+        version: 1,
+        accountId: String(accountId),
+        capturedAt: Number(artifact.capturedAt) || Date.now(),
+        source: String(artifact.source || 'windows_qq_runtime_friend_capture_v2'),
+        openIds,
+    }, null, 2), 'utf8');
+    fs.renameSync(temp, file);
+    return true;
 }
 
 function readArtifact(uin, bootStartedAt) {
@@ -39,11 +72,13 @@ function readArtifact(uin, bootStartedAt) {
         const artifactBoot = Number(parsed && parsed.bootStartedAt) || 0;
         if (!artifactBoot || Math.abs(artifactBoot - bootStartedAt) >= 60 * 1000) return null;
         const gids = normalizeGids(parsed && parsed.gids);
-        if (!gids.length) return null;
+        const openIds = normalizeOpenIds(parsed && parsed.openIds);
+        if (!gids.length && !openIds.length) return null;
         return {
             gids,
+            openIds,
             capturedAt: Number(parsed.capturedAt) || 0,
-            source: String(parsed.source || 'windows_qq_runtime_friend_service'),
+            source: String(parsed.source || 'windows_qq_runtime_friend_capture_v2'),
             methods: Array.isArray(parsed.methods) ? parsed.methods.map(String).slice(0, 8) : [],
         };
     } catch {
@@ -91,20 +126,23 @@ function createStartupRuntimeFriendImport(options = {}) {
         const merged = normalizeGids([...before, ...artifact.gids]);
         const beforeSet = new Set(before);
         const addedCount = merged.filter(gid => !beforeSet.has(gid)).length;
+        const savedOpenIds = writeAccountOpenIds(accountId, artifact);
 
-        if (typeof store.setKnownFriendGids === 'function') {
+        if (typeof store.setKnownFriendGids === 'function' && addedCount > 0) {
             store.setKnownFriendGids(accountId, merged);
         }
         importedAccounts.add(accountId);
-        broadcastConfigToWorkers(accountId);
+        if (addedCount > 0) broadcastConfigToWorkers(accountId);
 
-        log('好友', `QQ 小程序启动好友导入：采集 ${artifact.gids.length} 个，新增 ${addedCount} 个，当前 GID 共 ${merged.length} 个`, {
+        log('好友', `QQ 小程序启动好友导入：直接 GID ${artifact.gids.length} 个，openId ${artifact.openIds.length} 个，新增 GID ${addedCount} 个，当前 GID 共 ${merged.length} 个`, {
             accountId,
             accountName: account.name || accountId,
             module: 'friend',
             event: 'QQ小程序启动好友导入',
             result: 'ok',
-            capturedCount: artifact.gids.length,
+            capturedGidCount: artifact.gids.length,
+            capturedOpenIdCount: artifact.openIds.length,
+            openIdsSaved: savedOpenIds,
             addedCount,
             totalKnownGids: merged.length,
             source: artifact.source,
@@ -132,7 +170,7 @@ function createStartupRuntimeFriendImport(options = {}) {
         if (Date.now() - startedAt >= timeoutMs) {
             const pending = accounts.filter(account => !importedAccounts.has(String(account.id || '')));
             if (pending.length > 0) {
-                log('好友', `本次启动未采集到 ${pending.length} 个 QQ 账号的小程序好友列表，继续使用现有 GID；下次 Windows 登录会再次尝试`, {
+                log('好友', `本次启动未采集到 ${pending.length} 个 QQ 账号的小程序好友数据，继续使用现有 GID；下次 Windows 登录会再次尝试`, {
                     module: 'friend',
                     event: 'QQ小程序启动好友导入',
                     result: 'timeout',
@@ -173,5 +211,6 @@ function createStartupRuntimeFriendImport(options = {}) {
 module.exports = {
     createStartupRuntimeFriendImport,
     normalizeGids,
+    normalizeOpenIds,
     readArtifact,
 };
