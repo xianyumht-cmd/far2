@@ -317,11 +317,12 @@ async function getSeedShopSnapshot() {
 }
 
 async function getMissingSeedPurchasePlan() {
-    const [illustrated, seedShopSnapshot, bagSeeds] = await Promise.all([
-        getIllustratedOverview({ illustratedType: 1, refresh: true }),
-        getSeedShopSnapshot(),
-        getBagSeeds(),
-    ]);
+    // All of these RPCs share one Farm websocket. Keep them sequential so a page
+    // refresh cannot consume several pending slots while friend/task loops are active.
+    const illustrated = await getIllustratedOverview({ illustratedType: 1, refresh: true });
+    const seedShopSnapshot = await getSeedShopSnapshot();
+    const bagSeeds = await getBagSeeds();
+
     const bagCountBySeed = new Map(
         (Array.isArray(bagSeeds) ? bagSeeds : []).map(row => [toNum(row && row.seedId), toNum(row && row.count)]),
     );
