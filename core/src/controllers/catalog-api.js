@@ -26,6 +26,22 @@ function registerCatalogApi(app, options = {}) {
         return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err || 'unknown') });
     }
 
+    async function runCatalogAction(req, res, action) {
+        const accountId = requireAccount(req, res);
+        if (!accountId) return;
+        try {
+            if (!provider || typeof provider.getShopInfo !== 'function') {
+                return res.status(503).json({ ok: false, error: 'Catalog action unavailable' });
+            }
+            const payload = { action, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+            const data = await provider.getShopInfo(accountId, payload);
+            return res.json({ ok: true, data });
+        }
+        catch (err) {
+            return fail(res, err);
+        }
+    }
+
     app.get('/api/catalog/illustrated', async (req, res) => {
         const accountId = requireAccount(req, res);
         if (!accountId) return;
@@ -39,6 +55,26 @@ function registerCatalogApi(app, options = {}) {
         catch (err) {
             return fail(res, err);
         }
+    });
+
+    app.get('/api/catalog/illustrated/purchase-plan', async (req, res) => {
+        return runCatalogAction(req, res, 'getMissingSeedPurchasePlan');
+    });
+
+    app.post('/api/catalog/illustrated/claim', async (req, res) => {
+        return runCatalogAction(req, res, 'claimIllustratedRewards');
+    });
+
+    app.post('/api/catalog/illustrated/buy-seed', async (req, res) => {
+        const goodsId = Number(req.body && req.body.goodsId);
+        if (!Number.isSafeInteger(goodsId) || goodsId <= 0) {
+            return res.status(400).json({ ok: false, error: 'Invalid goodsId' });
+        }
+        return runCatalogAction(req, res, 'buyIllustratedSeed');
+    });
+
+    app.post('/api/catalog/illustrated/buy-missing-seeds', async (req, res) => {
+        return runCatalogAction(req, res, 'buyAllMissingIllustratedSeeds');
     });
 
     app.get('/api/catalog/shops', async (req, res) => {
