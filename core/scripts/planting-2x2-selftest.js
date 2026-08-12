@@ -26,6 +26,11 @@ function main() {
     const missingOne = selectReady2x2Groups(lands, [1, 2, 5], 1);
     assert.equal(missingOne.length, 0, '2x2 group requires all four lands to be empty');
 
+    const staleLands = unlockedLands();
+    staleLands[0].plant = { phases: [{ phase: 1 }] };
+    const staleCandidate = selectReady2x2Groups(staleLands, [1, 2, 5, 6], 1);
+    assert.equal(staleCandidate.length, 0, 'live AllLands plant data must override stale empty ids');
+
     const group = { masterLandId: 5, landIds: [5, 6, 1, 2] };
     const reply = {
         land: [
@@ -39,7 +44,8 @@ function main() {
     assert.equal(validate2x2PlantReply({ land: [{ id: 5, slave_land_ids: [6, 1] }] }, group).ok, false);
 
     console.log('✅ 4x6 farmland geometry / left-bottom master PASS');
-    console.log('✅ only fully-empty non-overlapping 2x2 groups selected PASS');
+    console.log('✅ only live-empty non-overlapping 2x2 groups selected PASS');
+    console.log('✅ stale empty ids cannot bypass latest AllLands state PASS');
     console.log('✅ master/slave reply validation fails closed PASS');
     console.log('\n=== RESULT ===');
     console.log(JSON.stringify({
