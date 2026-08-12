@@ -1,0 +1,52 @@
+name: P2C one-shot web validation
+
+on:
+  push:
+    branches:
+      - fix/p2c-independent-2x2-priority-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/p2c-independent-2x2-priority-20260813
+          fetch-depth: 1
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate P2C and web build
+        run: |
+          pnpm planting:2x2-selftest
+          pnpm build:web
+          node --check core/src/models/store.js
+          node --check core/src/services/farm-2x2.js
+          node --check core/src/services/farm-2x2-priority.js
+          node --check core/src/services/farm.js
+          git diff --check
+
+      - name: Remove one-shot workflow after success
+        shell: bash
+        run: |
+          rm -f .github/workflows/p2c-validate-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: remove completed P2C validation workflow"
+          git push origin HEAD:fix/p2c-independent-2x2-priority-20260813
