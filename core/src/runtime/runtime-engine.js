@@ -189,15 +189,17 @@ function createRuntimeEngine(options = {}) {
       startAdminServer(dataProvider)
     }
 
+    // Recovery/import infrastructure must be ready before workers can emit WS400/kickout
+    // or consume persisted friend data during unattended startup.
+    codeManager.start()
+    startupRuntimeFriendImport.start()
+
     if (shouldAutoStartAccounts) {
       startAllAccounts()
     }
     else {
       log('系统', '启动时自动启动账号已关闭 (FARM_AUTO_START_ACCOUNTS=0)')
     }
-
-    codeManager.start()
-    startupRuntimeFriendImport.start()
   }
 
   function stopAllAccounts() {
