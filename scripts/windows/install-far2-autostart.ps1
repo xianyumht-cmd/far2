@@ -30,6 +30,7 @@ function Find-Nssm {
         if ($cmd.Source) { $candidates.Add($cmd.Source) }
     } catch {}
     $candidates.Add((Join-Path $ProjectRoot 'tools\nssm-2.24\win64\nssm.exe'))
+    $candidates.Add('D:\Program Files\nssm-2.24\nssm.exe')
     $candidates.Add('D:\project2\lolapisevers\tools\nssm-2.24\win64\nssm.exe')
     $candidates.Add('C:\tools\nssm\win64\nssm.exe')
     foreach ($candidate in $candidates) {
@@ -73,6 +74,26 @@ function Read-EnabledQqAccount {
     return @{ Account = $account; Uin = $uin }
 }
 
+function Set-NssmEnvironmentBlock {
+    param(
+        [string]$Name,
+        [string[]]$Entries
+    )
+    $parametersKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name\Parameters"
+    if (-not (Test-Path -LiteralPath $parametersKey)) {
+        throw "NSSM service parameters key not found: $parametersKey"
+    }
+
+    New-ItemProperty -Path $parametersKey -Name 'AppEnvironmentExtra' -PropertyType MultiString -Value $Entries -Force | Out-Null
+
+    $written = @((Get-ItemProperty -Path $parametersKey -Name 'AppEnvironmentExtra' -ErrorAction Stop).AppEnvironmentExtra)
+    foreach ($entry in $Entries) {
+        if ($written -notcontains $entry) {
+            throw "NSSM environment verification failed for: $($entry.Split('=')[0])"
+        }
+    }
+}
+
 if (-not (Test-Admin)) {
     throw 'Run install-windows-service.cmd as Administrator.'
 }
@@ -112,6 +133,13 @@ $targets[$uin] = [ordered]@{
 $targetsJson = $targets | ConvertTo-Json -Compress
 $targetsB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($targetsJson))
 $refreshIntervalMs = [Math]::Max(60000, $RefreshIntervalMinutes * 60000)
+$serviceEnvironment = @(
+    'FARM_CODE_AUTO_REFRESH=1',
+    "FARM_CODE_REFRESH_INTERVAL_MS=$refreshIntervalMs",
+    'FARM_CODE_PROVIDER_HEALTH_TIMEOUT_MS=20000',
+    "FARM_CODE_PROVIDER_TARGETS_B64=$targetsB64",
+    "$tokenEnv=$token"
+)
 
 Write-Host "[FAR2] Project: $projectRoot"
 Write-Host "[FAR2] Node: $nodePath"
@@ -124,7 +152,10 @@ if ($existing) {
     try { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue } catch {}
     Start-Sleep -Milliseconds 500
     Invoke-Nssm -Exe $nssm -NssmArgs @('remove', $ServiceName, 'confirm')
-    Start-Sleep -Milliseconds 500
+    for ($i = 0; $i -lt 20; $i++) {
+        if (-not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Milliseconds 250
+    }
 }
 
 Invoke-Nssm -Exe $nssm -NssmArgs @('install', $ServiceName, $nodePath)
@@ -141,15 +172,12 @@ Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppStderr', (Join-Path 
 Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRotateFiles', '1')
 Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRotateOnline', '1')
 Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRotateBytes', '5242880')
-Invoke-Nssm -Exe $nssm -NssmArgs @(
-    'set', $ServiceName, 'AppEnvironmentExtra',
-    'FARM_CODE_AUTO_REFRESH=1',
-    "FARM_CODE_REFRESH_INTERVAL_MS=$refreshIntervalMs",
-    'FARM_CODE_PROVIDER_HEALTH_TIMEOUT_MS=20000',
-    "FARM_CODE_PROVIDER_TARGETS_B64=$targetsB64",
-    "$tokenEnv=$token"
-)
+
+# NSSM AppEnvironmentExtra is a REG_MULTI_SZ. Writing it directly avoids shell/CLI
+# argument handling differences in old NSSM/PowerShell combinations.
+Set-NssmEnvironmentBlock -Name $ServiceName -Entries $serviceEnvironment
 Set-Service -Name $ServiceName -StartupType Automatic
+Write-Host '[FAR2] Service environment REG_MULTI_SZ verified: 5/5'
 
 $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 $fullTaskName = "$TaskName-$uin"
@@ -166,7 +194,7 @@ $settings = New-ScheduledTaskSettingsSet -Hidden -StartWhenAvailable -AllowStart
 Register-ScheduledTask -TaskName $fullTaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "FAR2 isolated Code Agent for QQ $uin" -Force | Out-Null
 
 try { Start-ScheduledTask -TaskName $fullTaskName } catch {}
-try { Start-Service -Name $ServiceName } catch {}
+Start-Service -Name $ServiceName
 Start-Sleep -Seconds 2
 
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -180,5 +208,5 @@ Write-Host "NSSM service: $ServiceName state=$svcState startup=Automatic"
 Write-Host "Code Agent task: $fullTaskName state=$taskState trigger=AtLogOn Hidden"
 Write-Host 'WebUI: http://127.0.0.1:3007'
 Write-Host "Refresh interval: $RefreshIntervalMinutes minutes; WS 400 still triggers immediate refresh."
-Write-Host 'Provider target config: base64 (NSSM-safe).'
+Write-Host 'Provider target config: base64 in verified NSSM REG_MULTI_SZ environment.'
 Write-Host 'The Agent remains in the interactive user session; no visible console window is required.'
