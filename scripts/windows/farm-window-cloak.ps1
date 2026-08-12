@@ -18,6 +18,24 @@ public static class Far2WindowApi {
     $knownPids = New-Object 'System.Collections.Generic.HashSet[int]'
     $farmPids = New-Object 'System.Collections.Generic.HashSet[int]'
     $appId = '1112386029'
+    # ASCII-safe construction of the Chinese word for "farm" to avoid WinPS 5.1 encoding issues.
+    $farmTitleToken = ([string][char]0x519C) + ([string][char]0x573A)
+
+    function Move-Offscreen {
+        param($Proc)
+        if (-not $Proc) { return }
+        $handle = $Proc.MainWindowHandle
+        if ($handle -eq 0) { return }
+        [Far2WindowApi]::SetWindowPos(
+            $handle,
+            [IntPtr]::Zero,
+            -32000,
+            -32000,
+            0,
+            0,
+            [uint32](0x0001 -bor 0x0004 -bor 0x0010)
+        ) | Out-Null
+    }
 
     function Refresh-FarmPidSet {
         $farmPids.Clear()
@@ -66,6 +84,14 @@ public static class Far2WindowApi {
         foreach ($proc in $qq) {
             [void]$current.Add([int]$proc.Id)
             if (-not $knownPids.Contains([int]$proc.Id)) { $needRefresh = $true }
+
+            # Fast path: once a QQ window title contains the Farm token, move it before
+            # the slower CIM process-tree refresh completes. This reduces visible flashes.
+            $title = [string]$proc.MainWindowTitle
+            if ($title -and $title.Contains($farmTitleToken)) {
+                Move-Offscreen -Proc $proc
+                [void]$farmPids.Add([int]$proc.Id)
+            }
         }
         if ($current.Count -ne $knownPids.Count) { $needRefresh = $true }
 
@@ -77,21 +103,10 @@ public static class Far2WindowApi {
 
         foreach ($proc in $qq) {
             if (-not $farmPids.Contains([int]$proc.Id)) { continue }
-            $handle = $proc.MainWindowHandle
-            if ($handle -eq 0) { continue }
-
-            [Far2WindowApi]::SetWindowPos(
-                $handle,
-                [IntPtr]::Zero,
-                -32000,
-                -32000,
-                0,
-                0,
-                [uint32](0x0001 -bor 0x0004 -bor 0x0010)
-            ) | Out-Null
+            Move-Offscreen -Proc $proc
         }
 
-        Start-Sleep -Milliseconds 120
+        Start-Sleep -Milliseconds 60
     }
 }
 finally {
