@@ -8,27 +8,38 @@ interface IllustratedItem {
   seedId: number
   name: string
   image: string
+  illustratedType: number
+  illustratedTypeLabel: string
+  illustratedTier: number
   unlocked: boolean
-  planted: boolean
-  plantedCount: number
+  rewardScore: number
   harvestCount: number
-  category: number
   hasReward: boolean
 }
 
 interface IllustratedData {
+  illustratedType: number
+  illustratedTypeLabel: string
   items: IllustratedItem[]
   summary: {
     total: number
     unlocked: number
     locked: number
-    planted: number
     rewardReady: number
+    currentScore: number
+    level: number
+    currentTier: number
+    nextScore: number
+    hasLevelReward: boolean
+    unlockedTiers: number[]
   }
   protocol: {
     service: string
     method: string
     version: number
+    schema: string
+    decodeMode: string
+    decodeWarning?: string
   }
 }
 
@@ -212,12 +223,10 @@ onMounted(() => loadIllustrated())
       <div>
         <div class="flex items-center gap-2">
           <div class="i-carbon-book text-2xl" :style="{ color: 'var(--theme-primary)' }" />
-          <h1 class="text-2xl font-bold">
-            图鉴与商店
-          </h1>
+          <h1 class="text-2xl font-bold">图鉴与商店</h1>
         </div>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          当前是只读协议探测版：读取真实图鉴、种子/道具/宠物商店，不会领奖，也不会购买任何商品。
+          当前仍是只读阶段：读取作物图鉴与商店，不领取奖励、不购买商品。
         </p>
       </div>
       <div class="flex items-center gap-2">
@@ -240,7 +249,7 @@ onMounted(() => loadIllustrated())
       <div class="flex items-start gap-2">
         <div class="i-carbon-information mt-0.5 shrink-0" />
         <div>
-          这一版专门确认后续版本留下的协议在当前游戏是否仍有效。若失败，页面会直接显示真实后端错误；确认可读后再开放“领取图鉴奖励”和“购买缺失种子”。
+          图鉴已切换到当前 V2 字段结构。确认读取稳定后，再开放“领取图鉴奖励”和“购买缺失种子”。
         </div>
       </div>
     </div>
@@ -248,15 +257,15 @@ onMounted(() => loadIllustrated())
     <div class="flex gap-2 border-b border-gray-200 dark:border-gray-700">
       <button
         class="border-b-2 px-4 py-3 text-sm font-medium transition-colors"
-        :class="activeTab === 'illustrated' ? 'border-current' : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'"
+        :class="activeTab === 'illustrated' ? 'border-current' : 'border-transparent text-gray-500'"
         :style="activeTab === 'illustrated' ? { color: 'var(--theme-primary)' } : {}"
         @click="switchTab('illustrated')"
       >
-        图鉴
+        作物图鉴
       </button>
       <button
         class="border-b-2 px-4 py-3 text-sm font-medium transition-colors"
-        :class="activeTab === 'shops' ? 'border-current' : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'"
+        :class="activeTab === 'shops' ? 'border-current' : 'border-transparent text-gray-500'"
         :style="activeTab === 'shops' ? { color: 'var(--theme-primary)' } : {}"
         @click="switchTab('shops')"
       >
@@ -265,19 +274,12 @@ onMounted(() => loadIllustrated())
     </div>
 
     <template v-if="activeTab === 'illustrated'">
-      <div
-        v-if="illustratedError"
-        class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20"
-      >
-        <div class="font-semibold text-red-700 dark:text-red-300">
-          图鉴协议读取失败
-        </div>
-        <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">
-          {{ illustratedError }}
-        </div>
+      <div v-if="illustratedError" class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
+        <div class="font-semibold text-red-700 dark:text-red-300">图鉴协议读取失败</div>
+        <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">{{ illustratedError }}</div>
       </div>
 
-      <div v-if="illustrated" class="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div v-if="illustrated" class="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div class="text-xs text-gray-500">图鉴总数</div>
           <div class="mt-1 text-2xl font-bold">{{ illustrated.summary.total }}</div>
@@ -287,17 +289,25 @@ onMounted(() => loadIllustrated())
           <div class="mt-1 text-2xl font-bold text-emerald-600">{{ illustrated.summary.unlocked }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">未解锁</div>
-          <div class="mt-1 text-2xl font-bold">{{ illustrated.summary.locked }}</div>
+          <div class="text-xs text-gray-500">当前积分</div>
+          <div class="mt-1 text-2xl font-bold">{{ numberText(illustrated.summary.currentScore) }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">种植过</div>
-          <div class="mt-1 text-2xl font-bold">{{ illustrated.summary.planted }}</div>
+          <div class="text-xs text-gray-500">图鉴等级</div>
+          <div class="mt-1 text-2xl font-bold">Lv{{ illustrated.summary.level }}</div>
         </div>
-        <div class="col-span-2 rounded-xl border border-gray-200 bg-white p-4 lg:col-span-1 dark:border-gray-700 dark:bg-gray-800">
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">当前 Tier</div>
+          <div class="mt-1 text-2xl font-bold">{{ illustrated.summary.currentTier }}</div>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div class="text-xs text-gray-500">可领奖</div>
           <div class="mt-1 text-2xl font-bold text-amber-600">{{ illustrated.summary.rewardReady }}</div>
         </div>
+      </div>
+
+      <div v-if="illustrated?.protocol.decodeMode === 'wire-fallback'" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+        标准 Proto 解码仍有字段漂移，本次已自动使用线级容错解析：{{ illustrated.protocol.decodeWarning }}
       </div>
 
       <div v-if="illustrated" class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700 dark:bg-gray-800">
@@ -320,20 +330,16 @@ onMounted(() => loadIllustrated())
         </div>
         <div class="relative sm:w-64">
           <div class="i-carbon-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            v-model="search"
-            class="w-full border border-gray-200 rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm outline-none focus:border-gray-400 dark:border-gray-700"
-            placeholder="搜索名称 / seedId"
-          >
+          <input v-model="search" class="w-full border border-gray-200 rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm outline-none dark:border-gray-700" placeholder="搜索名称 / seedId">
         </div>
       </div>
 
       <div v-if="illustratedLoading && !illustrated" class="flex items-center justify-center py-20 text-gray-500">
         <div class="i-carbon-renew mr-2 animate-spin text-xl" />
-        正在请求当前游戏图鉴协议...
+        正在读取当前作物图鉴...
       </div>
 
-      <div v-else-if="illustrated" class="grid grid-cols-2 gap-3 xl:grid-cols-6 lg:grid-cols-5 md:grid-cols-4 sm:grid-cols-3">
+      <div v-else-if="illustrated" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         <div
           v-for="item in filteredIllustrated"
           :key="item.seedId"
@@ -347,18 +353,14 @@ onMounted(() => loadIllustrated())
             <img v-if="item.image" :src="item.image" :alt="item.name" class="max-h-16 max-w-16 object-contain">
             <div v-else class="i-carbon-sprout text-3xl text-gray-300" />
           </div>
-          <div class="mt-3 truncate text-sm font-semibold" :title="item.name">
-            {{ item.name }}
-          </div>
+          <div class="mt-3 truncate text-sm font-semibold" :title="item.name">{{ item.name }}</div>
           <div class="mt-1 text-[11px] text-gray-400">Seed {{ item.seedId }}</div>
           <div class="mt-2 flex items-center justify-between text-xs">
-            <span :class="item.unlocked ? 'text-emerald-600' : 'text-gray-400'">
-              {{ item.unlocked ? '已解锁' : '未解锁' }}
-            </span>
-            <span class="text-gray-400">分类 {{ item.category }}</span>
+            <span :class="item.unlocked ? 'text-emerald-600' : 'text-gray-400'">{{ item.unlocked ? '已解锁' : '未解锁' }}</span>
+            <span class="text-gray-400">Tier {{ item.illustratedTier }}</span>
           </div>
           <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] text-gray-500">
-            <div>种植 {{ numberText(item.plantedCount) }}</div>
+            <div>奖励分 {{ numberText(item.rewardScore) }}</div>
             <div>收获 {{ numberText(item.harvestCount) }}</div>
           </div>
         </div>
@@ -368,40 +370,31 @@ onMounted(() => loadIllustrated())
         没有符合当前筛选条件的图鉴条目。
       </div>
 
-      <div v-if="illustrated" class="text-right font-mono text-[11px] text-gray-400">
-        {{ illustrated.protocol.service }} / {{ illustrated.protocol.method }} · V{{ illustrated.protocol.version }}
+      <div v-if="illustrated" class="flex flex-wrap justify-end gap-3 font-mono text-[11px] text-gray-400">
+        <span>{{ illustrated.protocol.service }} / {{ illustrated.protocol.method }}</span>
+        <span>{{ illustrated.protocol.schema }}</span>
+        <span>{{ illustrated.protocol.decodeMode }}</span>
       </div>
     </template>
 
     <template v-else>
-      <div
-        v-if="shopsError"
-        class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20"
-      >
-        <div class="font-semibold text-red-700 dark:text-red-300">
-          商店协议读取失败
-        </div>
-        <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">
-          {{ shopsError }}
-        </div>
+      <div v-if="shopsError" class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
+        <div class="font-semibold text-red-700 dark:text-red-300">商店协议读取失败</div>
+        <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">{{ shopsError }}</div>
       </div>
 
       <div v-if="shops" class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">商店总数</div>
-          <div class="mt-1 text-2xl font-bold">{{ shops.summary.total }}</div>
+          <div class="text-xs text-gray-500">商店总数</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.total }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">种子商店</div>
-          <div class="mt-1 text-2xl font-bold">{{ shops.summary.seedShops }}</div>
+          <div class="text-xs text-gray-500">种子商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.seedShops }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">道具商店</div>
-          <div class="mt-1 text-2xl font-bold">{{ shops.summary.itemShops }}</div>
+          <div class="text-xs text-gray-500">道具商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.itemShops }}</div>
         </div>
         <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">宠物商店</div>
-          <div class="mt-1 text-2xl font-bold">{{ shops.summary.petShops }}</div>
+          <div class="text-xs text-gray-500">宠物商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.petShops }}</div>
         </div>
       </div>
 
@@ -421,7 +414,7 @@ onMounted(() => loadIllustrated())
 
       <div v-if="shopsLoading && !shops" class="flex items-center justify-center py-20 text-gray-500">
         <div class="i-carbon-renew mr-2 animate-spin text-xl" />
-        正在请求当前游戏商店协议...
+        正在读取商店协议...
       </div>
 
       <div v-if="selectedShop && shopInfo" class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -430,17 +423,14 @@ onMounted(() => loadIllustrated())
             <div class="text-lg font-bold">{{ selectedShop.shopName || selectedShop.shopTypeLabel }}</div>
             <div class="mt-1 text-xs text-gray-400">Shop #{{ selectedShop.shopId }} · {{ selectedShop.shopTypeLabel }}</div>
           </div>
-          <div class="text-xs text-gray-500">
-            商品 {{ shopInfo.summary.total }} · 已解锁 {{ shopInfo.summary.unlocked }} · 限购 {{ shopInfo.summary.limited }}
-          </div>
+          <div class="text-xs text-gray-500">商品 {{ shopInfo.summary.total }} · 已解锁 {{ shopInfo.summary.unlocked }} · 限购 {{ shopInfo.summary.limited }}</div>
         </div>
 
         <div v-if="shopInfoLoading" class="flex items-center justify-center py-12 text-gray-500">
-          <div class="i-carbon-renew mr-2 animate-spin" />
-          读取商品中...
+          <div class="i-carbon-renew mr-2 animate-spin" />读取商品中...
         </div>
 
-        <div v-else class="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-4 lg:grid-cols-3 sm:grid-cols-2">
+        <div v-else class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <div
             v-for="goods in shopInfo.goods"
             :key="goods.goodsId"
