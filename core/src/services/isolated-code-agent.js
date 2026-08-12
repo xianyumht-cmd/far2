@@ -4,6 +4,7 @@ const process = require('node:process');
 const desktopSessions = require('./desktop-session-registry');
 const windowsRuntimeCode = require('./windows-runtime-code');
 
+const FARM_APP_ID = '1112386029';
 const DEFAULT_PORT = 43101;
 const DEFAULT_CAPTURE_TIMEOUT_MS = 90000;
 const DEFAULT_IDENTITY_TIMEOUT_MS = 8000;
@@ -95,6 +96,110 @@ function getRegistrySnapshot(registry) {
     } catch {
         return null;
     }
+}
+
+function rowPid(row) {
+    const value = Number(row && row.pid);
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function rowPpid(row) {
+    const value = Number(row && row.ppid);
+    return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
+}
+
+function rowSessionId(row) {
+    const value = Number(row && row.sessionId);
+    return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : -1;
+}
+
+function isMainQqRow(row) {
+    const name = String(row && row.name || '').toLowerCase();
+    const cmd = String(row && row.cmd || '');
+    return name === 'qq.exe' && !/--type=/i.test(cmd) && !/--loadapp=/i.test(cmd);
+}
+
+function isMiniAppRootRow(row) {
+    const name = String(row && row.name || '').toLowerCase();
+    const cmd = String(row && row.cmd || '');
+    return name === 'qq.exe'
+        && /--loadapp=mini-app/i.test(cmd)
+        && /--exApp=QQEXMiniProgram/i.test(cmd);
+}
+
+function getDescendantsFromRows(rows, rootPid) {
+    const result = [];
+    const queue = [Number(rootPid)].filter(Boolean);
+    const seen = new Set(queue);
+    while (queue.length) {
+        const parentPid = queue.shift();
+        for (const row of rows) {
+            const pid = rowPid(row);
+            if (!pid || rowPpid(row) !== parentPid || seen.has(pid)) continue;
+            seen.add(pid);
+            result.push(row);
+            queue.push(pid);
+        }
+    }
+    return result;
+}
+
+function annotatedUins(rows) {
+    const found = new Set();
+    for (const row of rows || []) {
+        const match = String(row && row.cmd || '').match(/--annotation=uin=(\d{5,12})/i);
+        if (!match) continue;
+        const uin = normalizeUin(match[1]);
+        if (uin) found.add(uin);
+    }
+    return [...found];
+}
+
+function findMainQqAncestor(root, byPid) {
+    let current = root;
+    const seen = new Set();
+    for (let depth = 0; current && depth < 16; depth += 1) {
+        const parentPid = rowPpid(current);
+        if (!parentPid || seen.has(parentPid)) break;
+        seen.add(parentPid);
+        const parent = byPid.get(parentPid) || null;
+        if (!parent) break;
+        if (isMainQqRow(parent)) return parent;
+        current = parent;
+    }
+    return null;
+}
+
+function inspectFarmIdentitySnapshot(rows, windowsSessionId) {
+    const scoped = (rows || []).filter(row => rowSessionId(row) === Number(windowsSessionId));
+    const byPid = new Map(scoped.map(row => [rowPid(row), row]));
+    const knownUins = new Set();
+    const roots = [];
+
+    for (const root of scoped.filter(isMiniAppRootRow)) {
+        const tree = [root, ...getDescendantsFromRows(scoped, rowPid(root))];
+        const isFarm = tree.some(row => String(row && row.cmd || '').includes(`appIdOrLink=${FARM_APP_ID}`));
+        if (!isFarm) continue;
+
+        const farmUins = annotatedUins(tree);
+        const mainQq = findMainQqAncestor(root, byPid);
+        const mainTree = mainQq ? [mainQq, ...getDescendantsFromRows(scoped, rowPid(mainQq))] : [];
+        const parentUins = annotatedUins(mainTree);
+        const effectiveUins = farmUins.length ? farmUins : parentUins;
+        effectiveUins.forEach(uin => knownUins.add(uin));
+        roots.push({
+            farmRootPid: rowPid(root),
+            mainQqPid: rowPid(mainQq),
+            uins: effectiveUins,
+            source: farmUins.length ? 'farm_tree' : (parentUins.length ? 'main_qq_tree' : 'unknown'),
+        });
+    }
+
+    return {
+        farmCount: roots.length,
+        knownUins: [...knownUins],
+        roots,
+    };
 }
 
 function inspectIsolatedRuntime(options = {}) {
@@ -197,24 +302,60 @@ async function waitForCapturedRuntimeIdentity(options = {}) {
     const windowsSessionId = Number(options.windowsSessionId);
     const registry = options.desktopSessionRegistry || desktopSessions;
     const timeoutMs = Math.max(500, Number(options.timeoutMs) || DEFAULT_IDENTITY_TIMEOUT_MS);
-    const deadline = Date.now() + timeoutMs;
+    const logger = typeof options.log === 'function' ? options.log : null;
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+    let attempts = 0;
+    let lastSignature = '';
+    let lastLoggedAt = 0;
 
     while (Date.now() < deadline) {
-        let sessions = [];
+        attempts += 1;
+        let knownUins = [];
+        let farmCount = 0;
+        let source = 'registry';
+
         try {
             const rows = getRegistrySnapshot(registry);
-            sessions = registry.scanRuntimeSessions(rows || undefined)
-                .filter(item => Number(item.windowsSessionId) === windowsSessionId);
-        } catch {}
+            if (rows) {
+                const snapshot = inspectFarmIdentitySnapshot(rows, windowsSessionId);
+                knownUins = snapshot.knownUins;
+                farmCount = snapshot.farmCount;
+                source = 'process_tree';
+            } else {
+                const sessions = registry.scanRuntimeSessions()
+                    .filter(item => Number(item.windowsSessionId) === windowsSessionId);
+                knownUins = sessions.map(item => normalizeUin(item.qqUin)).filter(Boolean);
+                farmCount = sessions.length;
+            }
+        } catch {
+            knownUins = [];
+            farmCount = 0;
+        }
 
-        const knownUins = sessions.map(item => normalizeUin(item.qqUin)).filter(Boolean);
-        if (knownUins.some(uin => uin !== expectedUin)) {
+        const uniqueUins = [...new Set(knownUins)];
+        const elapsedMs = Date.now() - startedAt;
+        const masked = uniqueUins.map(maskUin).filter(Boolean).join(',') || '-';
+        const signature = `${source}|${farmCount}|${masked}`;
+        if (logger && (signature !== lastSignature || Date.now() - lastLoggedAt >= 1000)) {
+            logger(`[identity] t=${elapsedMs}ms attempt=${attempts} source=${source} farmRoots=${farmCount} uins=${masked}`);
+            lastSignature = signature;
+            lastLoggedAt = Date.now();
+        }
+
+        if (uniqueUins.some(uin => uin !== expectedUin)) {
+            if (logger) logger(`[identity] reject mismatch expected=${maskUin(expectedUin)} seen=${masked}`);
             return { ok: false, reason: 'agent_capture_identity_mismatch' };
         }
-        if (knownUins.includes(expectedUin)) {
+        if (uniqueUins.includes(expectedUin)) {
+            if (logger) logger(`[identity] verified qq=${maskUin(expectedUin)} t=${elapsedMs}ms attempts=${attempts}`);
             return { ok: true, reason: 'ok' };
         }
         await sleep(150);
+    }
+
+    if (logger) {
+        logger(`[identity] timeout expected=${maskUin(expectedUin)} timeoutMs=${timeoutMs} attempts=${attempts}`);
     }
     return { ok: false, reason: 'agent_capture_identity_unverified' };
 }
@@ -281,6 +422,7 @@ function createIsolatedCodeAgent(options = {}) {
                 windowsSessionId: preflight.windowsSessionId,
                 desktopSessionRegistry: registry,
                 timeoutMs: identityTimeoutMs,
+                log: message => logger(`[FAR2 Code Agent] ${message}`),
             });
             if (!identity.ok) {
                 const err = new Error(identity.reason);
@@ -396,6 +538,7 @@ module.exports = {
     createIsolatedCodeAgent,
     inspectIsolatedRuntime,
     waitForCapturedRuntimeIdentity,
+    inspectFarmIdentitySnapshot,
     normalizeUin,
     isLoopbackHost,
 };
