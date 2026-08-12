@@ -67,7 +67,7 @@ FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号�
 ```text
 FAR2Farm service restart
   -> CodeManager / friend importer ready
-  -> saved account Worker auto-start
+  -> target Worker auto-start
   -> WS400 if Code stale
   -> targeted Code refresh
   -> replacement Worker auto-start
@@ -93,7 +93,24 @@ FAR2Farm service restart
 
 实机显示 `232`：Farm Lv112、Code 恢复可用、好友池 103 GID / 275 openId。
 
-健康页同时暴露一个 P0 收尾问题：当前 `startAllAccounts()` 会把保存的 `4476` Worker 也启动，但本机生产规则只应自动启动当前 Provider target 对应 QQ。该问题进入下一项稳定性修复，不影响已验收的 `232` 生产链。
+### P0 — Provider target 范围自动启动
+
+**SOURCE FIX COMPLETE / LOCAL RESTART CHECK PENDING**
+
+健康中心实机曾显示：保存两个账号时 `4476` 与 `232` 都被拉起 Worker，而当前机器只有 `232` 是正式 Provider target。
+
+源码已经收紧：
+
+- 新增 `startup-account-scope.js`；
+- 如果存在 `FARM_CODE_PROVIDER_TARGETS` / `FARM_CODE_PROVIDER_TARGETS_B64`，只自动启动 UIN 与 target key 匹配的保存账号；
+- Provider targets 配置无效时 fail-closed，不会退回“启动全部”；
+- Provider targets 合法但没有保存账号匹配时也不乱启 Worker；
+- 没有 Provider targets 的通用部署仍保持“自动启动全部保存账号”；
+- 可用 `FARM_AUTO_START_ACCOUNT_REFS` 显式覆盖启动范围；
+- WebUI 手动启动账号能力不受影响；
+- 不修改 Code、V4 好友或农场自动化逻辑。
+
+本地只需运行一次 `pnpm startup:scope-selftest`，然后重启 `FAR2Farm`，确认健康页变成 Worker 运行 1、Farm 在线 1，并且 `4476` 保持“未运行”。
 
 ## 2. Current production architecture
 
@@ -101,7 +118,9 @@ FAR2Farm service restart
 Windows / FAR2Farm service start
   -> Runtime Engine
        -> CodeManager + startup friend importer ready
-       -> auto-start saved accounts
+       -> resolve startup account scope
+            -> Provider targets configured: only matching QQ UINs
+            -> no Provider targets: all saved accounts (generic behavior)
        -> Worker
 
 Interactive Windows session
@@ -123,8 +142,6 @@ Code recovery path
   -> replacement Worker starts
   -> Farm login recovers
 ```
-
-> P0 修复后，上面的 `auto-start saved accounts` 应收紧为：存在 Provider targets 时只自动启动匹配 target UIN 的账号；无 targets 的通用部署保持原语义。
 
 ## 3. Second QQ / second Windows Session
 
@@ -205,7 +222,7 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 
 当前顺序：
 
-1. **P0：生产 Provider target 范围内自动启动 Worker**，解决 `4476` 被一起拉起的问题；
+1. **P0：生产 Provider target 范围内自动启动 Worker**：源码完成，等待一次本机重启确认；
 2. **P1：图鉴 + 种子商店**，利用仓库现有 `illustratedpb.proto` / `shoppb.proto` / Shop RPC；
 3. **P2：单土地操作 + 紫土地**；
 4. **P3：变异只读展示**；
@@ -225,4 +242,4 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 
 **不要再把 Code 自动刷新、好友完整导入、Windows2 验收当成默认下一步。**
 
-新的默认推进顺序是：P0 Worker 启动范围收尾 → P1 图鉴/种子商店。
+新的默认推进顺序是：P0 Worker 启动范围本机确认 → P1 图鉴/种子商店。
