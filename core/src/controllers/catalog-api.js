@@ -29,11 +29,15 @@ function registerCatalogApi(app, options = {}) {
     app.get('/api/catalog/illustrated', async (req, res) => {
         const accountId = requireAccount(req, res);
         if (!accountId) return;
+        const illustratedType = Number.parseInt(String(req.query.type || '1'), 10);
+        if (![1, 2].includes(illustratedType)) {
+            return res.status(400).json({ ok: false, error: 'Invalid illustrated type' });
+        }
         try {
             if (!provider || typeof provider.getIllustrated !== 'function') {
                 return res.status(503).json({ ok: false, error: 'Illustrated catalog unavailable' });
             }
-            const data = await provider.getIllustrated(accountId);
+            const data = await provider.getIllustrated(accountId, illustratedType);
             return res.json({ ok: true, data });
         }
         catch (err) {
