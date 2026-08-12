@@ -10,7 +10,7 @@
 
 ## 1. Current status
 
-FAR2 的 Code 自动刷新与完整好友导入两条底层主线均已完成。当前进入**无人值守稳定性 + 新业务功能**阶段。
+FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。当前进入**新业务功能 / 运行可观测性**阶段。
 
 ### Phase 1 — 单账号 Windows 无人值守 Code 自动刷新
 
@@ -47,25 +47,34 @@ FAR2 的 Code 自动刷新与完整好友导入两条底层主线均已完成。
 
 ### Phase 3 — Windows 服务启动后 Worker 自动恢复
 
-**SOURCE FIX COMPLETE / LOCAL RESTART CHECK PENDING**
+**COMPLETED / ACCEPTED**
 
-2026-08-13 静态检查发现一个与无人值守目标冲突的历史配置：
+2026-08-13 已完成真实 Windows 验证：
+
+1. 本地更新至 `754bfa8` 后执行 `Restart-Service FAR2Farm`；
+2. 不打开浏览器、不手动点击“启动账号”；
+3. FAR2 自动启动账号 `232`；
+4. 启动后首次 Farm WS 返回 HTTP 400；
+5. CodeManager 自动触发恢复，旧 Worker 正常退出；
+6. 新 Worker 自动启动并登录成功，账号恢复到 Lv112；
+7. V4 好友启动导入同步恢复：103 GID / 275 openId；
+8. 好友帮助与巡查实际继续运行。
+
+这证明当前正式链已经形成：
 
 ```text
-core/client.js -> runtimeEngine.start({ autoStartAccounts: false })
+FAR2Farm service restart
+  -> CodeManager / friend importer ready
+  -> saved account Worker auto-start
+  -> WS400 if Code stale
+  -> targeted Code refresh
+  -> replacement Worker auto-start
+  -> Farm login recovered
+  -> V4 friend pool restored
+  -> automation resumes
 ```
 
-这会导致 FAR2Farm 服务本身可以启动，但正式入口不会调用 `startAllAccounts()`，因此 Windows / 服务重启后存在账号 Worker 需要人工启动的风险。
-
-当前修复：
-
-- `core/client.js` 不再显式关闭 `autoStartAccounts`；
-- Runtime Engine 默认自动启动已保存账号；
-- `FARM_AUTO_START_ACCOUNTS=0` 可显式进入 panel-only 模式；
-- CodeManager 和 startup friend importer 先启动，再启动 Worker；
-- 正式链不依赖浏览器打开或手动点击“启动账号”。
-
-下一次真实 Windows 验证只需：更新代码后重启一次 `FAR2Farm`，确认保存账号自动出现 Worker / Farm 登录日志。无需重测 Code mint、V4 好友采集或 Windows2。
+当前单机生产约束为只运行一个目标 QQ；其他保存账号不要求在同一 Windows 实例同时在线，因此不作为本轮失败项，也不需要 Windows2 验收。
 
 ## 2. Current production architecture
 
@@ -100,7 +109,7 @@ Code recovery path
 
 这是**可选未来扩展**，不是当前主线，不是当前完成标准，也不需要为了继续项目而去 Windows 2 做验收。
 
-多 Session / 多 target 的部署能力已经存在；未来确实要挂第二 QQ 时，再单独做第二账号实机 E2E。
+当前实际生产约束按“一台 Windows 只运行一个目标 QQ”处理。多 Session / 多 target 的部署能力已经存在；未来确实需要第二 QQ 时，再单独做第二账号实机 E2E。
 
 `docs/MULTI_SESSION_CODE_AGENT_HANDOFF_2026-08-13.md` 只作为未来扩展参考，不得把其中“第二 QQ acceptance pending”解释成当前项目未完成。
 
@@ -172,8 +181,6 @@ core/src/services/windows-runtime-code.js
 4. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
 5. 其他历史文档。
 
-当前短期顺序：
+**不要再把 Code 自动刷新、好友完整导入、Windows 服务自动恢复或第二 Windows Session 验收当成默认下一步。**
 
-1. 完成一次 FAR2Farm 服务重启，确认账号 Worker 自动启动；
-2. 然后进入“运行健康中心”或其他新的业务功能；
-3. 不回头重测 Windows2 / Code / V1-V3 好友采集。
+下一步优先进入“运行健康中心”等新的可观测性 / 业务功能。
