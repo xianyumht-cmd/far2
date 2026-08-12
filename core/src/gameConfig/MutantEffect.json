@@ -1,0 +1,12 @@
+[
+  { "id": 1, "name": "冰冻", "effect_name": "冰冻", "description": "冰冻·售价×3", "tag": "无", "icon": "frozen", "tips": "作物生长过程中随机出现", "fruit_name": null },
+  { "id": 2, "name": "爱心", "effect_name": "爱心", "description": "爱心·数量×3", "tag": "无", "icon": "love", "tips": "作物生长过程中随机出现", "fruit_name": null },
+  { "id": 3, "name": "暗化", "effect_name": "暗化", "description": "暗化·售价×2", "tag": "无", "icon": "dark", "tips": "作物生长过程中随机出现", "fruit_name": null },
+  { "id": 4, "name": "湿润", "effect_name": "湿润", "description": "湿润·数量×2", "tag": "无", "icon": "moist", "tips": "作物生长过程中随机出现", "fruit_name": null },
+  { "id": 5, "name": "黄金", "effect_name": "黄金", "description": "黄金·产出黄金果实", "tag": "无", "icon": "golden", "tips": "稀有作物生长过程中随机出现", "fruit_name": "黄金果实" },
+  { "id": 6, "name": "哈哈", "effect_name": "哈哈", "description": "哈哈·产出哈哈小南瓜", "tag": "活动", "icon": "haha", "tips": "种植本期活动稀有种子有概率出现", "fruit_name": "哈哈小南瓜" },
+  { "id": 7, "name": "塔塔", "effect_name": "塔塔", "description": "塔塔·产出哈哈南瓜塔", "tag": "装扮", "icon": "tata", "tips": "种植哈哈南瓜有概率出现", "fruit_name": "哈哈南瓜塔" },
+  { "id": 8, "name": "荷华", "effect_name": "荷华", "description": "荷华·产出荷花", "tag": "活动", "icon": "lotus", "tips": "种植荷风游记稀有种子有概率出现", "fruit_name": "荷花" },
+  { "id": 9, "name": "月华", "effect_name": "月华", "description": "月华·产出月华宝荷", "tag": "装扮", "icon": "moon", "tips": "种植琉璃宝荷有概率出现", "fruit_name": "月华宝荷" },
+  { "id": 10, "name": "绵绵", "effect_name": "绵绵", "description": "绵绵·产出绵绵糖果", "tag": "无", "icon": "mian", "tips": "种植欢乐糖果有概率出现", "fruit_name": "绵绵糖果" }
+]

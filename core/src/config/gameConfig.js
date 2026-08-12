@@ -21,6 +21,8 @@ const itemInfoMap = new Map();  // item_id -> item
 const seedItemMap = new Map();  // seed_id -> item(type=5)
 const seedImageMap = new Map(); // seed_id -> image url
 const seedAssetImageMap = new Map(); // asset_name (Crop_xxx) -> image url
+let mutantEffectConfig = null;
+const mutantEffectMap = new Map(); // mutant config id -> read-only display metadata
 
 // 当前线上已确认存在、但旧 Plant.json 尚未收录的种子元数据。
 // 只用于“按 seedId 查询 / 背包识别”，不会注入 getAllSeeds() 的商店候选。
@@ -127,6 +129,23 @@ function loadConfigs() {
         }
     } catch (e) {
         console.warn('[配置] 加载 seed_images_named 失败:', e.message);
+    }
+
+    // 加载变异效果静态元数据（只读展示，不参与任何自动刷变异逻辑）
+    try {
+        const mutantPath = path.join(configDir, 'MutantEffect.json');
+        mutantEffectMap.clear();
+        mutantEffectConfig = null;
+        if (fs.existsSync(mutantPath)) {
+            mutantEffectConfig = JSON.parse(fs.readFileSync(mutantPath, 'utf8'));
+            for (const effect of (Array.isArray(mutantEffectConfig) ? mutantEffectConfig : [])) {
+                const id = Number(effect && effect.id) || 0;
+                if (id > 0) mutantEffectMap.set(id, effect);
+            }
+            console.warn(`[配置] 已加载变异效果元数据 (${mutantEffectMap.size} 项)`);
+        }
+    } catch (e) {
+        console.warn('[配置] 加载 MutantEffect.json 失败:', e.message);
     }
 }
 
@@ -357,6 +376,23 @@ function getSeedPlantSize(seedId) {
     return Math.max(1, Number(plant && plant.size) || 1);
 }
 
+function getMutantEffectById(mutantId) {
+    return mutantEffectMap.get(Number(mutantId) || 0) || null;
+}
+
+function getMutantEffectsByIds(ids) {
+    const seen = new Set();
+    const result = [];
+    for (const rawId of (Array.isArray(ids) ? ids : [])) {
+        const id = Number(rawId) || 0;
+        if (id <= 0 || seen.has(id)) continue;
+        seen.add(id);
+        const effect = mutantEffectMap.get(id);
+        if (effect) result.push(effect);
+    }
+    return result;
+}
+
 function getSeedPrice(seedId) {
     const item = seedItemMap.get(Number(seedId) || 0);
     return item ? (Number(item.price) || 0) : 0;
@@ -397,6 +433,8 @@ module.exports = {
     isSeedItem,
     getSeedLevel,
     getSeedPlantSize,
+    getMutantEffectById,
+    getMutantEffectsByIds,
     getSeedPrice,
     getFruitPrice,
     getSeedImageBySeedId,

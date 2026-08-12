@@ -49,6 +49,18 @@ const canOperatePlant = computed(() => {
 
 const canUpgrade = computed(() => !!(land.value?.unlocked && land.value?.couldUpgrade))
 
+const mutationDetail = computed(() => {
+  const value = land.value?.mutation
+  if (value && typeof value === 'object')
+    return value
+  const effects = Array.isArray(land.value?.mutantEffects) ? land.value.mutantEffects : []
+  const configIds = Array.isArray(land.value?.mutantConfigIds) ? land.value.mutantConfigIds : []
+  return { active: effects.length > 0 || configIds.length > 0, effects, configIds, unknownConfigIds: [], events: [] }
+})
+
+const mutantEffects = computed(() => Array.isArray(mutationDetail.value?.effects) ? mutationDetail.value.effects : [])
+const unknownMutantIds = computed(() => Array.isArray(mutationDetail.value?.unknownConfigIds) ? mutationDetail.value.unknownConfigIds : [])
+
 function getLandStatusClass(land: any) {
   const status = land.status
   const level = Number(land.level) || 0
@@ -87,6 +99,9 @@ function getLandStatusClass(land: any) {
 
   if (status === 'stealable')
     return `${baseClass} ring-2 ring-purple-500 ring-offset-1 dark:ring-offset-gray-900`
+
+  if (mutationDetail.value?.active)
+    return `${baseClass} ring-1 ring-pink-400 dark:ring-pink-700`
 
   return baseClass
 }
@@ -196,6 +211,33 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
 
     <div class="mb-1 text-[10px] text-gray-400">
       季数 {{ land.totalSeason > 0 ? (`${land.currentSeason}/${land.totalSeason}`) : '-/-' }}
+    </div>
+
+    <div
+      v-if="mutationDetail.active"
+      class="mb-1 w-full rounded border border-pink-200 bg-pink-50/80 px-1.5 py-1 text-[10px] dark:border-pink-900/50 dark:bg-pink-950/20"
+    >
+      <div class="mb-0.5 font-semibold text-pink-700 dark:text-pink-300">
+        变异
+      </div>
+      <div class="flex flex-wrap justify-center gap-1">
+        <span
+          v-for="effect in mutantEffects"
+          :key="`${land.id}-mutant-${effect.id}`"
+          class="rounded bg-pink-100 px-1 py-0.5 text-pink-700 dark:bg-pink-900/40 dark:text-pink-200"
+          :title="effect.description || effect.tips || effect.name"
+        >
+          {{ effect.name }}<template v-if="effect.description"> · {{ effect.description }}</template>
+        </span>
+        <span
+          v-for="mutantId in unknownMutantIds"
+          :key="`${land.id}-unknown-mutant-${mutantId}`"
+          class="rounded bg-gray-100 px-1 py-0.5 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+          title="服务器返回了当前本地配置尚未识别的变异 ID"
+        >
+          未知变异 #{{ mutantId }}
+        </span>
+      </div>
     </div>
 
     <div class="flex origin-bottom gap-0.5 text-[10px]">
