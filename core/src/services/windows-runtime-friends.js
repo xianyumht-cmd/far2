@@ -139,6 +139,22 @@ function normalizeGid(value) {
     return Number.isSafeInteger(num) && num > 0 ? num : 0;
 }
 
+function decodeFriendBody(body, candidates) {
+    for (const type of candidates) {
+        try {
+            const reply = type.decode(body);
+            const friends = Array.isArray(reply && reply.game_friends) ? reply.game_friends : [];
+            const gids = [];
+            for (const friend of friends) {
+                const gid = normalizeGid(friend && friend.gid);
+                if (gid > 0 && !gids.includes(gid)) gids.push(gid);
+            }
+            if (gids.length > 0) return gids;
+        } catch {}
+    }
+    return [];
+}
+
 async function decodeFriendFrame(frame) {
     const p = ensureParser();
     let msg;
@@ -154,29 +170,21 @@ async function decodeFriendFrame(frame) {
     if (!/friendpb\.FriendService/i.test(serviceName) && !/FriendService/i.test(serviceName)) return null;
     if (!msg.body || !msg.body.length) return { methodName, gids: [] };
 
-    let plain;
-    try {
-        plain = await cryptoWasm.decryptBuffer(Buffer.from(msg.body));
-    } catch {
-        return null;
-    }
-
     const candidates = methodName === 'SyncAll'
         ? [p.SyncAllReply, p.GetAllReply]
         : [p.GetAllReply, p.SyncAllReply];
-    for (const type of candidates) {
-        try {
-            const reply = type.decode(plain);
-            const friends = Array.isArray(reply && reply.game_friends) ? reply.game_friends : [];
-            const gids = [];
-            for (const friend of friends) {
-                const gid = normalizeGid(friend && friend.gid);
-                if (gid > 0 && !gids.includes(gid)) gids.push(gid);
-            }
-            if (gids.length > 0) return { methodName, gids };
-        } catch {}
-    }
-    return { methodName, gids: [] };
+    const rawBody = Buffer.from(msg.body);
+
+    // Current FAR2 protocol receives response bodies as plaintext protobuf. Keep a
+    // decrypt fallback only for a future server/client variant that wraps replies too.
+    let gids = decodeFriendBody(rawBody, candidates);
+    if (gids.length > 0) return { methodName, gids };
+
+    try {
+        const decrypted = await cryptoWasm.decryptBuffer(rawBody);
+        gids = decodeFriendBody(decrypted, candidates);
+    } catch {}
+    return { methodName, gids };
 }
 
 async function readCapturedFrames(seen) {
@@ -205,14 +213,6 @@ async function waitForFriendGids(startedAt, timeoutMs) {
     let lastNewAt = 0;
 
     while (Date.now() < deadline) {
-        for (const file of listArtifactFiles()) {
-            try {
-                if (fs.statSync(file).mtimeMs < startedAt - 1000) continue;
-            } catch {
-                continue;
-            }
-        }
-
         const frames = await readCapturedFrames(seen);
         for (const frame of frames) {
             const decoded = await decodeFriendFrame(frame);
@@ -224,12 +224,12 @@ async function waitForFriendGids(startedAt, timeoutMs) {
         }
 
         if (gids.size > 0 && lastNewAt > 0 && Date.now() - lastNewAt >= 1800) {
-            return { gids: [...gids], methods: [...methods], frameCount: seen.size };
+            return { gids: [...gids], methods: [...methods], frameCount: seen.size, startedAt };
         }
         await sleep(200);
     }
 
-    if (gids.size > 0) return { gids: [...gids], methods: [...methods], frameCount: seen.size };
+    if (gids.size > 0) return { gids: [...gids], methods: [...methods], frameCount: seen.size, startedAt };
     return null;
 }
 
