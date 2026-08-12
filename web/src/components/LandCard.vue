@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const props = defineProps<{
   land: any
+  operating?: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'operate', action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | 'upgrade', land: any): void
 }>()
 
 const land = computed(() => props.land)
@@ -24,14 +29,25 @@ onUnmounted(() => {
 const growProgress = computed(() => {
   const matureInSec = land.value.matureInSec || 0
   const totalGrowTime = land.value.totalGrowTime || 0
-  
+
   if (totalGrowTime <= 0 || matureInSec <= 0) {
     return 0
   }
-  
+
   const progress = Math.min(100, Math.max(0, (matureInSec / totalGrowTime) * 100))
   return progress
 })
+
+const canOperatePlant = computed(() => {
+  const item = land.value
+  if (!item || !item.unlocked || item.occupiedByMaster)
+    return false
+  if (!item.plantName)
+    return false
+  return !['locked', 'empty'].includes(String(item.status || ''))
+})
+
+const canUpgrade = computed(() => !!(land.value?.unlocked && land.value?.couldUpgrade))
 
 function getLandStatusClass(land: any) {
   const status = land.status
@@ -42,23 +58,27 @@ function getLandStatusClass(land: any) {
 
   let baseClass = 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
 
-  // 土地等级样式
-  switch (level) {
-    case 1: // 黄土地
-      baseClass = 'bg-yellow-50/80 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800'
-      break
-    case 2: // 红土地
-      baseClass = 'bg-red-50/80 dark:bg-red-900/10 border-red-200 dark:border-red-800'
-      break
-    case 3: // 黑土地
-      baseClass = 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600'
-      break
-    case 4: // 金土地
-      baseClass = 'bg-amber-100/80 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
-      break
+  // 土地等级样式。当前协议字段是 level；5+ 先作为紫土地展示，等待实机确认后再接入自动施肥范围。
+  if (level >= 5) {
+    baseClass = 'bg-violet-50/80 dark:bg-violet-900/15 border-violet-300 dark:border-violet-700'
+  }
+  else {
+    switch (level) {
+      case 1: // 黄土地
+        baseClass = 'bg-yellow-50/80 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800'
+        break
+      case 2: // 红土地
+        baseClass = 'bg-red-50/80 dark:bg-red-900/10 border-red-200 dark:border-red-800'
+        break
+      case 3: // 黑土地
+        baseClass = 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600'
+        break
+      case 4: // 金土地
+        baseClass = 'bg-amber-100/80 dark:bg-amber-900/20 border-amber-300 dark:border-amber-600'
+        break
+    }
   }
 
-  // 状态叠加
   if (status === 'dead')
     return 'bg-gray-200 dark:bg-gray-700 border-gray-300 dark:border-gray-600 grayscale'
 
@@ -67,9 +87,6 @@ function getLandStatusClass(land: any) {
 
   if (status === 'stealable')
     return `${baseClass} ring-2 ring-purple-500 ring-offset-1 dark:ring-offset-gray-900`
-
-  if (status === 'growing')
-    return baseClass
 
   return baseClass
 }
@@ -92,6 +109,9 @@ function getSafeImageUrl(url: string) {
 }
 
 function getLandTypeName(level: number) {
+  const value = Number(level) || 0
+  if (value >= 5)
+    return '紫土地'
   const typeMap: Record<number, string> = {
     0: '普通',
     1: '黄土地',
@@ -99,23 +119,30 @@ function getLandTypeName(level: number) {
     3: '黑土地',
     4: '金土地',
   }
-  return typeMap[Number(level) || 0] || ''
+  return typeMap[value] || ''
 }
+
 function getPlantSizeText(land: any) {
   const size = Number(land?.plantSize) || 1
   if (size <= 1)
     return ''
   return `${size}x${size}`
 }
+
+function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | 'upgrade') {
+  if (props.operating)
+    return
+  emit('operate', action, props.land)
+}
 </script>
 
 <template>
   <div
-    class="relative min-h-[140px] flex flex-col items-center border rounded-lg p-2 transition dark:border-gray-700 hover:shadow-md"
+    class="relative min-h-[188px] flex flex-col items-center border rounded-lg p-2 transition dark:border-gray-700 hover:shadow-md"
     :class="getLandStatusClass(land)"
   >
     <div class="absolute left-1 top-1 text-[10px] text-gray-400 font-mono">
-      #{{ land.id }}
+      #{{ land.id }} · Lv{{ land.level ?? 0 }}
     </div>
     <div
       v-if="land.plantSize > 1"
@@ -123,6 +150,13 @@ function getPlantSizeText(land: any) {
     >
       合种 {{ getPlantSizeText(land) }}
     </div>
+    <div
+      v-else-if="land.occupiedByMaster"
+      class="absolute right-1 top-1 rounded bg-gray-100 px-1 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300"
+    >
+      合种副地
+    </div>
+
     <div class="mb-1 mt-4 h-10 w-10 flex items-center justify-center">
       <img
         v-if="land.seedImage"
@@ -149,14 +183,13 @@ function getPlantSizeText(land: any) {
 
     <div v-if="land.matureInSec > 0 && land.totalGrowTime > 0" class="w-full px-1">
       <div class="rainbow-progress-bar">
-        <div 
+        <div
           class="rainbow-progress-fill"
           :style="{ width: `${growProgress}%` }"
         />
       </div>
     </div>
 
-    <!--    <div class="mb-1 text-[10px] text-gray-400"> -->
     <div class="text-[10px] text-gray-400">
       {{ getLandTypeName(land.level) }}
     </div>
@@ -165,13 +198,49 @@ function getPlantSizeText(land: any) {
       季数 {{ land.totalSeason > 0 ? (`${land.currentSeason}/${land.totalSeason}`) : '-/-' }}
     </div>
 
-    <!-- Status Badges -->
-    <div class="mt-auto flex origin-bottom scale-90 gap-0.5 text-[10px]">
+    <div class="flex origin-bottom gap-0.5 text-[10px]">
       <span v-if="land.needWater" class="rounded bg-blue-100 px-0.5 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">水</span>
       <span v-if="land.needWeed" class="rounded bg-green-100 px-0.5 text-green-700 dark:bg-green-900/30 dark:text-green-400">草</span>
       <span v-if="land.needBug" class="rounded bg-red-100 px-0.5 text-red-700 dark:bg-red-900/30 dark:text-red-400">虫</span>
-      <!-- For friends view -->
-      <span v-if="land.status === 'harvestable'" class="rounded bg-orange-100 px-0.5 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">可偷</span>
+      <span v-if="land.status === 'harvestable'" class="rounded bg-orange-100 px-0.5 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">可收</span>
+    </div>
+
+    <div v-if="canOperatePlant || canUpgrade" class="mt-auto w-full border-t border-black/5 pt-2 dark:border-white/10">
+      <div v-if="canOperatePlant" class="grid grid-cols-3 gap-1">
+        <button
+          class="rounded border border-red-200 bg-red-50 px-1 py-1 text-[10px] text-red-600 disabled:opacity-40 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300"
+          :disabled="operating"
+          title="铲除当前土地作物"
+          @click.stop="operate('remove')"
+        >
+          铲除
+        </button>
+        <button
+          class="rounded border border-blue-200 bg-blue-50 px-1 py-1 text-[10px] text-blue-600 disabled:opacity-40 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-300"
+          :disabled="operating"
+          title="使用 1 次普通肥"
+          @click.stop="operate('fertilize-normal')"
+        >
+          普肥
+        </button>
+        <button
+          class="rounded border border-green-200 bg-green-50 px-1 py-1 text-[10px] text-green-600 disabled:opacity-40 dark:border-green-900/50 dark:bg-green-950/20 dark:text-green-300"
+          :disabled="operating"
+          title="使用 1 次有机肥"
+          @click.stop="operate('fertilize-organic')"
+        >
+          有机
+        </button>
+      </div>
+      <button
+        v-if="canUpgrade"
+        class="mt-1 w-full rounded border border-violet-200 bg-violet-50 px-1 py-1 text-[10px] text-violet-600 disabled:opacity-40 dark:border-violet-900/50 dark:bg-violet-950/20 dark:text-violet-300"
+        :disabled="operating"
+        title="升级当前土地"
+        @click.stop="operate('upgrade')"
+      >
+        升级土地
+      </button>
     </div>
   </div>
 </template>
@@ -184,7 +253,7 @@ function getPlantSizeText(land: any) {
   background: linear-gradient(145deg, #f0f0f0, #e6e6e6);
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 
+  box-shadow:
     inset 3px 3px 6px rgba(0, 0, 0, 0.1),
     inset -3px -3px 6px rgba(255, 255, 255, 0.9),
     2px 2px 4px rgba(0, 0, 0, 0.05);
@@ -217,7 +286,7 @@ function getPlantSizeText(land: any) {
   border-radius: 10px;
   transition: width 1s linear;
   position: relative;
-  box-shadow: 
+  box-shadow:
     inset 0 2px 4px rgba(255, 255, 255, 0.6),
     inset 0 -1px 2px rgba(0, 0, 0, 0.1);
   animation: cute-pulse 2s ease-in-out infinite;
@@ -261,7 +330,7 @@ function getPlantSizeText(land: any) {
 @media (prefers-color-scheme: dark) {
   .rainbow-progress-bar {
     background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
-    box-shadow: 
+    box-shadow:
       inset 3px 3px 6px rgba(0, 0, 0, 0.3),
       inset -3px -3px 6px rgba(60, 60, 60, 0.3),
       2px 2px 4px rgba(0, 0, 0, 0.2);
@@ -272,7 +341,7 @@ function getPlantSizeText(land: any) {
   }
 
   .rainbow-progress-fill {
-    box-shadow: 
+    box-shadow:
       inset 0 2px 4px rgba(255, 255, 255, 0.2),
       inset 0 -1px 2px rgba(0, 0, 0, 0.2);
   }
