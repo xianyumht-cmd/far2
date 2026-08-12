@@ -1,6 +1,5 @@
 const BULK_BUY_DELAY_MS = 250;
 const BULK_BUY_LIMIT = 100;
-const SEED_SHOP_TYPE = 2;
 
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -16,9 +15,8 @@ function registerCatalogApi(app, options = {}) {
 
     if (!app) throw new Error('Catalog API requires express app');
 
-    // Catalog operations share the same Farm websocket with patrol/task/friend loops.
-    // Keep at most one catalog request active per account so opening the page cannot
-    // flood the worker's pending callback queue.
+    // Catalog shares the same Farm websocket with patrol/task/friend loops.
+    // Keep at most one Catalog operation active per account.
     const accountQueues = new Map();
 
     function enqueueAccountCatalog(accountId, task) {
@@ -83,82 +81,6 @@ function registerCatalogApi(app, options = {}) {
         };
     }
 
-    async function buildPurchasePlanForAccount(accountId) {
-        if (!provider
-            || typeof provider.getIllustrated !== 'function'
-            || typeof provider.getShopProfiles !== 'function'
-            || typeof provider.getShopInfo !== 'function'
-            || typeof provider.getBagSeeds !== 'function') {
-            const err = new Error('Catalog purchase plan unavailable');
-            err.statusCode = 503;
-            throw err;
-        }
-
-        // Deliberately sequential. These all use the same Farm websocket.
-        const illustrated = await provider.getIllustrated(accountId);
-        const profiles = await provider.getShopProfiles(accountId);
-        const seedShop = (Array.isArray(profiles && profiles.shops) ? profiles.shops : [])
-            .find(shop => Number(shop && shop.shopType) === SEED_SHOP_TYPE);
-        if (!seedShop || !Number(seedShop.shopId)) {
-            throw new Error('当前服务器未返回种子商店');
-        }
-        const shopInfo = await provider.getShopInfo(accountId, Number(seedShop.shopId));
-        const bagSeeds = await provider.getBagSeeds(accountId);
-
-        const bagCountBySeed = new Map(
-            (Array.isArray(bagSeeds) ? bagSeeds : []).map(row => [Number(row && row.seedId) || 0, Number(row && row.count) || 0]),
-        );
-        const goodsByItemId = new Map(
-            (Array.isArray(shopInfo && shopInfo.goods) ? shopInfo.goods : [])
-                .map(row => [Number(row && row.itemId) || 0, row]),
-        );
-
-        const items = (Array.isArray(illustrated && illustrated.items) ? illustrated.items : [])
-            .filter(item => item && item.unlocked !== true)
-            .map((item) => {
-                const seedId = Number(item.seedId) || 0;
-                const ownedCount = bagCountBySeed.get(seedId) || 0;
-                const goods = seedId > 0 ? goodsByItemId.get(seedId) : null;
-                const limitCount = Number(goods && goods.limitCount) || 0;
-                const boughtNum = Number(goods && goods.boughtNum) || 0;
-                const limitRemaining = goods && limitCount > 0 ? Math.max(0, limitCount - boughtNum) : null;
-                let reason = '';
-                if (!seedId) reason = '本地配置暂未映射到种子ID';
-                else if (ownedCount > 0) reason = '背包已有该种子';
-                else if (!goods) reason = '种子商店未找到该商品';
-                else if (!goods.unlocked) reason = '商店尚未解锁';
-                else if (limitRemaining === 0) reason = '已达限购';
-                const canBuy = !!goods && !!goods.unlocked && ownedCount <= 0 && limitRemaining !== 0;
-                return {
-                    fruitId: Number(item.fruitId) || Number(item.illustratedId) || 0,
-                    seedId,
-                    name: String(item.name || ''),
-                    image: String(item.image || (goods && goods.image) || ''),
-                    illustratedTier: Number(item.illustratedTier) || 0,
-                    ownedCount,
-                    canBuy,
-                    reason,
-                    goodsId: Number(goods && goods.goodsId) || 0,
-                    price: Number(goods && goods.price) || 0,
-                    itemCount: goods ? Math.max(1, Number(goods.itemCount) || 1) : 0,
-                    boughtNum,
-                    limitCount,
-                };
-            });
-
-        const buyable = items.filter(item => item.canBuy);
-        return {
-            shop: seedShop,
-            items,
-            summary: {
-                locked: items.length,
-                alreadyOwned: items.filter(item => item.ownedCount > 0).length,
-                buyable: buyable.length,
-                totalCost: buyable.reduce((sum, item) => sum + Math.max(0, item.price), 0),
-            },
-        };
-    }
-
     app.get('/api/catalog/illustrated', async (req, res) => {
         const accountId = requireAccount(req, res);
         if (!accountId) return;
@@ -183,7 +105,9 @@ function registerCatalogApi(app, options = {}) {
         const accountId = requireAccount(req, res);
         if (!accountId) return;
         try {
-            const data = await enqueueAccountCatalog(accountId, () => buildPurchasePlanForAccount(accountId));
+            const data = await enqueueAccountCatalog(accountId, () => runCatalogActionForAccount(accountId, {
+                action: 'getMissingSeedPurchasePlan',
+            }));
             return res.json({ ok: true, data });
         }
         catch (err) {
@@ -210,7 +134,7 @@ function registerCatalogApi(app, options = {}) {
         }
         try {
             const data = await enqueueAccountCatalog(accountId, async () => {
-                const plan = await buildPurchasePlanForAccount(accountId);
+                const plan = await runCatalogActionForAccount(accountId, { action: 'getMissingSeedPurchasePlan' });
                 const allowed = Array.isArray(plan && plan.items)
                     ? plan.items.find(item => Number(item && item.goodsId) === goodsId && item.canBuy === true)
                     : null;
@@ -241,7 +165,7 @@ function registerCatalogApi(app, options = {}) {
         }
         try {
             const data = await enqueueAccountCatalog(accountId, async () => {
-                const plan = await buildPurchasePlanForAccount(accountId);
+                const plan = await runCatalogActionForAccount(accountId, { action: 'getMissingSeedPurchasePlan' });
                 const actualBuyable = Number(plan && plan.summary && plan.summary.buyable) || 0;
                 const actualTotalCost = Number(plan && plan.summary && plan.summary.totalCost) || 0;
                 if (actualBuyable !== expectedBuyable || actualTotalCost !== expectedTotalCost) {
