@@ -90,6 +90,14 @@ async function main() {
         assert.equal(invalidBuy.status, 400);
         console.log('✅ invalid single purchase rejected PASS');
 
+        const beforeOutOfPlan = calls.filter(row => row.input && row.input.action === 'buyIllustratedSeed').length;
+        const outOfPlan = await request('/api/catalog/illustrated/buy-seed', {
+            method: 'POST', body: JSON.stringify({ goodsId: 99 }),
+        });
+        assert.equal(outOfPlan.status, 409);
+        assert.equal(calls.filter(row => row.input && row.input.action === 'buyIllustratedSeed').length, beforeOutOfPlan);
+        console.log('✅ out-of-plan single purchase rejected PASS');
+
         const buy = await request('/api/catalog/illustrated/buy-seed', {
             method: 'POST', body: JSON.stringify({ goodsId: 11, price: 999999 }),
         });
@@ -136,6 +144,7 @@ async function main() {
         console.log(JSON.stringify({
             ok: true,
             accountIsolation: true,
+            outOfPlanPurchaseRejected: true,
             clientPriceTrusted: false,
             staleBulkRejected: true,
             realQqTouched: false,
