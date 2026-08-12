@@ -57,13 +57,30 @@ function endpointUrl(baseUrl, route) {
     return new URL(String(route || '').replace(/^\/+/, ''), base).toString();
 }
 
-function parseTargets(processRef) {
+function readTargetsRaw(processRef) {
     const raw = String(processRef.env.FARM_CODE_PROVIDER_TARGETS || '').trim();
-    if (!raw) return { configured: false, targets: new Map(), error: '' };
+    if (raw) return { configured: true, raw, source: 'json' };
+
+    const encoded = String(processRef.env.FARM_CODE_PROVIDER_TARGETS_B64 || '').trim();
+    if (!encoded) return { configured: false, raw: '', source: '' };
+
+    try {
+        const decoded = Buffer.from(encoded, 'base64').toString('utf8').trim();
+        if (!decoded) return { configured: true, raw: '', source: 'base64' };
+        return { configured: true, raw: decoded, source: 'base64' };
+    } catch {
+        return { configured: true, raw: '', source: 'base64' };
+    }
+}
+
+function parseTargets(processRef) {
+    const source = readTargetsRaw(processRef);
+    if (!source.configured) return { configured: false, targets: new Map(), error: '' };
+    if (!source.raw) return { configured: true, targets: new Map(), error: 'provider_targets_json_invalid' };
 
     let parsed;
     try {
-        parsed = JSON.parse(raw);
+        parsed = JSON.parse(source.raw);
     } catch {
         return { configured: true, targets: new Map(), error: 'provider_targets_json_invalid' };
     }
@@ -283,7 +300,9 @@ function createIsolatedRuntimeCodeProvider(options = {}) {
 
 function createIsolatedRuntimeCodeProviderFromEnv(options = {}) {
     const processRef = options.processRef || process;
-    if (!String(processRef.env.FARM_CODE_PROVIDER_TARGETS || '').trim()) return null;
+    const hasJson = String(processRef.env.FARM_CODE_PROVIDER_TARGETS || '').trim();
+    const hasBase64 = String(processRef.env.FARM_CODE_PROVIDER_TARGETS_B64 || '').trim();
+    if (!hasJson && !hasBase64) return null;
     return createIsolatedRuntimeCodeProvider({ ...options, processRef });
 }
 
