@@ -7,6 +7,7 @@ const { updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig } = requir
 const { sendPushooMessage } = require('../services/push')
 const { MiniProgramLoginSession } = require('../services/qrlogin')
 const { createCodeManager } = require('../services/code-manager')
+const { createStartupRuntimeFriendImport } = require('../services/startup-runtime-friend-import')
 const { createDataProvider } = require('./data-provider')
 const { createReloginReminderService } = require('./relogin-reminder')
 const { createRuntimeState } = require('./runtime-state')
@@ -119,6 +120,14 @@ function createRuntimeEngine(options = {}) {
     codeManager,
   })
 
+  const startupRuntimeFriendImport = createStartupRuntimeFriendImport({
+    store,
+    processRef,
+    workers,
+    log,
+    broadcastConfigToWorkers,
+  })
+
   runtimeEvents.on('log', (entry) => {
     if (onLog) onLog(entry, entry && entry.accountId ? entry.accountId : '', entry && entry.accountName ? entry.accountName : '')
   })
@@ -172,6 +181,7 @@ function createRuntimeEngine(options = {}) {
     }
 
     codeManager.start()
+    startupRuntimeFriendImport.start()
   }
 
   function stopAllAccounts() {
@@ -186,6 +196,7 @@ function createRuntimeEngine(options = {}) {
     workers,
     dataProvider,
     codeManager,
+    startupRuntimeFriendImport,
     start,
     startAllAccounts,
     stopAllAccounts,
