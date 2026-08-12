@@ -2,7 +2,7 @@
 
 状态：**CURRENT PRODUCTION BASELINE**
 
-本文用于结束 2026-08-12 ~ 2026-08-13 的 Code 自动刷新与 QQ 好友完整导入研发阶段。后续继续开发时，先认本文与当前源码，不再把已验收功能重新当成待解决问题。
+本文用于结束 2026-08-12 ~ 2026-08-13 的 Code 自动刷新、QQ 好友完整导入与 Windows 服务启动恢复研发阶段。后续继续开发时，先认本文与当前源码，不再把已验收功能重新当成待解决问题。
 
 ## 1. 已验收范围
 
@@ -53,6 +53,39 @@
 
 - `docs/FRIEND_GID_HANDOFF_2026-08-13.md`
 
+### Phase 3 — Windows 服务启动后账号自动恢复
+
+状态：**COMPLETED / ACCEPTED**。
+
+2026-08-13 真实 Windows 服务重启验证结果：
+
+- 本地更新至 `754bfa8`；
+- 执行 `Restart-Service FAR2Farm`；
+- 不打开浏览器、不手动点击启动账号；
+- FAR2 自动启动账号 `232`；
+- 首次连接出现真实 WS HTTP 400；
+- CodeManager 自动完成恢复；
+- 旧 Worker 退出，新 Worker 自动启动；
+- Farm 登录成功，账号恢复到 Lv112；
+- V4 好友池同时恢复：103 GID / 275 openId；
+- 好友帮助与巡查继续实际运行。
+
+因此当前生产链已验证为完整闭环：
+
+```text
+FAR2Farm service restart
+  -> recovery/import infrastructure ready
+  -> saved account Worker auto-start
+  -> stale Code -> WS400
+  -> targeted Code refresh
+  -> replacement Worker auto-start
+  -> Farm login recovered
+  -> V4 friend pool restored
+  -> automation resumes
+```
+
+当前单机生产范围按“一台 Windows 只运行一个目标 QQ”处理；其他保存账号不要求在同一 Windows 实例同时在线，不作为当前失败项。
+
 ## 2. 当前生产链
 
 ```text
@@ -82,23 +115,24 @@ Code 失效
 
 ### 2.1 2026-08-13 无人值守启动闭环修复
 
-静态收口检查发现：`core/client.js` 仍显式传入 `autoStartAccounts: false`，与本文此前描述的“FAR2Farm 启动后自动启动已保存账号”不一致。
+静态收口检查曾发现：`core/client.js` 仍显式传入 `autoStartAccounts: false`，与生产目标不一致。
 
-当前源码已经修正：
+当前源码已经修正并完成真实验收：
 
 - 正式 `core/client.js` 不再关闭账号自动启动；
 - Runtime Engine 默认自动启动全部已保存账号；
 - 如确实只想启动 Web 面板，可显式设置 `FARM_AUTO_START_ACCOUNTS=0`；
-- CodeManager 与 startup friend importer 先启动，再启动 Worker，确保无人值守启动时恢复/导入基础设施先就绪；
-- 不依赖浏览器打开或手动点击“启动账号”。
+- CodeManager 与 startup friend importer 先启动，再启动 Worker；
+- 不依赖浏览器打开或手动点击“启动账号”；
+- FAR2Farm 服务重启后已实机证明账号可自动上线并在 WS400 后自动恢复。
 
-该项属于**稳定性缺陷修复**，不是新的 Code/好友实验。源码修复完成后，只需在真实 Windows 服务环境做一次服务重启确认账号自动上线即可。
+该项属于**稳定性缺陷修复并已验收完成**，不再作为待测试项。
 
 ## 3. 第二 QQ / 第二 Windows Session 的定位
 
 **不是当前阻塞项，也不是本轮继续开发前必须完成的验收。**
 
-多 target / 多 Session 的部署能力可以保留，未来真的需要第二 QQ 时再做独立实机验收。
+当前实际生产约束为“一台 Windows 运行一个目标 QQ”。多 target / 多 Session 的部署能力可以保留，未来真的需要第二 QQ 时再做独立实机验收。
 
 当前项目完成标准以已经验收的单账号 Windows 生产链为准。
 
@@ -152,9 +186,9 @@ Code 刷新：
 
 ## 7. 后续开发原则
 
-从这里开始，Code 自动刷新和完整好友导入按“已完成基础设施”处理。
+从这里开始，Code 自动刷新、完整好友导入、Windows 服务启动恢复全部按“已完成基础设施”处理。
 
-下一项工作应该是新的业务功能、稳定性缺陷或明确用户体验需求；不要为了继续开发而人为增加第二 QQ 验收、周期刷新或重新采集方案。
+下一项工作应进入新的业务功能或运行可观测性，优先考虑“运行健康中心”；不要为了继续开发而人为增加第二 QQ 验收、周期刷新或重新采集方案。
 
 如果未来出现 Code 或好友链回归，应优先对照：
 
