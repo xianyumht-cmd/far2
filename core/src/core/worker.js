@@ -529,7 +529,7 @@ async function startBot(config) {
         if (getAutomation().fertilizer_gift) {
             await openFertilizerGiftPacksSilently().catch(() => 0);
         }
-
+        
         // 启动时执行一次放虫放草（只在账号启动时执行）
         workerScheduler.setTimeoutTask('bad_startup_once', 10000, async () => {
             try {
@@ -538,7 +538,7 @@ async function startBot(config) {
                 log('好友', `启动时放虫放草执行失败: ${e.message}`, { module: 'friend', event: '启动放虫放草失败', error: e.message });
             }
         });
-
+        
         startFarmCheckLoop({ externalScheduler: true });
         startFriendCheckLoop({ externalScheduler: true });
         startUnifiedScheduler();
@@ -661,7 +661,19 @@ async function handleApiCall(msg) {
             case 'doFarmOp': {
                 const opType = String(args[0] || '');
                 if (opType === 'remove-all' || opType.startsWith('land:')) {
-                    result = await require('../services/land-controls').runLandControl(opType);
+                    if (farmTaskRunning || helpTaskRunning || stealTaskRunning) {
+                        throw new Error('后台巡田/好友任务正在执行，请稍后再试');
+                    }
+                    farmTaskRunning = true;
+                    helpTaskRunning = true;
+                    stealTaskRunning = true;
+                    try {
+                        result = await require('../services/land-controls').runLandControl(opType);
+                    } finally {
+                        farmTaskRunning = false;
+                        helpTaskRunning = false;
+                        stealTaskRunning = false;
+                    }
                 } else {
                     result = await runFarmOperation(opType);
                 }
@@ -754,7 +766,6 @@ async function getDailyGiftOverview() {
                 doneToday: !!month.doneToday,
                 lastAt: Number(month.lastClaimAt || month.lastCheckAt || 0),
                 hasCard: Object.prototype.hasOwnProperty.call(month, 'hasCard') ? !!month.hasCard : undefined,
-                canClaim: Object.prototype.hasOwnProperty.call(month, 'canClaim') ? !!month.canClaim : undefined,
                 hasClaimable: Object.prototype.hasOwnProperty.call(month, 'hasClaimable') ? !!month.hasClaimable : undefined,
                 result: month.result || '',
             },
