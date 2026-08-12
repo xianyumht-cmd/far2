@@ -1,7 +1,14 @@
+const process = require('node:process');
+const { parentPort } = require('node:worker_threads');
 const { getFruitName, getPlantByFruitId, getPlantById, getPlantName } = require('../config/gameConfig');
+const {
+    getKnownFriendGids,
+    getKnownFriendGidSyncCooldownSec,
+    applyConfigSnapshot,
+} = require('../models/store');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { logWarn, toNum, toTimeSec } = require('../utils/utils');
+const { log, logWarn, toNum, toTimeSec } = require('../utils/utils');
 
 const RPC_CANDIDATES = [
     ['gamepb.interactpb.InteractService', 'InteractRecords'],
@@ -15,6 +22,11 @@ const ACTION_LABELS = {
     2: '帮忙',
     3: '捣乱',
 };
+
+const DEFAULT_FRIEND_DISCOVERY_INTERVAL_MS = 5 * 60 * 1000;
+const MIN_FRIEND_DISCOVERY_INTERVAL_MS = 30 * 1000;
+let lastFriendDiscoveryAt = 0;
+let friendDiscoveryPromise = null;
 
 function getActionLabel(actionType) {
     return ACTION_LABELS[actionType] || '互动';
@@ -41,6 +53,140 @@ function buildActionDetail(record) {
 
     if (landId > 0) parts.push(`地块 ${landId}`);
     return parts.join(' · ');
+}
+
+function postToMaster(payload) {
+    try {
+        if (process.send) {
+            process.send(payload);
+            return true;
+        }
+        if (parentPort && typeof parentPort.postMessage === 'function') {
+            parentPort.postMessage(payload);
+            return true;
+        }
+    } catch {
+        // ignore IPC failure; caller will persist locally as fallback
+    }
+    return false;
+}
+
+function normalizeGids(values) {
+    const result = [];
+    const seen = new Set();
+    for (const value of (Array.isArray(values) ? values : [])) {
+        const gid = toNum(value);
+        if (gid <= 0 || seen.has(gid)) continue;
+        seen.add(gid);
+        result.push(gid);
+    }
+    return result;
+}
+
+function extractFriendList(reply) {
+    if (Array.isArray(reply && reply.game_friends)) return reply.game_friends;
+    if (Array.isArray(reply && reply.gameFriends)) return reply.gameFriends;
+    return [];
+}
+
+function getFriendDiscoveryIntervalMs() {
+    const sec = Number(getKnownFriendGidSyncCooldownSec ? getKnownFriendGidSyncCooldownSec() : 0);
+    if (!Number.isFinite(sec) || sec <= 0) return DEFAULT_FRIEND_DISCOVERY_INTERVAL_MS;
+    return Math.max(MIN_FRIEND_DISCOVERY_INTERVAL_MS, sec * 1000);
+}
+
+async function fetchFullFriendDiscoveryGids() {
+    const gids = [];
+    const errors = [];
+    const sourceCounts = { syncAll: 0, getAll: 0 };
+    let succeeded = 0;
+
+    try {
+        const syncReq = types.SyncAllRequest || types.SyncAllFriendsRequest;
+        const syncRep = types.SyncAllReply || types.SyncAllFriendsReply;
+        if (!syncReq || !syncRep) throw new Error('SyncAll 接口类型未加载');
+        const body = syncReq.encode(syncReq.create({ open_ids: [] })).finish();
+        const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'SyncAll', body, 4000);
+        const friends = extractFriendList(syncRep.decode(replyBody));
+        sourceCounts.syncAll = friends.length;
+        gids.push(...friends.map(friend => friend && friend.gid));
+        succeeded++;
+    } catch (error) {
+        errors.push(`SyncAll: ${error && error.message ? error.message : String(error || 'unknown')}`);
+    }
+
+    try {
+        if (!types.GetAllFriendsRequest || !types.GetAllFriendsReply) {
+            throw new Error('GetAll 接口类型未加载');
+        }
+        const body = types.GetAllFriendsRequest.encode(types.GetAllFriendsRequest.create({})).finish();
+        const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetAll', body, 4000);
+        const friends = extractFriendList(types.GetAllFriendsReply.decode(replyBody));
+        sourceCounts.getAll = friends.length;
+        gids.push(...friends.map(friend => friend && friend.gid));
+        succeeded++;
+    } catch (error) {
+        errors.push(`GetAll: ${error && error.message ? error.message : String(error || 'unknown')}`);
+    }
+
+    return {
+        gids: normalizeGids(gids),
+        sourceCounts,
+        succeeded,
+        errors,
+    };
+}
+
+async function syncFullFriendGids(force = false) {
+    const now = Date.now();
+    const intervalMs = getFriendDiscoveryIntervalMs();
+    if (!force && lastFriendDiscoveryAt > 0 && now - lastFriendDiscoveryAt < intervalMs) {
+        return normalizeGids(getKnownFriendGids());
+    }
+    if (friendDiscoveryPromise) return friendDiscoveryPromise;
+
+    friendDiscoveryPromise = (async () => {
+        lastFriendDiscoveryAt = Date.now();
+        const accountId = String(process.env.FARM_ACCOUNT_ID || '').trim();
+        const current = normalizeGids(getKnownFriendGids(accountId));
+        const discovered = await fetchFullFriendDiscoveryGids();
+
+        if (discovered.succeeded <= 0) {
+            logWarn('好友', `QQ 好友 GID 自动发现失败: ${discovered.errors.join(' | ')}`, {
+                module: 'friend',
+                event: '好友GID自动发现',
+                result: 'error',
+            });
+            return current;
+        }
+
+        const merged = normalizeGids([...current, ...discovered.gids]);
+        const addedCount = merged.filter(gid => !current.includes(gid)).length;
+        if (addedCount > 0) {
+            applyConfigSnapshot({ knownFriendGids: merged }, { persist: false, accountId });
+            const sent = postToMaster({
+                type: 'known_friend_gids_sync',
+                gids: merged,
+            });
+            if (!sent) {
+                applyConfigSnapshot({ knownFriendGids: merged }, { persist: true, accountId });
+            }
+            log('好友', `QQ 好友 GID 自动发现：新增 ${addedCount} 个，当前 ${merged.length} 个 (SyncAll=${discovered.sourceCounts.syncAll}, GetAll=${discovered.sourceCounts.getAll})`, {
+                module: 'friend',
+                event: '好友GID自动发现',
+                result: 'ok',
+                addedCount,
+                totalKnownGids: merged.length,
+                syncAllCount: discovered.sourceCounts.syncAll,
+                getAllCount: discovered.sourceCounts.getAll,
+            });
+        }
+        return merged;
+    })().finally(() => {
+        friendDiscoveryPromise = null;
+    });
+
+    return friendDiscoveryPromise;
 }
 
 async function fetchInteractReply() {
@@ -119,6 +265,10 @@ function normalizeInteractRecord(record, index) {
 }
 
 async function getInteractRecords() {
+    // 好友巡查本来就会周期调用访客记录。这里顺便低频做一次完整好友 GID 发现，
+    // 不改变访客记录返回结构，避免影响 WebUI 的“最近互动”页面。
+    await syncFullFriendGids(false).catch(() => null);
+
     const reply = await fetchInteractReply();
     const records = Array.isArray(reply && reply.records) ? reply.records : [];
     return records
@@ -128,4 +278,5 @@ async function getInteractRecords() {
 
 module.exports = {
     getInteractRecords,
+    syncFullFriendGids,
 };
