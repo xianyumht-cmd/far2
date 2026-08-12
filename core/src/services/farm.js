@@ -4,7 +4,7 @@
 
 const protobuf = require('protobufjs');
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
-const { getPlantNameBySeedId, getPlantName, getPlantExp, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getPlantBySeedId, getSeedImageBySeedId } = require('../config/gameConfig');
+const { getPlantNameBySeedId, getPlantName, getPlantExp, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getPlantBySeedId, getSeedImageBySeedId, getMutantEffectsByIds } = require('../config/gameConfig');
 const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, getPrioritize2x2Crops, getBagSeedPriority, getBagSeedFallbackStrategy, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents, getWsErrorState } = require('../utils/network');
 const { types } = require('../utils/proto');
@@ -16,6 +16,7 @@ const { getBagSeeds, getBag, getBagItems, getContainerHoursFromBagItems } = requ
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth } = require('./mall');
 const { selectReady2x2Groups, validate2x2PlantReply } = require('./farm-2x2');
 const { runPrioritized2x2Prepass } = require('./farm-2x2-priority');
+const { buildMutationDetail } = require('./farm-mutation');
 
 // ============ 内部状态 ============
 let isCheckingFarm = false;
@@ -1062,6 +1063,9 @@ async function getLandsDetail() {
             const needWater = (toNum(plant.dry_num) > 0) || (toTimeSec(currentPhase.dry_time) > 0 && toTimeSec(currentPhase.dry_time) <= nowSec);
             const needWeed = (plant.weed_owners && plant.weed_owners.length > 0) || (toTimeSec(currentPhase.weeds_time) > 0 && toTimeSec(currentPhase.weeds_time) <= nowSec);
             const needBug = (plant.insect_owners && plant.insect_owners.length > 0) || (toTimeSec(currentPhase.insect_time) > 0 && toTimeSec(currentPhase.insect_time) <= nowSec);
+            const mutation = occupiedByMaster
+                ? { active: false, configIds: [], effects: [], unknownConfigIds: [], events: [] }
+                : buildMutationDetail(plant, currentPhase, getMutantEffectsByIds);
 
             lands.push({
                 id,
@@ -1089,6 +1093,10 @@ async function getLandsDetail() {
                 masterLandId,
                 occupiedLandIds,
                 plantSize,
+                mutation,
+                mutantConfigIds: mutation.configIds,
+                mutantEffects: mutation.effects,
+                mutantEvents: mutation.events,
             });
         }
 
