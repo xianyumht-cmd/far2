@@ -2,13 +2,61 @@
  * Proto 加载与消息类型管理
  */
 
+const fs = require('node:fs');
 const protobuf = require('protobufjs');
-const { getResourcePath } = require('../config/runtime-paths');
+const { getResourcePath, getDataFile } = require('../config/runtime-paths');
 const { log } = require('./utils');
 
 // Proto 根对象与所有消息类型
 let root = null;
 const types = {};
+
+function loadRuntimeFriendOpenIds() {
+    try {
+        const accountId = String(process.env.FARM_ACCOUNT_ID || '').trim();
+        if (!accountId) return [];
+        const safe = accountId.replace(/[^\w-]/g, '_');
+        const file = getDataFile(`runtime-friend-openids-${safe}.json`);
+        if (!fs.existsSync(file)) return [];
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const source = Array.isArray(parsed && parsed.openIds) ? parsed.openIds : [];
+        const result = [];
+        const seen = new Set();
+        for (const raw of source) {
+            const value = String(raw || '').trim();
+            if (value.length < 4 || value.length > 256 || seen.has(value)) continue;
+            seen.add(value);
+            result.push(value);
+        }
+        return result;
+    } catch {
+        return [];
+    }
+}
+
+function installSyncAllOpenIdBootstrap(type) {
+    if (!type || type.__far2OpenIdBootstrapInstalled) return;
+    const originalCreate = type.create;
+    if (typeof originalCreate !== 'function') return;
+    let loggedCount = -1;
+
+    type.create = function far2SyncAllCreate(properties) {
+        const input = (properties && typeof properties === 'object') ? { ...properties } : {};
+        const existing = Array.isArray(input.open_ids) ? input.open_ids.filter(Boolean) : [];
+        if (existing.length === 0) {
+            const openIds = loadRuntimeFriendOpenIds();
+            if (openIds.length > 0) {
+                input.open_ids = openIds;
+                if (loggedCount !== openIds.length) {
+                    loggedCount = openIds.length;
+                    log('好友', `已加载 QQ 小程序好友 openId：${openIds.length} 个，将用于 SyncAll`);
+                }
+            }
+        }
+        return originalCreate.call(type, input);
+    };
+    type.__far2OpenIdBootstrapInstalled = true;
+}
 
 async function loadProto() {
     log('系统', '正在加载 Protobuf 定义...');
@@ -131,6 +179,7 @@ async function loadProto() {
     types.SyncAllFriendsRequest = root.lookupType('gamepb.friendpb.SyncAllRequest');
     types.SyncAllFriendsReply = root.lookupType('gamepb.friendpb.SyncAllReply');
     types.GetGameFriendsRequest = root.lookupType('gamepb.friendpb.GetGameFriendsRequest');
+    installSyncAllOpenIdBootstrap(types.SyncAllFriendsRequest);
 
     // 访问
     types.VisitEnterRequest = root.lookupType('gamepb.visitpb.EnterRequest');
