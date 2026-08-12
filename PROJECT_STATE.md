@@ -14,7 +14,7 @@
 
 FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。运行健康中心第一版、Provider target 范围自动启动和 P1 图鉴/种子商店主链也已完成真实 Windows 验证。
 
-当前默认开发阶段：**P2 — 单土地控制 + 紫土地 + 2x2 背包种子**。
+当前开发状态：**P2C 与 P3A 均已完成源码/构建，等待自然条件实机验收；开发主线继续 P4 宠物 / 狗狗审计。**
 
 ### Phase 1 — 单账号 Windows 无人值守 Code 自动刷新
 
@@ -196,24 +196,50 @@ else = normal
 
 当前源码已把 Lv5 从旧的“>=4 全算 gold”中拆出，并对旧 `gold/black/red/normal` 四类全选配置做运行时兼容：旧配置继续等价于“所有土地”，自动补入 purple，不要求用户重存设置。
 
-### P2C — 背包 2x2 种子识别与种植
+### P2C — 独立 2x2 优先种植
 
-**SOURCE COMPLETE / LIVE 2x2 ACCEPTANCE PENDING**
+**SOURCE + BUILD COMPLETE / LIVE 2x2 E2E PENDING**
 
 正式记录：`docs/P2_PURPLE_AND_2X2_2026-08-13.md`。
 
-首版边界：
+当前正式实现已经取代早期“必须 `bag_priority` 才处理 2x2”的首版设计：
 
-- 旧 `Plant.json` 缺失的已知种子 `20046`（爱心果）按 `plantSize=2` fallback 识别；
-- fallback 只用于按 seedId / 背包识别，不注入商店自动候选；
-- `bag_priority` 先尝试背包 2x2，再处理 1x1；
-- 只在最新 `AllLands` 确认四块真实空地时发送 2x2 Plant；
+- `prioritize2x2Crops` 是独立账号设置，默认开启；
+- 主策略可继续保持 `max_exp / level / preferred / bag_priority`；
+- 自动种植先运行独立 2x2 prepass，再把剩余空地交回原主策略；
+- 已知旧配置缺失种子 `20046`（爱心果）按 `plantSize=2` fallback 识别；
+- 最新 `AllLands` 负责确认真实空地和已有 master/slave footprint；
 - 24 地按 4x6 几何，master 为左下角；
 - Plant 回包必须验证 master/slave 关系，异常 fail-closed；
-- 不主动铲除生长中的作物制造 2x2 空位；
-- 商店自动购买 2x2 暂不开放，等待背包 2x2 实机通过。
+- 不主动铲除生长作物制造空位；
+- 未完整 2x2 最多预留一组，而且预留跨巡田周期保持稳定；
+- 预留组当前已经空出的土地不会被普通 1x1 主策略填回；
+- 其他空地继续原来的主策略，不会锁死整片农田；
+- 商店自动购买 2x2 仍关闭，等待背包已有 2x2 的真实 E2E。
 
-当前下一次实机验证不需要手动铲地：等待自然成熟/自动收获形成完整 2x2 空位即可。
+已完成 `planting:2x2-selftest`、`vue-tsc + vite build`、后端语法检查与 diff 检查。
+
+真实验收不需要手动铲地，也不需要切换主种植策略。等待自然成熟形成完整预留区即可。
+
+### P3A — 变异只读展示
+
+**SOURCE + BUILD COMPLETE / LIVE VISUAL ACCEPTANCE PENDING**
+
+正式记录：`docs/P3_MUTATION_READONLY_2026-08-13.md`。
+
+当前实现严格只读：
+
+- 直接读取现有 `AllLands` 中的 `PlantInfo.mutant_config_ids`；
+- 读取当前阶段 `PlantPhaseInfo.mutants`；
+- 静态映射 10 种已知变异效果；
+- 未知 ID 保留并显示为 `未知变异 #ID`；
+- 2x2 副地不重复显示主地变异；
+- LandCard 只增加变异文本徽标/说明；
+- 没有新增变异写 RPC、操作按钮、自动重刷或“自动刷变异”开关。
+
+已完成 `mutation:readonly-selftest`、`vue-tsc + vite build`、后端语法检查与 diff 检查。
+
+真实视觉验收只等自然出现带变异信息的作物；没有变异作物时页面不显示变异属于正常状态。
 
 ## 2. Current production architecture
 
@@ -253,13 +279,18 @@ Catalog path
   -> guarded missing-seed purchase
 
 P2 planting extension
-  -> bag_priority
-  -> recognize known missing 2x2 seed metadata
-  -> latest AllLands live-empty check
-  -> legal 4x6 2x2 group
-  -> one Plant RPC with 4 landIds
-  -> validate master/slave response
-  -> continue remaining 1x1 / fallback strategy
+  -> independent prioritize2x2Crops prepass
+  -> recognize owned 2x2 seed metadata
+  -> latest AllLands / legal 4x6 footprint
+  -> ready: one Plant RPC with 4 landIds + validate master/slave
+  -> not ready: reserve at most one footprint
+  -> remaining empty lands continue existing main strategy
+
+Mutation read-only path
+  -> existing AllLands mutant_config_ids / phase mutants
+  -> farm-mutation read model
+  -> known metadata + unknown IDs
+  -> LandCard read-only badges
 ```
 
 ## 3. Second QQ / second Windows Session
@@ -361,10 +392,10 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 1. **P0：Provider target 范围自动启动 Worker**：✅ 已验收；
 2. **P1：图鉴 + 种子商店**：✅ 主链已验收；领奖字段单独锁定待确认；
 3. **P2A：单土地控制 / 土地等级展示**：✅ UI 实机验收；
-4. **P2B：Lv5 紫土地运行时分类**：🟡 源码完成，待升级后回归；
-5. **P2C：背包 2x2 种子识别/种植**：🟡 源码完成，待自然空位实机 E2E；
-6. **P3：变异只读展示**；
-7. **P4：宠物 / 狗狗**；
+4. **P2B：Lv5 紫土地运行时分类**：🟡 源码/设置完成，待自然运行回归；
+5. **P2C：独立 2x2 优先种植**：🟡 源码/构建完成，待自然空位实机 E2E；
+6. **P3A：变异只读展示**：🟡 源码/构建完成，待自然变异作物视觉验收；
+7. **P4：宠物 / 狗狗**：➡️ 当前开发主线；
 8. **P5：个人生涯 / 装扮 / 通用活动框架**。
 
 ## 8. How to continue from here
@@ -375,13 +406,14 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 2. `PROJECT_STATE.md`；
 3. `docs/PRODUCTION_BASELINE_2026-08-13.md`；
 4. `docs/P2_PURPLE_AND_2X2_2026-08-13.md`；
-5. `docs/P2_SINGLE_LAND_CONTROLS_2026-08-13.md`；
-6. `docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`；
-7. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
-8. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
-9. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
-10. 其他历史文档。
+5. `docs/P3_MUTATION_READONLY_2026-08-13.md`；
+6. `docs/P2_SINGLE_LAND_CONTROLS_2026-08-13.md`；
+7. `docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`；
+8. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
+9. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
+10. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
+11. 其他历史文档。
 
-**不要再把 Code 自动刷新、好友完整导入、Windows2、P0、P1 或 P2A 已验收 UI 当成默认下一步。**
+**不要再把 Code 自动刷新、好友完整导入、Windows2、P0、P1、P2A、P2C 源码实现或 P3A 源码实现当成默认下一步。**
 
-当前默认动作：**验证 P2B/P2C；2x2 成功后再进入 P3 变异只读展示。**
+P2C 与 P3A 的真实验收都等待自然条件，不阻塞开发。当前默认动作：**进入 P4 宠物 / 狗狗的只读协议与产品能力审计。**
