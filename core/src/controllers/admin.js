@@ -1544,6 +1544,7 @@ function startAdminServer(dataProvider) {
             const intervals = id ? store.getIntervals(id) : {};
             const strategy = id ? store.getPlantingStrategy(id) : null;
             const preferredSeed = id ? store.getPreferredSeed(id) : null;
+            const prioritize2x2Crops = id && typeof store.getPrioritize2x2Crops === 'function' ? store.getPrioritize2x2Crops(id) : true;
             const friendQuietHours = id ? store.getFriendQuietHours(id) : null;
             const automation = id ? store.getAutomation(id) : {};
             const stealDelaySeconds = id && (typeof store.getStealDelaySeconds === 'function') ? store.getStealDelaySeconds(id) : 0;
@@ -1561,7 +1562,7 @@ function startAdminServer(dataProvider) {
             const offlineReminder = store.getOfflineReminder && currentUser
                 ? store.getOfflineReminder(currentUser.username)
                 : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
-            res.json({ ok: true, data: { intervals, strategy, preferredSeed, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedFallbackStrategy, ui, offlineReminder } });
+            res.json({ ok: true, data: { intervals, strategy, preferredSeed, prioritize2x2Crops, friendQuietHours, automation, stealDelaySeconds, plantOrderRandom, plantDelaySeconds, fertilizerBuyOrganicCount, fertilizerBuyOrganicThresholdHours, fertilizerBuyNormalCount, fertilizerBuyNormalThresholdHours, fertilizerBuyCheckIntervalMinutes, bagSeedPriority, bagSeedFallbackStrategy, ui, offlineReminder } });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }

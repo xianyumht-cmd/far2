@@ -5,7 +5,7 @@
 const protobuf = require('protobufjs');
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantNameBySeedId, getPlantName, getPlantExp, formatGrowTime, getPlantGrowTime, getAllSeeds, getPlantById, getPlantBySeedId, getSeedImageBySeedId } = require('../config/gameConfig');
-const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, getBagSeedPriority, getBagSeedFallbackStrategy, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../models/store');
+const { isAutomationOn, getPreferredSeed, getAutomation, getPlantingStrategy, getPrioritize2x2Crops, getBagSeedPriority, getBagSeedFallbackStrategy, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../models/store');
 const { sendMsgAsync, getUserState, networkEvents, getWsErrorState } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, getServerTimeSec, toTimeSec, log, logWarn, sleep, randomDelay } = require('../utils/utils');
@@ -15,6 +15,7 @@ const { recordOperation } = require('./stats');
 const { getBagSeeds, getBag, getBagItems, getContainerHoursFromBagItems } = require('./warehouse');
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth } = require('./mall');
 const { selectReady2x2Groups, validate2x2PlantReply } = require('./farm-2x2');
+const { runPrioritized2x2Prepass } = require('./farm-2x2-priority');
 
 // ============ 内部状态 ============
 let isCheckingFarm = false;
@@ -1101,7 +1102,7 @@ async function getLandsDetail() {
 }
 
 async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
-    const landsToPlant = [...emptyLandIds];
+    let landsToPlant = [...emptyLandIds];
     const state = getUserState();
 
     if (deadLandIds.length > 0) {
@@ -1117,6 +1118,34 @@ async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
             });
             landsToPlant.push(...deadLandIds);
         }
+    }
+
+    if (landsToPlant.length === 0) return;
+
+    landsToPlant = [...new Set(landsToPlant.map(id => toNum(id)).filter(Boolean))];
+    if (landsToPlant.length === 0) return;
+
+    try {
+        const twoByTwo = await runPrioritized2x2Prepass({
+            enabled: getPrioritize2x2Crops(),
+            landIds: landsToPlant,
+            getBagSeeds,
+            bagSeedPriority: getBagSeedPriority(),
+            userLevel: Number(state.level || 0),
+            getAllLands,
+            plant2x2Seed,
+            log,
+            logWarn,
+            sleep,
+        });
+        landsToPlant = twoByTwo.remainingLandIds || landsToPlant;
+        if (twoByTwo.plantedLandIds && twoByTwo.plantedLandIds.length > 0) {
+            await runFertilizerByConfig(twoByTwo.plantedLandIds);
+        }
+    } catch (e) {
+        logWarn('种植', `2x2 优先链异常，继续原种植策略: ${e.message}`, {
+            module: 'farm', event: '种植2x2作物', result: 'prepass_error',
+        });
     }
 
     if (landsToPlant.length === 0) return;
