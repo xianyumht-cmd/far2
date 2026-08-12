@@ -14,7 +14,7 @@
 
 FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。运行健康中心第一版、Provider target 范围自动启动和 P1 图鉴/种子商店主链也已完成真实 Windows 验证。
 
-当前默认开发阶段已经进入：**P2 — 单土地控制 + 紫土地**。
+当前默认开发阶段：**P2 — 单土地控制 + 紫土地 + 2x2 背包种子**。
 
 ### Phase 1 — 单账号 Windows 无人值守 Code 自动刷新
 
@@ -162,6 +162,59 @@ FAR2Farm service restart
 
 这个待确认项不再阻塞 Roadmap 进入 P2。
 
+### P2A — 单土地控制 / 土地等级展示
+
+**UI ACCEPTED / WRITE ACTIONS AVAILABLE**
+
+正式记录：`docs/P2_SINGLE_LAND_CONTROLS_2026-08-13.md`。
+
+2026-08-13 Windows 实机已确认：
+
+- `pnpm land:controls-selftest` 通过；
+- `pnpm build:web` 通过；
+- “个人 -> 我的农场”能显示 `#landId · LvX`；
+- 当前 #1~#8 实际返回 `Lv5`，#9 起可见大量 `Lv4`；
+- Lv5 紫色视觉、Lv4 金色视觉与当前游戏土地分层一致；
+- 有作物土地显示单块 `铲除 / 普肥 / 有机`；
+- 顶部 `一键铲除` 已存在并保持二次确认。
+
+当前地里没有 2x2 合种作物，因此“合种副地”没有实机画面不是失败项。用户确认背包里有过去领取的 2x2 种子，但旧 `bag_priority` 仅消费 1x1 种子，这属于 P2C 待补能力，而不是 P2A 缺陷。
+
+### P2B — 紫土地运行时分类
+
+**SOURCE COMPLETE / LIVE REGRESSION CHECK PENDING**
+
+实机已证明 `Lv5` 存在；后续公开实现也明确：
+
+```text
+Lv5 = purple / 紫土地
+Lv4 = gold / 金土地
+Lv3 = black
+Lv2 = red
+else = normal
+```
+
+当前源码已把 Lv5 从旧的“>=4 全算 gold”中拆出，并对旧 `gold/black/red/normal` 四类全选配置做运行时兼容：旧配置继续等价于“所有土地”，自动补入 purple，不要求用户重存设置。
+
+### P2C — 背包 2x2 种子识别与种植
+
+**SOURCE COMPLETE / LIVE 2x2 ACCEPTANCE PENDING**
+
+正式记录：`docs/P2_PURPLE_AND_2X2_2026-08-13.md`。
+
+首版边界：
+
+- 旧 `Plant.json` 缺失的已知种子 `20046`（爱心果）按 `plantSize=2` fallback 识别；
+- fallback 只用于按 seedId / 背包识别，不注入商店自动候选；
+- `bag_priority` 先尝试背包 2x2，再处理 1x1；
+- 只在最新 `AllLands` 确认四块真实空地时发送 2x2 Plant；
+- 24 地按 4x6 几何，master 为左下角；
+- Plant 回包必须验证 master/slave 关系，异常 fail-closed；
+- 不主动铲除生长中的作物制造 2x2 空位；
+- 商店自动购买 2x2 暂不开放，等待背包 2x2 实机通过。
+
+当前下一次实机验证不需要手动铲地：等待自然成熟/自动收获形成完整 2x2 空位即可。
+
 ## 2. Current production architecture
 
 ```text
@@ -198,6 +251,15 @@ Catalog path
   -> Worker Catalog RPCs serialized
   -> Illustrated / ShopInfo / Bag
   -> guarded missing-seed purchase
+
+P2 planting extension
+  -> bag_priority
+  -> recognize known missing 2x2 seed metadata
+  -> latest AllLands live-empty check
+  -> legal 4x6 2x2 group
+  -> one Plant RPC with 4 landIds
+  -> validate master/slave response
+  -> continue remaining 1x1 / fallback strategy
 ```
 
 ## 3. Second QQ / second Windows Session
@@ -298,23 +360,28 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 
 1. **P0：Provider target 范围自动启动 Worker**：✅ 已验收；
 2. **P1：图鉴 + 种子商店**：✅ 主链已验收；领奖字段单独锁定待确认；
-3. **P2：单土地操作 + 紫土地**：➡️ 当前默认下一步；
-4. **P3：变异只读展示**；
-5. **P4：宠物 / 狗狗**；
-6. **P5：个人生涯 / 装扮 / 通用活动框架**。
+3. **P2A：单土地控制 / 土地等级展示**：✅ UI 实机验收；
+4. **P2B：Lv5 紫土地运行时分类**：🟡 源码完成，待升级后回归；
+5. **P2C：背包 2x2 种子识别/种植**：🟡 源码完成，待自然空位实机 E2E；
+6. **P3：变异只读展示**；
+7. **P4：宠物 / 狗狗**；
+8. **P5：个人生涯 / 装扮 / 通用活动框架**。
 
 ## 8. How to continue from here
 
 后续新对话按下面优先级判断项目状态：
 
 1. 当前 `main` 源码；
-2. `docs/PRODUCTION_BASELINE_2026-08-13.md`；
-3. `docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`；
-4. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
-5. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
-6. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
-7. 其他历史文档。
+2. `PROJECT_STATE.md`；
+3. `docs/PRODUCTION_BASELINE_2026-08-13.md`；
+4. `docs/P2_PURPLE_AND_2X2_2026-08-13.md`；
+5. `docs/P2_SINGLE_LAND_CONTROLS_2026-08-13.md`；
+6. `docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`；
+7. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
+8. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
+9. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
+10. 其他历史文档。
 
-**不要再把 Code 自动刷新、好友完整导入、Windows2、P0 或 P1 已验收主链当成默认下一步。**
+**不要再把 Code 自动刷新、好友完整导入、Windows2、P0、P1 或 P2A 已验收 UI 当成默认下一步。**
 
-新的默认推进顺序是：**P2 单土地控制 + 紫土地**。
+当前默认动作：**验证 P2B/P2C；2x2 成功后再进入 P3 变异只读展示。**
