@@ -14,7 +14,7 @@
     "illustrated:proto-selftest": "node scripts/illustrated-proto-selftest.js",
     "catalog:actions-selftest": "node scripts/catalog-actions-selftest.js",
     "land:controls-selftest": "node scripts/land-controls-selftest.js",
-    "planting:2x2-selftest": "node scripts/planting-2x2-selftest.js && node scripts/seed-2x2-fallback-selftest.js",
+    "planting:2x2-selftest": "node scripts/purple-land-selftest.js && node scripts/planting-2x2-selftest.js && node scripts/seed-2x2-fallback-selftest.js",
     "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "qr:process-map": "node scripts/qq-process-map-test.js",
     "qr:session-map": "node scripts/qq-session-map-test.js",
