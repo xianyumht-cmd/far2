@@ -8,6 +8,7 @@ const { sendPushooMessage } = require('../services/push')
 const { MiniProgramLoginSession } = require('../services/qrlogin')
 const { createCodeManager } = require('../services/code-manager')
 const { createStartupRuntimeFriendImport } = require('../services/startup-runtime-friend-import')
+const { resolveStartupAccountScope } = require('../services/startup-account-scope')
 const { createDataProvider } = require('./data-provider')
 const { createReloginReminderService } = require('./relogin-reminder')
 const { createRuntimeState } = require('./runtime-state')
@@ -162,14 +163,40 @@ function createRuntimeEngine(options = {}) {
   }
 
   function startAllAccounts() {
-    const accounts = (store.getAccounts().accounts || [])
-    if (accounts.length > 0) {
-      log('系统', `发现 ${accounts.length} 个账号，正在启动...`)
-      accounts.forEach(acc => startWorker(acc))
+    const savedAccounts = (store.getAccounts().accounts || [])
+    if (savedAccounts.length === 0) {
+      log('系统', '未发现账号，请访问管理面板添加账号')
+      return []
+    }
+
+    const scope = resolveStartupAccountScope(savedAccounts, processRef)
+    const accounts = scope.accounts || []
+
+    if (scope.failClosed) {
+      log('错误', `自动启动账号范围配置无效，已安全停止自动启动 (${scope.error || 'unknown'})`)
+      return []
+    }
+
+    if (scope.mode === 'provider_targets') {
+      if (accounts.length === 0) {
+        log('错误', `检测到 ${scope.providerTargetUins.length} 个 Provider target，但没有匹配保存账号 UIN；已安全停止自动启动`)
+        return []
+      }
+      log('系统', `发现 ${savedAccounts.length} 个保存账号，Provider target 匹配 ${accounts.length} 个，正在启动...`)
+    }
+    else if (scope.mode === 'explicit_refs') {
+      if (accounts.length === 0) {
+        log('错误', `FARM_AUTO_START_ACCOUNT_REFS 已配置，但没有匹配保存账号；已安全停止自动启动`)
+        return []
+      }
+      log('系统', `发现 ${savedAccounts.length} 个保存账号，显式自动启动范围匹配 ${accounts.length} 个，正在启动...`)
     }
     else {
-      log('系统', '未发现账号，请访问管理面板添加账号')
+      log('系统', `发现 ${accounts.length} 个账号，正在启动...`)
     }
+
+    accounts.forEach(acc => startWorker(acc))
+    return accounts
   }
 
   async function start(options = {}) {
