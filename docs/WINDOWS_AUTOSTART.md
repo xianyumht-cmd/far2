@@ -5,108 +5,138 @@
 安装后不再保留两个命令行黑框：
 
 - FAR2 WebUI / CodeManager / worker 管理由 NSSM Windows 服务 `FAR2Farm` 后台运行；
-- isolated Code Agent 由当前 Windows 用户登录时的隐藏计划任务运行；
-- 用户平时只需要访问 `http://127.0.0.1:3007`，在网页里启动/停止农场账号。
+- 每个 QQ 的 isolated Code Agent 由**拥有该 QQ 的 Windows 用户 Session**中的隐藏计划任务运行；
+- 同一台机器可按 `UIN -> 独立 loopback 端口 -> 独立 Windows Session` 注册多个 Agent；
+- 用户平时只需要访问 `http://127.0.0.1:3007`。
 
-## 为什么不是两个 NSSM 服务
+## 为什么 Code Agent 不能放进 NSSM / Session 0
 
-主 FAR2 可以像 `LOLDataSystem` 一样运行在 LocalSystem / Session 0。
+主 FAR2 可以运行在 LocalSystem / Session 0。
 
-Code Agent **不能**改成 LocalSystem/NSSM Session 0。它必须与 QQ/QQEX 处于同一个交互式 Windows Session，原因是：
+Code Agent 必须与 QQ/QQEX 处于同一个交互式 Windows Session，因为：
 
 - Agent 的防串号边界包含 Windows SessionId；
 - `tencent://` 必须交给当前用户已经登录的 QQ；
 - QQEX 缓存在当前用户的 `%APPDATA%\QQEX`；
 - Windows 服务 Session 0 与桌面用户 Session 隔离。
 
-因此最终结构是：
+多账号结构：
 
 ```text
 开机
-  └─ NSSM: FAR2Farm (LocalSystem, Automatic, Restart)
+  └─ NSSM: FAR2Farm (LocalSystem)
        └─ WebUI / CodeManager / workers
+            ├─ UIN A -> 127.0.0.1:43101
+            └─ UIN B -> 127.0.0.1:43102
 
-用户登录 Windows
-  └─ Scheduled Task: FAR2CodeAgent-<UIN> (Hidden, Interactive)
-       ├─ isolated Code Agent :43101
-       └─ Farm window cloak
+Windows user/session A
+  └─ FAR2CodeAgent-<UIN A> (Hidden)
+       └─ one QQ A
 
-QQ 保持登录
-  └─ Code 失效/到期
-       └─ Agent 临时拉起 QQ经典农场 -> qq.login() -> fresh Code -> 自动退出
+Windows user/session B
+  └─ FAR2CodeAgent-<UIN B> (Hidden)
+       └─ one QQ B
 ```
+
+不要为了省一个 Windows Session 而取消 UIN / SessionId 校验，也不要恢复全局 QQ 选择器、Ctrl+R、renderer 重启等旧方案。
 
 ## 安装前提
 
-当前安装器针对第一条已验收的单账号隔离链：
+每个要接入自动 Code 刷新的 QQ 都必须：
 
-- 当前 Windows 登录 Session 只运行目标 QQ；
-- 只有这个账号设置为 `codeRefreshEnabled=true` / `windows_session`；
+- 在 `core/data/accounts.json` 中设置 `codeRefreshEnabled=true`；
+- `codeRefreshMode=windows_session`；
+- 在自己的 Windows 用户 Session 中只运行该目标 QQ；
 - QQ经典农场至少手动打开过一次，已有 QQEX 缓存；
-- Node.js 已安装；
-- NSSM 可用。
+- Node.js 与 NSSM 可用。
 
-安装器按顺序寻找 NSSM：
+NSSM 搜索顺序：
 
-1. `NSSM_EXE` 环境变量；
+1. `NSSM_EXE`；
 2. PATH 中的 `nssm.exe`；
 3. FAR2 `tools\nssm-2.24\win64\nssm.exe`；
-4. 已有 LOLDataSystem 使用的 `D:\project2\lolapisevers\tools\nssm-2.24\win64\nssm.exe`；
-5. `C:\tools\nssm\win64\nssm.exe`。
+4. `D:\Program Files\nssm-2.24\nssm.exe`；
+5. `D:\project2\lolapisevers\tools\nssm-2.24\win64\nssm.exe`；
+6. `C:\tools\nssm\win64\nssm.exe`。
 
-## 一键安装
+## 第一个 QQ
 
-第一次安装前先关闭手工运行的：
-
-- `pnpm dev:core` 黑框；
-- `pnpm code:agent` 黑框。
-
-然后右键管理员运行：
+在第一个 QQ 所属 Windows 用户中，右键管理员运行：
 
 ```text
 install-windows-service.cmd
 ```
 
-安装器会：
+全新安装时默认：
 
-- 自动从 `core/data/accounts.json` 找到唯一启用 `windows_session` Code 刷新的 QQ；
-- 复用已有 `FAR2_CODE_PROVIDER_TOKEN_A`，没有则生成并写入当前用户环境变量；
-- 建立 exact UIN -> `127.0.0.1:43101` Provider 映射；
-- 安装 `FAR2Farm` NSSM 服务；
-- 设置 `Automatic`、LocalSystem、异常自动 Restart；
-- 把主程序日志写入 `core/data/service.stdout.log` / `service.stderr.log`；
-- 创建 `FAR2CodeAgent-<UIN>` 隐藏计划任务；
-- Agent 在当前用户登录时自动启动，且不显示控制台窗口；
-- 默认 Code 周期刷新为 60 分钟；`WS 400` 仍然立即触发刷新。
+- 第一个可用 Agent 端口为 `43101`；
+- 第一个 token 环境变量为 `FAR2_CODE_PROVIDER_TOKEN_A`；
+- 建立 `FAR2CodeAgent-<UIN>` 隐藏计划任务；
+- 安装/更新 `FAR2Farm` NSSM 服务；
+- 将 Provider targets 以 Base64 JSON 写入 NSSM `AppEnvironmentExtra`；
+- 启用事件驱动 Code 刷新：`WS400` / kickout / 手动刷新立即处理，健康账号不做固定小时重登。
+
+如果机器上已经存在已验收的单账号配置，安装器会优先复用这个 UIN 原来的端口、`tokenEnv` 和 token，不会因为升级多账号安装器而强制更换。
+
+## 添加第二个及后续 QQ
+
+1. 切换/登录到**另一个 Windows 用户 Session**。
+2. 在该 Session 中只登录该 QQ，并打开过一次 QQ经典农场。
+3. 确保该 QQ 在 FAR2 账号配置中已启用 `windows_session` Code 刷新。
+4. 在这个 Windows 用户中再次右键管理员运行：
+
+```text
+install-windows-service.cmd
+```
+
+新版安装器是**增量注册**，不会再删除其他 `FAR2CodeAgent-*` 任务，也不会用当前 QQ 覆盖整个 Provider mapping。
+
+它会：
+
+- 如果多个 FAR2 QQ 都已启用，优先从**当前 Windows Session 的 QQ 进程注解**识别属于本 Session 的 UIN；
+- 已有 UIN 保留原端口；
+- 新 UIN 从 `43101-43199` 中选择尚未被其他 Provider target 占用的端口，通常第二个为 `43102`；
+- token 环境变量按 `A`、`B`、`C`…递增分配；
+- 合并 `FARM_CODE_PROVIDER_TARGETS_B64`，保留已注册的其他 QQ；
+- 只重建当前 `FAR2CodeAgent-<UIN>` 计划任务；
+- 重启一次 `FAR2Farm` 服务，让 LocalSystem 进程加载新的 target/token 环境。
+
+如果当前 Session 无法唯一识别 UIN，安装器会 fail-closed，不会猜号。此时先在该 Windows 用户里打开一次 QQ经典农场；仍无法识别时可显式执行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows\install-far2-autostart.ps1 -Uin <完整QQ号>
+```
+
+`-AgentPort` 也可以显式指定；省略或为 `0` 时自动分配/复用。
 
 ## 临时 QQ 农场窗口隐藏
 
-QQ 小程序目前不能改造成真正无 UI 的“headless QQ runtime”，因为 `qq.login()` 必须运行在真实 QQ/QQEX 的交互 Session。
+`scripts/windows/farm-window-cloak.ps1` 跟随每个 Agent 在自己的 Windows Session 内运行：
 
-后台方案采用 **视觉隐藏**：
+- 只扫描当前 Session 的 QQ 进程；
+- 识别 QQ经典农场对应 QQEX mini-app 进程树；
+- 将临时农场窗口移到可见桌面之外并避免抢焦点；
+- 不改变 `qq.login()`、Code 捕获或 UIN 校验逻辑。
 
-- `scripts/windows/farm-window-cloak.ps1` 跟随 Agent 在同一用户 Session 隐藏运行；
-- 检测 QQ经典农场对应 QQEX mini-app 进程树；
-- 把临时农场窗口移动到可见桌面之外并禁止抢焦点；
-- QQ/QQEX 进程仍正常运行，所以 `qq.login()`、Code 捕获和 UIN 校验逻辑不变；
-- fresh Code 获取后，小程序仍按 Agent 注入逻辑自动退出。
-
-这是显示层处理，不降低 UIN / Windows SessionId 的防串号校验。
-
-当前该窗口隐藏器属于新增实现，首次安装后需要观察一次真实 Code 刷新，确认当前 QQ 版本的窗口句柄能被正确识别。如果 QQ 后续修改小程序窗口实现，可将隐藏器关闭/调整，不影响 Provider 本身。
+`Local\FAR2FarmWindowCloak` mutex 也是 Session 本地边界，因此不同 Windows 用户 Session 可各自运行自己的 cloak。
 
 ## 查看状态
+
+运行：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows\status-far2-autostart.ps1
 ```
 
-检查：
+新版状态脚本会：
 
-- `FAR2Farm` 是否 Running；
-- `FAR2CodeAgent-*` 任务状态；
-- WebUI 3007 是否 READY；
-- Agent 43101 是否 LISTEN。
+- 列出全部 `FAR2CodeAgent-*` 计划任务及所属用户；
+- 解码 NSSM 中的全部 Provider targets；
+- 对每个 target 分别检查监听端口；
+- 使用服务端保存的对应 token 调 `/v1/health`；
+- 校验 Agent 返回 UIN 是否与 target UIN 一致；
+- 标出 Provider mapping 之外的 orphan Agent task；
+- 不输出明文 Code 或 token。
 
 ## 卸载后台自启
 
@@ -116,10 +146,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows\status-f
 uninstall-windows-service.cmd
 ```
 
-只移除 Windows 服务和 Agent 计划任务，不删除 FAR2 账号数据、Code、Web 配置。
+当前卸载器仍表示“整机卸载”：移除 `FAR2Farm` 服务和全部 `FAR2CodeAgent-*` 计划任务，但不删除 FAR2 账号数据、Code 或 Web 配置。
 
-## 多账号说明
+## 当前验收边界
 
-当前一键安装器只接管当前已经真实验收的单 Windows Session / 单 QQ Agent。
+截至 2026-08-13：
 
-第二个 QQ 后续仍应使用另一个 Windows 用户 Session 和另一个 Agent 端口（例如 43102）。不要为了让两个 QQ 共用一个桌面而取消 SessionId/UIN 防串号门槛。
+- **单账号 Windows Session / 单 Agent Code 自动刷新：已验收。**
+- **多 target Provider 核心路由与防串号：代码已具备，自测覆盖 A/B 独立路由。**
+- **增量多 Windows Session 安装/诊断：已实现，等待真实第二 QQ 环境验收。**
+- 第二 QQ 尚未完成受控 E2E 与多周期无人值守 soak，因此不要把“安装器已支持”写成“第二账号已生产验收”。
