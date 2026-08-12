@@ -1,3 +1,10 @@
+const BULK_BUY_DELAY_MS = 250;
+const BULK_BUY_LIMIT = 100;
+
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function registerCatalogApi(app, options = {}) {
     const {
         provider,
@@ -117,8 +124,59 @@ function registerCatalogApi(app, options = {}) {
                     data: { actualBuyable, actualTotalCost },
                 });
             }
-            const data = await runCatalogActionForAccount(accountId, { action: 'buyAllMissingIllustratedSeeds' });
-            return res.json({ ok: true, data });
+
+            const targets = (Array.isArray(plan && plan.items) ? plan.items : [])
+                .filter(item => item && item.canBuy === true && Number(item.goodsId) > 0)
+                .slice(0, BULK_BUY_LIMIT)
+                .map(item => ({
+                    goodsId: Number(item.goodsId),
+                    seedId: Number(item.seedId) || 0,
+                    name: String(item.name || ''),
+                    confirmedPrice: Number(item.price) || 0,
+                }));
+
+            if (targets.length !== actualBuyable) {
+                return res.status(409).json({
+                    ok: false,
+                    error: '可购买数量超过单次安全上限或清单异常，请重新读取',
+                    data: { actualBuyable, executable: targets.length, limit: BULK_BUY_LIMIT },
+                });
+            }
+
+            const results = [];
+            for (const target of targets) {
+                try {
+                    const purchase = await runCatalogActionForAccount(accountId, {
+                        action: 'buyIllustratedSeed',
+                        goodsId: target.goodsId,
+                    });
+                    results.push({
+                        ...target,
+                        ok: true,
+                        price: Number(purchase && purchase.price) || target.confirmedPrice,
+                        purchase,
+                    });
+                }
+                catch (err) {
+                    results.push({
+                        ...target,
+                        ok: false,
+                        error: err && err.message ? err.message : String(err || 'unknown'),
+                    });
+                }
+                if (targets.length > 1) await delay(BULK_BUY_DELAY_MS);
+            }
+
+            return res.json({
+                ok: true,
+                data: {
+                    requested: targets.length,
+                    successCount: results.filter(item => item.ok).length,
+                    failCount: results.filter(item => !item.ok).length,
+                    spentEstimate: results.filter(item => item.ok).reduce((sum, item) => sum + Math.max(0, Number(item.price) || 0), 0),
+                    results,
+                },
+            });
         }
         catch (err) {
             if (err && err.statusCode === 503) return res.status(503).json({ ok: false, error: err.message });
