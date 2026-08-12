@@ -1,14 +1,23 @@
 # FAR2 QQ Code Refresh Milestone — 2026-08-12
 
-This note is the latest real-Windows acceptance overlay for `PROJECT_STATE.md` and `docs/CODE_REFRESH_PROVIDER.md`.
+This note is the final real-Windows acceptance record for the current single-account unattended Code-refresh milestone.
 
-## Milestone status
+## Final status
 
-**Single-account targeted unattended Code refresh for account `232` / QQ `23****72`: PASS with retry.**
+**COMPLETED / ACCEPTED for the current single-account Windows background scope.**
 
-The feature is usable and may be left running in the background. It is not yet considered a fully clean/stable two-account production acceptance because post-capture identity verification can still intermittently time out and the second isolated Windows account/session has not been accepted.
+Accepted target:
 
-## Real Windows results
+- FAR2 account `232`;
+- QQ/UIN masked as `23****72`;
+- Windows background service + hidden interactive Code Agent;
+- targeted exact-UIN Code refresh;
+- event-driven recovery instead of healthy periodic re-login;
+- browser/WebUI may be closed during normal unattended operation.
+
+This completion does **not** claim that the separate second-QQ / second-Windows-session multi-account topology has been accepted. That is intentionally deferred and is a separate future scope.
+
+## Real Windows acceptance summary
 
 ### Provider / Agent
 
@@ -18,41 +27,42 @@ Verified on the real Windows host:
 - exact-UIN Provider health probe passed;
 - real one-shot mint passed with no account chooser;
 - returned Code was validated without printing plaintext Code;
-- Agent health later reported:
-  - `ok=True`
-  - `available=True`
-  - `reason=ok`
-  - QQ `23****72`
+- Agent health reported:
+  - `ok=True`;
+  - `available=True`;
+  - `reason=ok`;
+  - QQ `23****72`;
   - Windows Session `1`;
-- Agent port `43101` was listening.
+- Agent port `43101` was listening;
+- Provider target configuration decoded to exactly one masked QQ target;
+- bearer token was present without being logged.
 
 ### CodeManager E2E
 
-A real WebUI start of account `232` produced:
+A real WebUI start of account `232` proved the full unattended chain:
 
 1. worker attempted connection;
 2. Farm WS returned HTTP 400;
 3. CodeManager automatically invoked the targeted Provider;
-4. several refresh attempts failed closed with `agent_capture_identity_unverified`;
+4. early attempts failed closed with `agent_capture_identity_unverified`;
 5. CodeManager retried automatically;
 6. a later refresh succeeded;
-7. old account process exited cleanly;
-8. account `232` was restarted automatically;
+7. old account process exited;
+8. account `232` restarted automatically;
 9. Farm login succeeded at level 112;
 10. normal farm/friend automation resumed.
 
-Important conclusion:
+Important conclusions:
 
-- the unattended chain is proven end to end;
 - manual Code entry was not required;
-- automatic retry/self-recovery is proven;
-- `agent_capture_identity_unverified` remains an intermittent timing issue, not a solved stability item.
-
-Do not weaken the UIN/Windows SessionId guard to hide this error.
+- no shared QQ chooser fallback was used;
+- automatic retry/self-recovery was proven;
+- UIN/Windows SessionId safety checks remained fail-closed;
+- plaintext Code was not exposed in normal logs/UI.
 
 ## Background/autostart acceptance
 
-The foreground `pnpm dev:core` and `pnpm code:agent` consoles are no longer required for normal use.
+Normal use no longer requires foreground `pnpm dev:core` or `pnpm code:agent` console windows.
 
 Installed runtime:
 
@@ -67,7 +77,7 @@ Windows user logon
        -> Farm window cloak helper
 ```
 
-Real status after installation:
+Real accepted status included:
 
 ```text
 NSSM service: FAR2Farm status=Running
@@ -76,38 +86,37 @@ WebUI: READY http=200
 Code Agent port 43101: LISTEN
 Agent auth token: PRESENT
 Agent health: ok=True available=True reason=ok qq=23****72
-Service provider env: auto=True targetsB64=True targetsRaw=False token=True healthTimeout=True
+Service provider env: auto=True eventOnly=True targetsB64=True targetsRaw=False token=True healthTimeout=True entries=6
+Service refresh mode: eventOnly=True passiveIntervalMs=315360000000
 Service provider targets: decoded=True count=1 qq=23****72
 ```
 
 `lastResult=267009` / `0x41301` for the scheduled task means the long-running task is currently active, not failed.
 
-### NSSM environment fix
+## NSSM environment fix
 
-NSSM 2.24 command-line setting of multiple `AppEnvironmentExtra` values was not reliable on this host. The installer writes the service environment directly as the NSSM `Parameters\AppEnvironmentExtra` `REG_MULTI_SZ` value and verifies all required entries before starting the service.
+NSSM 2.24 command-line setting of multiple `AppEnvironmentExtra` values was not reliable on this host.
 
-Provider target JSON is stored in the service environment as Base64 (`FARM_CODE_PROVIDER_TARGETS_B64`) to avoid quoting/escaping problems. The Provider supports decoding this format.
+The installer now writes the service environment directly as the NSSM `Parameters\AppEnvironmentExtra` `REG_MULTI_SZ` value and verifies all required entries before starting the service.
 
-## 11:02 stability diagnostic and policy change
+Provider target JSON is stored as Base64 in:
 
-A later real diagnostic captured a longer running period with repeated Farm-window popups and repeated `agent_capture_identity_unverified` failures.
+```text
+FARM_CODE_PROVIDER_TARGETS_B64
+```
 
-Important evidence:
+This avoids NSSM quoting/escaping problems while preserving exact-UIN target mapping.
 
-- diagnostic-time CPU load was about 37%, not saturated;
-- free memory was about 3.3 GB of 16.3 GB;
-- Agent/service/task/43101 were all alive;
-- the Agent log showed multiple `scheduled` refreshes, not only WS400 recovery;
-- two `已在其他终端登录` kickouts appeared about one hour apart;
-- the user manually pressed the Farm mini-program reconnect button after one such popup, after which FAR2 WebUI returned online.
+## Event-driven refresh policy
 
-Conclusion:
+A real diagnostic showed that the previous one-hour proactive refresh policy could create its own QQ Farm login conflict:
 
-**machine load may amplify the timing race, but it is not treated as the primary root cause.** The previous one-hour proactive refresh policy could create its own QQ Farm login conflict and repeatedly reopen the Farm mini-program.
+- repeated `scheduled` refreshes appeared in the Agent log;
+- `已在其他终端登录` kickouts appeared roughly one hour apart;
+- the Farm mini-program could reopen repeatedly;
+- machine load was not saturated at diagnostic time, so performance was not treated as the primary root cause.
 
-### New production refresh policy
-
-The Windows installer now configures production as event-driven recovery:
+Production policy was changed to:
 
 ```text
 healthy FAR2 account
@@ -115,32 +124,32 @@ healthy FAR2 account
 
 WS400 / kickout / explicit manual refresh
   -> targeted Provider refresh
-  -> retry only if that recovery attempt fails
+  -> retry only if recovery fails
 ```
 
-The service environment includes:
+Installed service environment includes:
 
 ```text
 FARM_CODE_SCHEDULED_REFRESH=0
 ```
 
-and uses a far-future passive interval as a compatibility horizon for the current CodeManager scheduler. This prevents the previous hourly healthy-account refresh behavior while keeping WS400/kickout/manual triggers immediate.
+A far-future passive interval remains only as a compatibility horizon for the current CodeManager scheduler.
 
-Expected installed environment count is now `6/6`.
+## Post-capture identity hardening
 
-### Post-capture identity hardening
+The Agent still requires exact identity verification and still fails closed on mismatch/unknown identity.
 
-The Agent still fails closed and still requires exact UIN verification, but the observation path is now more robust:
+The observation path was strengthened to:
 
-- it inspects the actual Windows process snapshot after capture;
-- identifies only QQ mini-app trees associated with Farm app id `1112386029`;
-- accepts UIN annotation from the Farm root or any descendant in that Farm tree;
-- can walk through intermediate QQ utility processes to find the real top-level QQ ancestor;
-- if the Farm tree itself does not yet expose UIN, it may use the exact ancestor QQ tree UIN as the existing safety fallback;
-- any known mismatched UIN still rejects the capture;
-- unknown identity still times out and rejects the capture.
+- inspect the current Windows process snapshot after capture;
+- identify QQ mini-app trees associated with Farm app id `1112386029`;
+- accept UIN annotation from the Farm root or descendants;
+- walk through intermediate QQ utility processes to the real top-level QQ ancestor;
+- allow the exact ancestor QQ tree UIN as the existing safety fallback when Farm descendants have not exposed UIN yet;
+- reject any known mismatched UIN;
+- reject unknown identity after timeout.
 
-New Agent log lines are ASCII-safe and include observations such as:
+Diagnostic Agent lines include:
 
 ```text
 [identity] t=... attempt=... source=process_tree farmRoots=... uins=...
@@ -148,58 +157,78 @@ New Agent log lines are ASCII-safe and include observations such as:
 [identity] timeout ...
 ```
 
-This allows a future failure to show whether Farm roots were absent, UIN was absent, or a mismatch was observed without logging plaintext Code.
+Historical `agent_capture_identity_unverified` failures remain useful evidence, but after the event-only policy and identity hardening they are no longer treated as a blocker for this completed single-account milestone.
 
-### Farm-window hiding hardening
+## Farm-window hiding
 
-The cloak helper still preserves the real interactive QQ/QQEX runtime, but now has two hiding paths:
+The cloak helper preserves the real interactive QQ/QQEX runtime and uses:
 
-1. fast title-based detection of QQ windows containing the Farm title token;
-2. existing Farm app-id CIM/process-tree detection.
+1. fast title-based Farm-window detection;
+2. Farm app-id CIM/process-tree detection;
+3. a short polling interval to move the transient Farm window off-screen quickly.
 
-The fast path moves the window off-screen before the slower CIM tree refresh completes and polls at 60 ms. This aims to eliminate or greatly reduce the visible Farm popup while preserving `qq.login()` semantics.
+This remains visual hiding rather than a true headless QQ runtime. The Agent must remain in the interactive Windows user session; moving it into Session 0/LocalSystem would break the isolation assumptions.
 
-This visual behavior still needs one real Windows observation after deployment; do not claim it fully accepted until observed.
+A future natural Code-refresh event may still be used to observe whether the Farm window is completely invisible or briefly flashes, but this is no longer a blocker for the current background-running milestone.
+
+## Protobuf/shop startup race — fixed
+
+A separate startup warning was observed:
+
+```text
+获取商店失败：无法读取未定义属性（读取“encode”），使用本地备选列表
+```
+
+Root cause was not a missing `ShopInfoRequest` definition. The Worker could receive a WebUI API request while asynchronous local Protobuf loading was still in progress, so `types.ShopInfoRequest` had not yet been populated.
+
+The Worker Protobuf initialization was changed to complete atomically before other Worker API activity can use `types.*`.
+
+After deployment the warning disappeared and normal startup proceeded as:
+
+```text
+正在加载 Protobuf 定义...
+Protobuf 定义加载完成
+正在连接服务器...
+登录成功
+```
+
+## Long-running soak acceptance
+
+After the final fixes were deployed, the real Windows setup was left running normally and observed again after sleep.
+
+**Result: approximately 9 hours of continuous unattended operation with the account still online and automation working normally.**
+
+No new startup Protobuf/shop warning was observed in that accepted run, and the service/worker stack remained alive without requiring the browser to stay open.
+
+This 9-hour real-use soak is the final acceptance evidence used to mark the current single-account Windows background milestone complete.
 
 ## Current daily-use workflow
 
-Normal use is:
+Normal use:
 
 ```text
 1. Log into Windows.
 2. Keep the target QQ logged in.
-3. Open http://127.0.0.1:3007 only when management is needed.
-4. Start/stop account 232 from WebUI.
-5. The browser may be closed while the background service continues running.
-6. Leave Code recovery/retries to CodeManager/Agent.
+3. FAR2Farm starts automatically as an NSSM service.
+4. FAR2CodeAgent starts hidden in the interactive Windows session.
+5. Open http://127.0.0.1:3007 only when management is needed.
+6. Start/stop account 232 from WebUI when needed.
+7. The browser may be closed while FAR2 continues running.
+8. Leave Code recovery/retries to CodeManager/Agent.
 ```
 
-No PowerShell environment setup or visible Agent/FAR2 consoles should be needed.
+No manual PowerShell environment setup, manual Code entry, or visible FAR2/Agent console is required for normal operation.
 
-## Farm mini-program window hiding
+## Completion boundary / intentionally deferred future scope
 
-This is **visual hiding, not a true headless QQ runtime**. Do not replace the real interactive runtime with Session 0/NSSM Agent execution; that would break the isolation model.
+The following items are **not blockers for this completed milestone** and are intentionally separate future work:
 
-## Remaining work / intentionally deferred
+- second QQ / second Windows user-session Agent acceptance;
+- two-account controlled E2E;
+- multi-cycle two-account unattended soak;
+- future observation of a natural Code expiry to measure whether the Farm window is fully invisible or only briefly flashes.
 
-- Re-accept the new process-tree identity verification on real Windows after deployment.
-- Confirm whether the hardened Farm-window cloak removes the visible popup completely.
-- If identity failures remain, use the new `[identity]` Agent lines rather than weakening the identity guard.
-- Second QQ / second Windows user-session Agent acceptance is not done.
-- Two-account controlled E2E is not done.
-- Multi-cycle two-account unattended soak is not done.
-
-Account `4476` remains outside this accepted single-account refresh chain for now.
-
-## Separate observation
-
-One unrelated/fallback log has appeared before Protobuf loading completed:
-
-```text
-warehouse store fetch failed: cannot read property `encode` of undefined; using local fallback list
-```
-
-The program continued, logged into Farm successfully, and automation resumed. Treat this as a separate warehouse/Protobuf issue; it did not block the Code refresh milestone.
+Account `4476` remains outside this accepted single-account refresh chain.
 
 ## Do not repeat
 
@@ -212,13 +241,15 @@ Do not return to the previously rejected approaches unless genuinely new evidenc
 - PID/window-order identity guessing;
 - injection/IPC/Frida/cookie extraction as a shortcut around the isolation design.
 
-## Recommended next acceptance
+## Final milestone label
 
-After pulling the latest changes, reinstall the Windows service once so the new event-driven environment is written and the hidden Agent task is restarted with the new code/window cloak.
-
-Then verify status shows event-only mode and use the system normally. Do not intentionally break Code just to test it. The next natural WS400/kickout is sufficient to verify whether:
-
-1. no hourly proactive Farm popup occurs;
-2. recovery opens no visible Farm window or only a minimal flash;
-3. the first targeted refresh verifies UIN without repeated `agent_capture_identity_unverified`;
-4. FAR2 returns online without manual Farm reconnect.
+```text
+FAR2 single-account Windows unattended/background Code refresh
+Status: COMPLETE
+Accepted account: 232 / 23****72
+Acceptance date: 2026-08-12
+Soak evidence: ~9 hours continuous normal operation
+Refresh policy: event-only
+Browser required for runtime: no
+Manual Code required for normal recovery: no
+```
