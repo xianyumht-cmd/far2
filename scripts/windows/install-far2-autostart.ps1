@@ -14,10 +14,10 @@ function Test-Admin {
 }
 
 function Invoke-Nssm {
-    param([string]$Exe, [string[]]$Args)
-    & $Exe @Args
+    param([string]$Exe, [string[]]$NssmArgs)
+    & $Exe @NssmArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "NSSM failed ($LASTEXITCODE): $($Args -join ' ')"
+        throw "NSSM failed ($LASTEXITCODE): $($NssmArgs -join ' ')"
     }
 }
 
@@ -122,25 +122,25 @@ $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
     try { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue } catch {}
     Start-Sleep -Milliseconds 500
-    Invoke-Nssm -Exe $nssm -Args @('remove', $ServiceName, 'confirm')
+    Invoke-Nssm -Exe $nssm -NssmArgs @('remove', $ServiceName, 'confirm')
     Start-Sleep -Milliseconds 500
 }
 
-Invoke-Nssm -Exe $nssm -Args @('install', $ServiceName, $nodePath)
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppDirectory', $coreDir)
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppParameters', 'client.js')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'DisplayName', 'FAR2 QQ Farm')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'Description', 'FAR2 QQ Farm WebUI / CodeManager background service')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'Start', 'SERVICE_AUTO_START')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'ObjectName', 'LocalSystem')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppExit', 'Default', 'Restart')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppRestartDelay', '5000')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppStdout', (Join-Path $dataDir 'service.stdout.log'))
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppStderr', (Join-Path $dataDir 'service.stderr.log'))
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppRotateFiles', '1')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppRotateOnline', '1')
-Invoke-Nssm -Exe $nssm -Args @('set', $ServiceName, 'AppRotateBytes', '5242880')
-Invoke-Nssm -Exe $nssm -Args @(
+Invoke-Nssm -Exe $nssm -NssmArgs @('install', $ServiceName, $nodePath)
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppDirectory', $coreDir)
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppParameters', 'client.js')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'DisplayName', 'FAR2 QQ Farm')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'Description', 'FAR2 QQ Farm WebUI / CodeManager background service')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'Start', 'SERVICE_AUTO_START')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'ObjectName', 'LocalSystem')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppExit', 'Default', 'Restart')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRestartDelay', '5000')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppStdout', (Join-Path $dataDir 'service.stdout.log'))
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppStderr', (Join-Path $dataDir 'service.stderr.log'))
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRotateFiles', '1')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRotateOnline', '1')
+Invoke-Nssm -Exe $nssm -NssmArgs @('set', $ServiceName, 'AppRotateBytes', '5242880')
+Invoke-Nssm -Exe $nssm -NssmArgs @(
     'set', $ServiceName, 'AppEnvironmentExtra',
     'FARM_CODE_AUTO_REFRESH=1',
     "FARM_CODE_REFRESH_INTERVAL_MS=$refreshIntervalMs",
