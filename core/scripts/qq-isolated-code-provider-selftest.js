@@ -1,6 +1,9 @@
 const assert = require('node:assert/strict');
 const { createIsolatedRuntimeCodeProvider } = require('../src/services/isolated-runtime-code-provider');
-const { inspectIsolatedRuntime } = require('../src/services/isolated-code-agent');
+const {
+    inspectIsolatedRuntime,
+    inspectFarmIdentitySnapshot,
+} = require('../src/services/isolated-code-agent');
 
 function response(status, payload) {
     return {
@@ -149,6 +152,30 @@ async function main() {
     assert.equal(wrongRuntime.available, false);
     assert.equal(wrongRuntime.reason, 'agent_runtime_identity_mismatch');
 
+    const processTreeRows = [
+        { name: 'QQ.exe', pid: 100, ppid: 1, sessionId: 7, cmd: 'QQ.exe' },
+        { name: 'QQ.exe', pid: 150, ppid: 100, sessionId: 7, cmd: 'QQ.exe --type=utility --annotation=uin=123456789' },
+        {
+            name: 'QQ.exe',
+            pid: 200,
+            ppid: 150,
+            sessionId: 7,
+            cmd: 'QQ.exe --loadapp=mini-app --exApp=QQEXMiniProgram --annotation=uin=123456789',
+        },
+        {
+            name: 'QQ.exe',
+            pid: 201,
+            ppid: 200,
+            sessionId: 7,
+            cmd: 'QQ.exe --type=renderer appIdOrLink=1112386029',
+        },
+    ];
+    const processTreeIdentity = inspectFarmIdentitySnapshot(processTreeRows, 7);
+    assert.equal(processTreeIdentity.farmCount, 1);
+    assert.deepEqual(processTreeIdentity.knownUins, ['123456789']);
+    assert.equal(processTreeIdentity.roots[0].mainQqPid, 100);
+    assert.equal(processTreeIdentity.roots[0].source, 'farm_tree');
+
     console.log('✅ isolated Code Provider selftest passed');
     console.log('   - exact UIN routes to exact endpoint');
     console.log('   - account/session mismatch never calls provider');
@@ -156,6 +183,7 @@ async function main() {
     console.log('   - remote plaintext HTTP is rejected by default');
     console.log('   - agent rejects multiple QQ in its Windows session');
     console.log('   - agent rejects runtime UIN mismatch');
+    console.log('   - Farm UIN process-tree fallback handles non-direct QQ ancestry');
 }
 
 main().catch(err => {
