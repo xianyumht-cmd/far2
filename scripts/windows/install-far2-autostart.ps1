@@ -282,11 +282,11 @@ function Select-TokenEnvironmentName {
         $Targets
     )
 
-    $used = New-Object 'System.Collections.Generic.HashSet[string]' -ArgumentList ([System.StringComparer]::OrdinalIgnoreCase)
+    $used = @()
     foreach ($key in $Targets.Keys) {
         if ([string]$key -eq $SelectedUin) { continue }
         $other = [string]$Targets[$key]['tokenEnv']
-        if ($other) { [void]$used.Add($other) }
+        if ($other -and $used -notcontains $other) { $used += $other }
     }
 
     $name = [string]$RequestedName
@@ -296,7 +296,7 @@ function Select-TokenEnvironmentName {
     if (-not $name) {
         foreach ($suffix in [char[]]'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
             $candidate = "FAR2_CODE_PROVIDER_TOKEN_$suffix"
-            if (-not $used.Contains($candidate)) {
+            if ($used -notcontains $candidate) {
                 $name = $candidate
                 break
             }
@@ -305,7 +305,7 @@ function Select-TokenEnvironmentName {
     if (-not $name) {
         for ($index = 1; $index -le 99; $index++) {
             $candidate = ('FAR2_CODE_PROVIDER_TOKEN_{0:D2}' -f $index)
-            if (-not $used.Contains($candidate)) {
+            if ($used -notcontains $candidate) {
                 $name = $candidate
                 break
             }
@@ -317,7 +317,7 @@ function Select-TokenEnvironmentName {
     if ($name -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
         throw "Invalid token environment variable name: $name"
     }
-    if ($used.Contains($name)) {
+    if ($used -contains $name) {
         throw "Token environment variable $name is already assigned to another QQ target."
     }
     return $name
