@@ -12,7 +12,9 @@
 
 ## 1. Current status
 
-FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。运行健康中心第一版也已完成实机查看。当前进入**稳定性收尾 + 后续私有版本功能差异追赶**阶段。
+FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。运行健康中心第一版、Provider target 范围自动启动和 P1 图鉴/种子商店主链也已完成真实 Windows 验证。
+
+当前默认开发阶段已经进入：**P2 — 单土地控制 + 紫土地**。
 
 ### Phase 1 — 单账号 Windows 无人值守 Code 自动刷新
 
@@ -53,16 +55,16 @@ FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号�
 
 2026-08-13 已完成真实 Windows 验证：
 
-1. 本地更新至 `754bfa8` 后执行 `Restart-Service FAR2Farm`；
+1. FAR2Farm 服务重启；
 2. 不打开浏览器、不手动点击“启动账号”；
 3. FAR2 自动启动账号 `232`；
-4. 启动后首次 Farm WS 返回 HTTP 400；
-5. CodeManager 自动触发恢复，旧 Worker 正常退出；
+4. 首次 Farm WS 返回 HTTP 400；
+5. CodeManager 自动恢复，旧 Worker 正常退出；
 6. 新 Worker 自动启动并登录成功，账号恢复到 Lv112；
 7. V4 好友启动导入同步恢复：103 GID / 275 openId；
 8. 好友帮助与巡查实际继续运行。
 
-这证明当前正式链已经形成：
+正式链：
 
 ```text
 FAR2Farm service restart
@@ -76,7 +78,7 @@ FAR2Farm service restart
   -> automation resumes
 ```
 
-当前单机生产约束为只运行一个目标 QQ；其他保存账号不要求在同一 Windows 实例同时在线，因此不作为本轮失败项，也不需要 Windows2 验收。
+当前单机生产约束为只运行一个目标 QQ；其他保存账号不要求在同一 Windows 实例同时在线，因此不作为失败项，也不需要 Windows2 验收。
 
 ### Phase 4 — 运行健康中心
 
@@ -95,22 +97,70 @@ FAR2Farm service restart
 
 ### P0 — Provider target 范围自动启动
 
-**SOURCE FIX COMPLETE / LOCAL RESTART CHECK PENDING**
+**COMPLETED / ACCEPTED**
 
-健康中心实机曾显示：保存两个账号时 `4476` 与 `232` 都被拉起 Worker，而当前机器只有 `232` 是正式 Provider target。
+健康中心曾暴露：保存两个账号时 `4476` 与 `232` 都被拉起 Worker，而当前机器只有 `232` 是正式 Provider target。
 
-源码已经收紧：
+源码已收紧并完成真实 Windows 重启验证：
 
-- 新增 `startup-account-scope.js`；
-- 如果存在 `FARM_CODE_PROVIDER_TARGETS` / `FARM_CODE_PROVIDER_TARGETS_B64`，只自动启动 UIN 与 target key 匹配的保存账号；
-- Provider targets 配置无效时 fail-closed，不会退回“启动全部”；
-- Provider targets 合法但没有保存账号匹配时也不乱启 Worker；
+- 有 `FARM_CODE_PROVIDER_TARGETS` / `_B64` 时，只自动启动 UIN 与 target key 匹配的保存账号；
+- Provider targets 配置无效时 fail-closed；
+- 合法但无匹配保存账号时不乱启 Worker；
 - 没有 Provider targets 的通用部署仍保持“自动启动全部保存账号”；
-- 可用 `FARM_AUTO_START_ACCOUNT_REFS` 显式覆盖启动范围；
-- WebUI 手动启动账号能力不受影响；
-- 不修改 Code、V4 好友或农场自动化逻辑。
+- `FARM_AUTO_START_ACCOUNT_REFS` 可显式覆盖范围；
+- WebUI 手动启动其他账号不受影响。
 
-本地只需运行一次 `pnpm startup:scope-selftest`，然后重启 `FAR2Farm`，确认健康页变成 Worker 运行 1、Farm 在线 1，并且 `4476` 保持“未运行”。
+实机健康页已确认：
+
+- 保存账号：2；
+- Worker 运行：1；
+- Farm 在线：1；
+- `4476`：未运行；
+- `232`：运行中 / Farm Lv112 在线。
+
+### P1 — 图鉴 + 种子商店
+
+**MAIN FLOW COMPLETED / ACCEPTED**
+
+正式记录：`docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`。
+
+已真实验收：
+
+- 当前作物图鉴 V2：134 条；
+- 已解锁：106；
+- 未解锁：28；
+- 图鉴积分：3820；
+- 图鉴等级：Lv23；
+- 当前 Tier：1；
+- 当前种子/宠物/其他商店协议可读；
+- Catalog 请求已按账号串行，默认打开页面只读取一次图鉴；
+- 手动缺失种子分析不再压满 Farm WS 队列；
+- 未再出现 `pending=5`、50 秒无响应或心跳超时；
+- 同期好友 SyncAll / 偷菜 / 帮助 / 农场循环继续正常运行。
+
+缺失种子真实购买也已通过：
+
+```text
+购买前：未解锁 28 / 背包已有 0 / 可买 1 / 预计 15432 金币
+唯一可买：大王花 fruitId=40227 / seedId=20227
+执行：买 1 份种子
+购买后：未解锁 28 / 背包已有 1 / 可买 0 / 预计 0
+```
+
+这证明“图鉴缺失识别 → 当前商店价格 → 当前背包 → 白名单 BuyGoods → 防重复购买”真实写操作链已验收。
+
+#### P1 保留待确认项：图鉴奖励领取
+
+**LOCKED / NOT ACCEPTED**
+
+当前 `has_reward` / `reward_info` 不能可靠区分“已领取”和“未领取”。真实账号以前已经领取过奖励，但服务器仍返回大量 reward flag，因此：
+
+- WebUI 只显示“奖励状态：待确认”；
+- 不再显示误导性的“可领奖 60”；
+- `/api/catalog/illustrated/claim` 服务端返回 409；
+- 在字段语义获得可靠实机证据前，不发送领奖 RPC。
+
+这个待确认项不再阻塞 Roadmap 进入 P2。
 
 ## 2. Current production architecture
 
@@ -141,6 +191,13 @@ Code recovery path
   -> old Worker stopped
   -> replacement Worker starts
   -> Farm login recovers
+
+Catalog path
+  -> WebUI /catalog
+  -> per-account Catalog queue
+  -> Worker Catalog RPCs serialized
+  -> Illustrated / ShopInfo / Bag
+  -> guarded missing-seed purchase
 ```
 
 ## 3. Second QQ / second Windows Session
@@ -183,6 +240,24 @@ core/src/services/windows-runtime-code.js
 
 保留 Provider、CodeManager、Session Registry 和 runtime-code 相关安全自测/诊断工具。
 
+### Catalog
+
+当前正式组件：
+
+```text
+core/src/services/catalog.js
+core/src/controllers/catalog-api.js
+web/src/views/Catalog.vue
+```
+
+Catalog 必须继续保持：
+
+- 按账号串行；
+- 不扩大 Farm WS 全局 pending 上限；
+- 写操作以前端参数不可信为原则；
+- 当前服务器 ShopInfo 负责价格/解锁/限购真相；
+- 未确认 reward 字段不得恢复领奖。
+
 ## 5. Removed rejected experiments
 
 2026-08-13 收口阶段已删除：
@@ -208,23 +283,22 @@ core/src/services/windows-runtime-code.js
 - PID / window order 猜账号；
 - preload / 注入捷径绕过当前隔离设计；
 - Friend Capture V1 / V2 / V3；
-- 秒偷 / 蹲守 / 自动刷变异等后续版本自己已删除的功能。
+- 秒偷 / 蹲守 / 自动刷变异等后续版本自己已删除的功能；
+- 再次把 `has_reward=true` 直接解释成“未领取奖励”。
 
 ## 7. Current feature roadmap
 
-后续私有版功能差异审计已经固定到：
+后续私有版功能差异审计固定到：
 
 ```text
 docs/FEATURE_GAP_AUDIT_2026-08-13.md
 ```
 
-该审计覆盖后续更新日志 2026-04-13 ～ 2026-06-26，并将功能分为：已有、部分基础、缺失、FAR2 已替代、判废、需当前协议验证。
+当前进度：
 
-当前顺序：
-
-1. **P0：生产 Provider target 范围内自动启动 Worker**：源码完成，等待一次本机重启确认；
-2. **P1：图鉴 + 种子商店**，利用仓库现有 `illustratedpb.proto` / `shoppb.proto` / Shop RPC；
-3. **P2：单土地操作 + 紫土地**；
+1. **P0：Provider target 范围自动启动 Worker**：✅ 已验收；
+2. **P1：图鉴 + 种子商店**：✅ 主链已验收；领奖字段单独锁定待确认；
+3. **P2：单土地操作 + 紫土地**：➡️ 当前默认下一步；
 4. **P3：变异只读展示**；
 5. **P4：宠物 / 狗狗**；
 6. **P5：个人生涯 / 装扮 / 通用活动框架**。
@@ -235,11 +309,12 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 
 1. 当前 `main` 源码；
 2. `docs/PRODUCTION_BASELINE_2026-08-13.md`；
-3. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
-4. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
-5. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
-6. 其他历史文档。
+3. `docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`；
+4. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
+5. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
+6. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
+7. 其他历史文档。
 
-**不要再把 Code 自动刷新、好友完整导入、Windows2 验收当成默认下一步。**
+**不要再把 Code 自动刷新、好友完整导入、Windows2、P0 或 P1 已验收主链当成默认下一步。**
 
-新的默认推进顺序是：P0 Worker 启动范围本机确认 → P1 图鉴/种子商店。
+新的默认推进顺序是：**P2 单土地控制 + 紫土地**。
