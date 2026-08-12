@@ -15,6 +15,17 @@ const { createWorkerManager } = require('./worker-manager')
 
 const OPERATION_KEYS = ['harvest', 'water', 'weed', 'bug', 'fertilize', 'plant', 'steal', 'helpWater', 'helpWeed', 'helpBug', 'taskClaim', 'sell', 'upgrade']
 
+function envFlagEnabled(value, defaultValue = true) {
+  const text = String(value == null ? '' : value).trim().toLowerCase()
+  if (!text)
+    return defaultValue
+  if (['0', 'false', 'off', 'no'].includes(text))
+    return false
+  if (['1', 'true', 'on', 'yes'].includes(text))
+    return true
+  return defaultValue
+}
+
 function createRuntimeEngine(options = {}) {
   const processRef = options.processRef || process
   const mainEntryPath = options.mainEntryPath || path.join(__dirname, '../../client.js')
@@ -163,7 +174,9 @@ function createRuntimeEngine(options = {}) {
 
   async function start(options = {}) {
     const shouldStartAdminServer = options.startAdminServer !== false
-    const shouldAutoStartAccounts = options.autoStartAccounts !== false
+    const shouldAutoStartAccounts = Object.prototype.hasOwnProperty.call(options, 'autoStartAccounts')
+      ? options.autoStartAccounts !== false
+      : envFlagEnabled(processRef.env.FARM_AUTO_START_ACCOUNTS, true)
 
     // 启动时加载已保存的系统配置
     const savedSystemConfig = store.getSystemConfig()
@@ -178,6 +191,9 @@ function createRuntimeEngine(options = {}) {
 
     if (shouldAutoStartAccounts) {
       startAllAccounts()
+    }
+    else {
+      log('系统', '启动时自动启动账号已关闭 (FARM_AUTO_START_ACCOUNTS=0)')
     }
 
     codeManager.start()
