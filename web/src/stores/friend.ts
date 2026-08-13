@@ -19,6 +19,7 @@ export const useFriendStore = defineStore('friend', () => {
   const loading = ref(false)
   const friendLands = ref<Record<string, any[]>>({})
   const friendLandsLoading = ref<Record<string, boolean>>({})
+  const friendDogProbes = ref<Record<string, any>>({})
   const blacklist = ref<BlacklistItem[]>([])
   const interactRecords = ref<any[]>([])
   const interactLoading = ref(false)
@@ -159,6 +160,7 @@ export const useFriendStore = defineStore('friend', () => {
         const lands = res.data.data.lands || []
         const summary = res.data.data.summary || null
         friendLands.value[friendId] = lands
+        friendDogProbes.value[friendId] = res.data.data.dogProbe || null
         syncFriendPlantSummary(friendId, lands, summary)
       }
     }
@@ -290,6 +292,7 @@ export const useFriendStore = defineStore('friend', () => {
     loading,
     friendLands,
     friendLandsLoading,
+    friendDogProbes,
     blacklist,
     interactRecords,
     interactLoading,
