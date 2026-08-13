@@ -14,7 +14,7 @@
 
 FAR2 的 Code 自动刷新、完整好友导入、Windows 服务启动后账号自动恢复三条无人值守基础链均已完成验收。运行健康中心第一版、Provider target 范围自动启动和 P1 图鉴/种子商店主链也已完成真实 Windows 验证。
 
-当前开发状态：**P2C / P3A / P4A / P5A / P5B 均已完成源码/构建，真实读取或自然条件验收不阻塞开发；当前主线进入 P5C 通用活动框架审计。**
+当前开发状态：**P5C-A 通用活动只读发现层已完成；P6A～P6F Farm 架构收口已全部合并并完成全链构建/契约回归。P2C / P3A 等自然条件、P4A / P5A / P5B / P5C-A 等真实读取验收均不阻塞开发。当前不再默认继续架构拆分，下一步回到业务价值 / 真实稳定性差异审计。**
 
 ### Phase 1 — 单账号 Windows 无人值守 Code 自动刷新
 
@@ -300,6 +300,55 @@ else = normal
 
 没有穿戴、使用、购买或资料修改接口。
 
+### P5C-A — 通用活动只读发现层
+
+**SOURCE + BUILD COMPLETE / LIVE READ ACCEPTANCE PENDING**
+
+当前活动中心只走通用只读协议：
+
+```text
+活动
+  -> GET /api/activities
+  -> Worker listActivities
+  -> ActivityService.List
+  -> ActivityInfo[] / parent-child tree / payload summary
+```
+
+当前实现：
+
+- 自动发现服务器当前活动，不在核心硬编码某个活动 ID / UID / cmd；
+- 保留 title / type / parent / 起止时间 / visible / status / enabled；
+- 通用读取 random shop / exchange shop / draw 摘要；
+- payload 能解析 JSON 时读取结构，不能解析时保留 raw；
+- adapter 注册位保留为空，只有未来出现真实特殊活动解析需求才增加；
+- proto 第一版没有 `Operate`，WebUI 也没有兑换、抽奖、领奖等写按钮。
+
+P5C-A 已完成 `activity:readonly-selftest`、`vue-tsc + vite build` 与后端语法检查。真实当前活动内容读取不阻塞后续开发。
+
+### P6 — Farm 架构收口
+
+**COMPLETED / VALIDATED**
+
+正式记录：`docs/P6_ARCHITECTURE_CONSOLIDATION_2026-08-13.md`。
+
+最终 `main` 基线：`cd8cb196b59a2c4c55c6193e706578ea7961406b`。
+
+P6 采用分阶段迁移，不重写已验收业务：
+
+- P6A：`farm-land-analyzer.js`；
+- P6B：`farm-api.js`；
+- P6C：`farm-fertilizer.js`；
+- P6D：`planting-service.js`；
+- P6E1：`farm-orchestrator.js`；
+- P6E2：`farm-scheduler.js`；
+- P6F：`farm-query-service.js` + 最终 `farm.js` facade。
+
+最终 `farm.js` 只保留模块组装、operation-limit callback wrapper 和稳定 public exports。P2 2x2、P3 mutation、施肥、巡田顺序、scheduler 时序和 Worker/Admin/Web public 调用均保持兼容。
+
+P6F 合并前已完成 query / scheduler / orchestrator / planting / fertilizer / API / analyzer / 单土地 / 2x2 / mutation / activity / Web build 全链验证。
+
+**P6 到此结束，不把“继续拆文件”当成默认下一步。**
+
 ## 2. Current production architecture
 
 ```text
@@ -356,6 +405,21 @@ Personal read-only extensions
   -> CareerService.CareerInfoGet -> 个人生涯
   -> existing ItemService.Bag type=10 -> 头像框库存
   -> all through account-scoped Worker/DataProvider/Admin GET paths
+
+Activity read-only discovery
+  -> ActivityService.List
+  -> generic ActivityInfo DTO / tree / payload summary
+  -> no Operate write path in P5C-A
+
+Farm domain after P6
+  -> farm.js facade / operation-limit callback wrapper
+  -> farm-api raw RPC
+  -> farm-land-analyzer pure land analysis
+  -> farm-fertilizer policy/execution
+  -> planting-service Plant/bag/shop/2x2 execution
+  -> farm-orchestrator business flow
+  -> farm-scheduler loop/push/fertilizer-buy timing
+  -> farm-query-service WebUI/read DTOs
 ```
 
 ## 3. Second QQ / second Windows Session
@@ -416,6 +480,30 @@ Catalog 必须继续保持：
 - 当前服务器 ShopInfo 负责价格/解锁/限购真相；
 - 未确认 reward 字段不得恢复领奖。
 
+### Farm domain
+
+P6 完成后的正式组件：
+
+```text
+core/src/services/farm.js
+core/src/services/farm-api.js
+core/src/services/farm-land-analyzer.js
+core/src/services/farm-fertilizer.js
+core/src/services/planting-service.js
+core/src/services/farm-orchestrator.js
+core/src/services/farm-scheduler.js
+core/src/services/farm-query-service.js
+```
+
+生产边界：
+
+- `farm.js` 是稳定 facade / composition root；
+- `getAllLands()` callback wrapper 不得被内部 raw transport 绕过；
+- P2C 独立 2x2 prepass 不得重新绑定到 `bag_priority`；
+- 商店自动购买 2x2 仍关闭；
+- scheduler 的 2000ms 首次检查、500ms push debounce、100ms push delayed check 保持现有契约；
+- 后续不要为了“文件更小”继续无目标拆分。
+
 ## 5. Removed rejected experiments
 
 2026-08-13 收口阶段已删除：
@@ -464,7 +552,10 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 8. **P4B：护主犬礼包领取**：🔒 写操作锁定，等 P4A 真实回包；
 9. **P5A：个人生涯只读**：🟡 源码/构建完成，待真实 CareerInfoGet 读取验收；
 10. **P5B：头像框库存只读**：🟡 源码/构建完成，当前佩戴协议仍锁定待证据；
-11. **P5C：通用活动框架**：➡️ 当前开发主线。
+11. **P5C-A：Activity List 通用活动只读发现层**：🟡 源码/构建完成，待真实当前活动读取验收；
+12. **P6A～P6F：Farm 架构收口**：✅ 全部合并 / 全链回归通过。
+
+P0～P6 已没有需要为了“继续项目”而强制完成的源码阻塞项。所有自然条件/真实只读验收继续作为观察项存在，但不反向阻塞新业务开发。
 
 ## 8. How to continue from here
 
@@ -473,16 +564,19 @@ docs/FEATURE_GAP_AUDIT_2026-08-13.md
 1. 当前 `main` 源码；
 2. `PROJECT_STATE.md`；
 3. `docs/PRODUCTION_BASELINE_2026-08-13.md`；
-4. `docs/P2_PURPLE_AND_2X2_2026-08-13.md`；
-5. `docs/P3_MUTATION_READONLY_2026-08-13.md`；
-6. `docs/P4_P5_READONLY_2026-08-13.md`；
-7. `docs/P2_SINGLE_LAND_CONTROLS_2026-08-13.md`；
-8. `docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`；
-9. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
-10. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
-11. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
-12. 其他历史文档。
+4. `docs/P6_ARCHITECTURE_CONSOLIDATION_2026-08-13.md`；
+5. `docs/P2_PURPLE_AND_2X2_2026-08-13.md`；
+6. `docs/P3_MUTATION_READONLY_2026-08-13.md`；
+7. `docs/P4_P5_READONLY_2026-08-13.md`；
+8. `docs/P2_SINGLE_LAND_CONTROLS_2026-08-13.md`；
+9. `docs/P1_CATALOG_ACCEPTANCE_2026-08-13.md`；
+10. `docs/FEATURE_GAP_AUDIT_2026-08-13.md`；
+11. `docs/FRIEND_GID_HANDOFF_2026-08-13.md`；
+12. `docs/CODE_REFRESH_MILESTONE_2026-08-12.md`；
+13. 其他历史文档。
 
-**不要再把 Code 自动刷新、好友完整导入、Windows2、P0、P1、P2A、P2C、P3A、P4A、P5A 或 P5B 的源码实现当成默认下一步。**
+**不要再把 Code 自动刷新、好友完整导入、Windows2、P0、P1、P2A、P2C、P3A、P4A、P5A、P5B、P5C-A 或 P6 的源码实现当成默认下一步。**
 
-P2C / P3A 等自然条件，P4A / P5A / P5B 等真实读取，均不阻塞开发；写操作继续按真实证据单独解锁。当前默认动作：**进入 P5C 通用活动框架审计。**
+P2C / P3A 等自然条件，P4A / P5A / P5B / P5C-A 等真实读取，均不阻塞开发；写操作继续按真实证据单独解锁。
+
+当前默认动作：**重新审计当前 `main` 与成熟实现之间剩余的业务能力、真实稳定性问题和可验证协议差异，按用户价值 / 风险 / 证据强度选下一项。不要自动进入 P7 式架构重构。**
