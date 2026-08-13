@@ -18,6 +18,7 @@
     "farm:land-analyzer-selftest": "pnpm -C core farm:land-analyzer-selftest",
     "farm:api-selftest": "pnpm -C core farm:api-selftest",
     "farm:fertilizer-selftest": "pnpm -C core farm:fertilizer-selftest",
+    "planting:service-selftest": "pnpm -C core planting:service-selftest",
     "qr:runtime-code": "pnpm -C core qr:runtime-code",
     "qr:process-map": "pnpm -C core qr:process-map",
     "qr:session-map": "pnpm -C core qr:session-map",
