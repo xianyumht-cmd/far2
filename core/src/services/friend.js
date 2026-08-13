@@ -21,6 +21,7 @@ const { types } = require('../utils/proto');
 const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep, randomDelay } = require('../utils/utils');
 const { getCurrentPhase, setOperationLimitsCallback, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand } = require('./farm');
 const { buildMutationDetail } = require('./farm-mutation');
+const { buildFriendDogProbe } = require('./friend-dog-probe');
 const { getInteractRecords } = require('./interact');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
@@ -516,7 +517,16 @@ async function enterFriendFarm(friendGid) {
         reason: 2,  // ENTER_REASON_FRIEND
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.visitpb.VisitService', 'Enter', body);
-    return types.VisitEnterReply.decode(replyBody);
+    const reply = types.VisitEnterReply.decode(replyBody);
+    // 协议发现只复用这次 Enter 的 raw reply，不增加任何 Visit/Dog 请求。
+    // field 3 的内部结构未被真实回包确认前，只保留 wire 摘要，不猜 Dog DTO。
+    Object.defineProperty(reply, '__far2BriefDogProbe', {
+        value: buildFriendDogProbe(replyBody),
+        enumerable: false,
+        configurable: false,
+        writable: false,
+    });
+    return reply;
 }
 
 async function leaveFriendFarm(friendGid) {
@@ -952,6 +962,7 @@ async function getFriendsList(forceSync = false) {
 async function getFriendLandsDetail(friendGid) {
     try {
         const enterReply = await enterFriendFarm(friendGid);
+        const dogProbe = enterReply.__far2BriefDogProbe || null;
         const lands = enterReply.lands || [];
         const state = getUserState();
         const plantBlacklist = getPlantBlacklist(state.accountId);
@@ -1073,9 +1084,10 @@ async function getFriendLandsDetail(friendGid) {
         return {
             lands: landsList,
             summary: analyzed,
+            dogProbe,
         };
     } catch {
-        return { lands: [], summary: {} };
+        return { lands: [], summary: {}, dogProbe: null };
     }
 }
 
