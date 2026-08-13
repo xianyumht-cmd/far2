@@ -3,43 +3,31 @@
  */
 
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
-const { getPlantNameBySeedId, getPlantName, getPlantExp, getPlantGrowTime, getAllSeeds, getPlantById, getSeedImageBySeedId, getMutantEffectsByIds } = require('../config/gameConfig');
-const { isAutomationOn, getAutomation, getPlantingStrategy, getPrioritize2x2Crops, getBagSeedPriority, getBagSeedFallbackStrategy, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../models/store');
+const { getPlantNameBySeedId, getPlantName, getPlantGrowTime, getAllSeeds, getPlantById, getSeedImageBySeedId, getMutantEffectsByIds } = require('../config/gameConfig');
+const { isAutomationOn, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../models/store');
 const { getUserState, networkEvents, getWsErrorState } = require('../utils/network');
-const { toLong, toNum, getServerTimeSec, toTimeSec, log, logWarn, sleep, randomDelay } = require('../utils/utils');
+const { toNum, getServerTimeSec, toTimeSec, log, logWarn } = require('../utils/utils');
 const { createScheduler } = require('./scheduler');
-const { recordOperation } = require('./stats');
-const { getBagSeeds, getBag, getBagItems, getContainerHoursFromBagItems } = require('./warehouse');
+const { getBag, getBagItems, getContainerHoursFromBagItems } = require('./warehouse');
 const { autoBuyFertilizer, checkAndBuyFertilizerBoth } = require('./mall');
-const { runPrioritized2x2Prepass } = require('./farm-2x2-priority');
 const { buildMutationDetail } = require('./farm-mutation');
 const {
     getDisplayLandContext,
     isOccupiedSlaveLand,
     buildSlaveToMasterMap,
     summarizeLandDetails,
-    getLandTypeByLevel,
     getCurrentPhase,
     buildLandMap,
-    classifyHarvestedLandsByMap,
 } = require('./farm-land-analyzer');
 const {
     getAllLandsRaw,
-    harvest,
-    waterLand,
-    weedOut,
-    insecticide,
-    removePlant,
-    upgradeLand,
-    unlockLand,
     getShopInfo,
 } = require('./farm-api');
 const { createFarmFertilizerService } = require('./farm-fertilizer');
-const { createPlantingService, getPlantingStrategyLabel } = require('./planting-service');
+const { createPlantingService } = require('./planting-service');
+const { createFarmOrchestrator } = require('./farm-orchestrator');
 
 // ============ 内部状态 ============
-let isCheckingFarm = false;
-let isFirstFarmCheck = true;
 let farmLoopRunning = false;
 let externalSchedulerMode = false;
 let fertilizerBuyCheckTimer = null;
@@ -76,6 +64,19 @@ const {
 } = createPlantingService({
     // 背包 2x2 探测必须继续经过 facade wrapper，保持 operation-limit callback 语义。
     getAllLands,
+});
+
+const {
+    checkFarm,
+    runFarmOperation,
+    isChecking: isFarmCheckInProgress,
+} = createFarmOrchestrator({
+    // 所有补拉继续通过 facade wrapper，保持 operation-limit callback 语义。
+    getAllLands,
+    runFertilizerByConfig,
+    plant2x2Seed,
+    plantFromBagSeeds,
+    plantFromShop,
 });
 
 // ============ 种植执行：由 planting-service.js 提供 ============
@@ -297,442 +298,7 @@ async function getLandsDetail() {
     }
 }
 
-async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
-    let landsToPlant = [...emptyLandIds];
-    const state = getUserState();
-
-    if (deadLandIds.length > 0) {
-        try {
-            await removePlant(deadLandIds);
-            log('铲除', `已铲除 ${deadLandIds.length} 块 (${deadLandIds.join(',')})`, {
-                module: 'farm', event: '铲除植物', result: 'ok', count: deadLandIds.length
-            });
-            landsToPlant.push(...deadLandIds);
-        } catch (e) {
-            logWarn('铲除', `批量铲除失败: ${e.message}`, {
-                module: 'farm', event: '铲除植物', result: 'error'
-            });
-            landsToPlant.push(...deadLandIds);
-        }
-    }
-
-    if (landsToPlant.length === 0) return;
-
-    landsToPlant = [...new Set(landsToPlant.map(id => toNum(id)).filter(Boolean))];
-    if (landsToPlant.length === 0) return;
-
-    try {
-        const twoByTwo = await runPrioritized2x2Prepass({
-            enabled: getPrioritize2x2Crops(),
-            landIds: landsToPlant,
-            getBagSeeds,
-            bagSeedPriority: getBagSeedPriority(),
-            userLevel: Number(state.level || 0),
-            getAllLands,
-            plant2x2Seed,
-            log,
-            logWarn,
-            sleep,
-        });
-        landsToPlant = twoByTwo.remainingLandIds || landsToPlant;
-        if (twoByTwo.plantedLandIds && twoByTwo.plantedLandIds.length > 0) {
-            await runFertilizerByConfig(twoByTwo.plantedLandIds);
-        }
-    } catch (e) {
-        logWarn('种植', `2x2 优先链异常，继续原种植策略: ${e.message}`, {
-            module: 'farm', event: '种植2x2作物', result: 'prepass_error',
-        });
-    }
-
-    if (landsToPlant.length === 0) return;
-
-    const accountStrategy = String(getPlantingStrategy() || '').trim();
-
-    if (accountStrategy === 'bag_priority') {
-        let bagResult;
-        try {
-            bagResult = await plantFromBagSeeds(landsToPlant);
-        } catch (e) {
-            logWarn('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${e.message}`, {
-                module: 'farm',
-                event: '种植种子',
-                result: 'bag_load_error',
-            });
-            return { plantedLands: [] };
-        }
-
-        const plantedLands = bagResult.plantedLandIds || [];
-        
-        if (bagResult.fallbackAllowed && bagResult.remainingLandIds.length > 0) {
-            const fallbackStrategy = getBagSeedFallbackStrategy() || 'level';
-            log('种植', `开始按第二优先策略"${getPlantingStrategyLabel(fallbackStrategy)}"补种剩余空地`, {
-                module: 'farm',
-                event: '种植种子',
-                result: 'fallback_start',
-                strategy: fallbackStrategy,
-                remainingCount: bagResult.remainingLandIds.length,
-            });
-            const shopResult = await plantFromShop(bagResult.remainingLandIds, state, fallbackStrategy);
-            plantedLands.push(...(shopResult.plantedLands || []));
-        }
-
-        if (plantedLands.length > 0) {
-            await runFertilizerByConfig(plantedLands);
-        }
-        return;
-    }
-
-    const shopResult = await plantFromShop(landsToPlant, state);
-    if (shopResult.plantedLands && shopResult.plantedLands.length > 0) {
-        await runFertilizerByConfig(shopResult.plantedLands);
-    }
-}
-
-function analyzeLands(lands) {
-    const result = {
-        harvestable: [], needWater: [], needWeed: [], needBug: [],
-        growing: [], empty: [], dead: [], unlockable: [], upgradable: [],
-        harvestableInfo: [],
-    };
-
-    const nowSec = getServerTimeSec();
-    const debug = isFirstFarmCheck;
-    const landsMap = buildLandMap(lands);
-
-    for (const land of lands) {
-        const id = toNum(land.id);
-        if (!land.unlocked) {
-            if (land.could_unlock) {
-                result.unlockable.push(id);
-            }
-            continue;
-        }
-        if (land.could_upgrade) {
-            result.upgradable.push(id);
-        }
-
-        if (isOccupiedSlaveLand(land, landsMap)) {
-            continue;
-        }
-
-        const plant = land.plant;
-        if (!plant || !plant.phases || plant.phases.length === 0) {
-            result.empty.push(id);
-            continue;
-        }
-
-        const plantName = plant.name || '未知作物';
-        const landLabel = `土地#${id}(${plantName})`;
-
-        const currentPhase = getCurrentPhase(plant.phases, debug, landLabel);
-        if (!currentPhase) {
-            result.empty.push(id);
-            continue;
-        }
-        const phaseVal = currentPhase.phase;
-
-        if (phaseVal === PlantPhase.DEAD) {
-            result.dead.push(id);
-            continue;
-        }
-
-        if (phaseVal === PlantPhase.MATURE) {
-            result.harvestable.push(id);
-            const plantId = toNum(plant.id);
-            const plantNameFromConfig = getPlantName(plantId);
-            const plantExp = getPlantExp(plantId);
-            result.harvestableInfo.push({
-                landId: id,
-                plantId,
-                name: plantNameFromConfig || plantName,
-                exp: plantExp,
-            });
-            continue;
-        }
-
-        const dryNum = toNum(plant.dry_num);
-        const dryTime = toTimeSec(currentPhase.dry_time);
-        if (dryNum > 0 || (dryTime > 0 && dryTime <= nowSec)) {
-            result.needWater.push(id);
-        }
-
-        const weedsTime = toTimeSec(currentPhase.weeds_time);
-        const hasWeeds = (plant.weed_owners && plant.weed_owners.length > 0) || (weedsTime > 0 && weedsTime <= nowSec);
-        if (hasWeeds) {
-            result.needWeed.push(id);
-        }
-
-        const insectTime = toTimeSec(currentPhase.insect_time);
-        const hasBugs = (plant.insect_owners && plant.insect_owners.length > 0) || (insectTime > 0 && insectTime <= nowSec);
-        if (hasBugs) {
-            result.needBug.push(id);
-        }
-
-        result.growing.push(id);
-    }
-
-    return result;
-}
-
-async function resolveRemovableHarvestedLands(harvestedLandIds, harvestReply) {
-    const ids = Array.isArray(harvestedLandIds) ? harvestedLandIds.filter(Boolean) : [];
-    if (ids.length === 0) {
-        return { removable: [], growing: [], fallbackRemoved: 0 };
-    }
-
-    const replyMap = buildLandMap(harvestReply && harvestReply.land);
-    const firstPass = classifyHarvestedLandsByMap(ids, replyMap);
-    const removable = [...firstPass.removable];
-    const growing = [...firstPass.growing];
-    let unknown = [...firstPass.unknown];
-    let fallbackRemoved = 0;
-
-    if (unknown.length > 0) {
-        try {
-            const latestLandsReply = await getAllLands();
-            const latestMap = buildLandMap(latestLandsReply && latestLandsReply.lands);
-            const secondPass = classifyHarvestedLandsByMap(unknown, latestMap);
-            removable.push(...secondPass.removable);
-            growing.push(...secondPass.growing);
-            unknown = secondPass.unknown;
-        } catch (e) {
-            logWarn('农场', `收后状态补拉失败: ${e.message}`, {
-                module: 'farm',
-                event: '收获后状态补拉',
-                result: 'error',
-            });
-        }
-    }
-
-    if (unknown.length > 0) {
-        removable.push(...unknown);
-        fallbackRemoved = unknown.length;
-    }
-
-    return {
-        removable: [...new Set(removable)],
-        growing: [...new Set(growing)],
-        fallbackRemoved,
-    };
-}
-
-async function checkFarm() {
-    const state = getUserState();
-    if (isCheckingFarm || !state.gid || !isAutomationOn('farm')) return false;
-    isCheckingFarm = true;
-
-    try {
-        const result = await runFarmOperation('all');
-        isFirstFarmCheck = false;
-        return !!(result && result.hadWork);
-    } catch (err) {
-        logWarn('巡田', `检查失败: ${err.message}`);
-        return false;
-    } finally {
-        isCheckingFarm = false;
-    }
-}
-
-/**
- * 手动/自动执行农场操作
- * @param {string} opType - 'all', 'harvest', 'clear', 'plant', 'upgrade'
- */
-async function runFarmOperation(opType) {
-    const landsReply = await getAllLands();
-    if (!landsReply.lands || landsReply.lands.length === 0) {
-        if (opType !== 'all') {
-            log('农场', '没有土地数据');
-        }
-        return { hadWork: false, actions: [] };
-    }
-
-    const lands = landsReply.lands;
-    const status = analyzeLands(lands);
-
-    const statusParts = [];
-    if (status.harvestable.length) statusParts.push(`收:${status.harvestable.length}`);
-    if (status.needWeed.length) statusParts.push(`草:${status.needWeed.length}`);
-    if (status.needBug.length) statusParts.push(`虫:${status.needBug.length}`);
-    if (status.needWater.length) statusParts.push(`水:${status.needWater.length}`);
-    if (status.dead.length) statusParts.push(`枯:${status.dead.length}`);
-    if (status.empty.length) statusParts.push(`空:${status.empty.length}`);
-    if (status.unlockable.length) statusParts.push(`解:${status.unlockable.length}`);
-    if (status.upgradable.length) statusParts.push(`升:${status.upgradable.length}`);
-    statusParts.push(`长:${status.growing.length}`);
-
-    const actions = [];
-
-    if (opType === 'all' || opType === 'clear') {
-        const skipOwnWeedBug = opType === 'all' && isAutomationOn('skip_own_weed_bug');
-        if (status.needWeed.length > 0 && !skipOwnWeedBug) {
-            try {
-                await weedOut(status.needWeed);
-                actions.push(`除草${status.needWeed.length}`);
-                recordOperation('weed', status.needWeed.length);
-            } catch (e) {
-                logWarn('除草', e.message);
-            }
-        }
-        if (status.needBug.length > 0 && !skipOwnWeedBug) {
-            try {
-                await insecticide(status.needBug);
-                actions.push(`除虫${status.needBug.length}`);
-                recordOperation('bug', status.needBug.length);
-            } catch (e) {
-                logWarn('除虫', e.message);
-            }
-        }
-        if (status.needWater.length > 0) {
-            try {
-                await waterLand(status.needWater);
-                actions.push(`浇水${status.needWater.length}`);
-                recordOperation('water', status.needWater.length);
-            } catch (e) {
-                logWarn('浇水', e.message);
-            }
-        }
-    }
-
-    let harvestedLandIds = [];
-    let harvestReply = null;
-    let postHarvest = null;
-    if (opType === 'all' || opType === 'harvest') {
-        if (status.harvestable.length > 0) {
-            try {
-                harvestReply = await harvest(status.harvestable);
-                log('收获', `收获完成 ${status.harvestable.length} 块土地`, {
-                    module: 'farm',
-                    event: '收获作物',
-                    result: 'ok',
-                    count: status.harvestable.length,
-                    landIds: [...status.harvestable],
-                });
-                actions.push(`收获${status.harvestable.length}`);
-                recordOperation('harvest', status.harvestable.length);
-                harvestedLandIds = [...status.harvestable];
-                networkEvents.emit('farmHarvested', {
-                    count: status.harvestable.length,
-                    landIds: [...status.harvestable],
-                    opType,
-                });
-            } catch (e) {
-                logWarn('收获', e.message, {
-                    module: 'farm',
-                    event: '收获作物',
-                    result: 'error',
-                });
-            }
-        }
-    }
-
-    if (opType === 'all' || opType === 'plant') {
-        const allEmptyLands = [...new Set(status.empty)];
-        let allDeadLands = [...new Set(status.dead)];
-
-        if (opType === 'all' && harvestedLandIds.length > 0) {
-            await randomDelay(1000, 1500);
-            postHarvest = await resolveRemovableHarvestedLands(harvestedLandIds, harvestReply);
-            allDeadLands = [...new Set([...allDeadLands, ...postHarvest.removable])];
-        }
-        if (allDeadLands.length > 0 || allEmptyLands.length > 0) {
-            try {
-                const plantCount = allDeadLands.length + allEmptyLands.length;
-                await autoPlantEmptyLands(allDeadLands, allEmptyLands);
-                actions.push(`种植${plantCount}`);
-                recordOperation('plant', plantCount);
-            } catch (e) { logWarn('种植', e.message); }
-        }
-    }
-    if (opType === 'all' && postHarvest && Array.isArray(postHarvest.growing) && postHarvest.growing.length > 0 && isAutomationOn('fertilizer_multi_season')) {
-        const multiSeasonTargets = [...new Set(postHarvest.growing.map(v => toNum(v)).filter(Boolean))];
-        if (multiSeasonTargets.length > 0) {
-            log('施肥', `检测到多季作物进入后续季，准备执行多季补肥，目标地块 ${multiSeasonTargets.length} 块`, {
-                module: 'farm',
-                event: '多季节施肥',
-                result: 'trigger',
-                count: multiSeasonTargets.length,
-                landIds: multiSeasonTargets,
-            });
-            try {
-                await runFertilizerByConfig(multiSeasonTargets, { reason: 'multi_season' });
-            } catch (e) {
-                logWarn('施肥', `多季补肥执行失败: ${e.message}`, {
-                    module: 'farm',
-                    event: '多季节施肥',
-                    result: 'error',
-                });
-            }
-        }
-    }
-
-    const shouldAutoUpgrade = opType === 'all' && isAutomationOn('land_upgrade');
-    if (shouldAutoUpgrade || opType === 'upgrade') {
-        if (status.unlockable.length > 0) {
-            let unlocked = 0;
-            for (const landId of status.unlockable) {
-                try {
-                    await unlockLand(landId, false);
-                    log('解锁', `土地#${landId} 解锁成功`, {
-                        module: 'farm', event: '解锁土地', result: 'ok', landId
-                    });
-                    unlocked++;
-                } catch (e) {
-                    logWarn('解锁', `土地#${landId} 解锁失败: ${e.message}`, {
-                        module: 'farm', event: '解锁土地', result: 'error', landId
-                    });
-                }
-                await randomDelay(1000, 1500);
-            }
-            if (unlocked > 0) {
-                actions.push(`解锁${unlocked}`);
-            }
-        }
-
-        if (status.upgradable.length > 0) {
-            let upgraded = 0;
-            for (const landId of status.upgradable) {
-                try {
-                    const reply = await upgradeLand(landId);
-                    const newLevel = reply.land ? toNum(reply.land.level) : '?';
-                    log('升级', `土地#${landId} 升级成功 → 等级${newLevel}`, {
-                        module: 'farm', event: '升级土地', result: 'ok', landId, level: newLevel
-                    });
-                    upgraded++;
-                } catch (e) {
-                    log('升级', `土地#${landId} 升级失败: ${e.message}`, {
-                        module: 'farm', event: '升级土地', result: 'error', landId
-                    });
-                }
-                await randomDelay(1000, 1500);
-            }
-            if (upgraded > 0) {
-                actions.push(`升级${upgraded}`);
-                recordOperation('upgrade', upgraded);
-            }
-        }
-    }
-
-    if (opType === 'all') {
-        const fertilizerConfig = getAutomation().fertilizer || 'none';
-        if (fertilizerConfig === 'smart') {
-            try {
-                const result = await runFertilizerByConfig([], { skipNormal: true });
-                if (result.organic > 0) {
-                    actions.push(`有机肥${result.organic}`);
-                }
-            } catch (e) {
-                logWarn('施肥', `巡田时施肥失败: ${e.message}`);
-            }
-        }
-    }
-    const actionStr = actions.length > 0 ? ` → ${actions.join('/')}` : '';
-    if (actions.length > 0) {
-         log('农场', `[${statusParts.join(' ')}]${actionStr}`, {
-             module: 'farm', event: '农场循环', opType, actions
-         });
-    }
-    return { hadWork: actions.length > 0, actions };
-}
+// ============ 巡田业务编排：由 farm-orchestrator.js 提供 ============
 
 function scheduleNextFarmCheck(delayMs = CONFIG.farmCheckInterval) {
     if (externalSchedulerMode) return;
@@ -761,7 +327,7 @@ function onLandsChangedPush(lands) {
     if (!isAutomationOn('farm_push')) {
         return;
     }
-    if (isCheckingFarm) return;
+    if (isFarmCheckInProgress()) return;
     const now = Date.now();
     if (now - lastPushTime < 500) return;
     lastPushTime = now;
@@ -769,7 +335,7 @@ function onLandsChangedPush(lands) {
         module: 'farm', event: '土地推送通知', result: 'trigger_check', count: lands.length
     });
     farmScheduler.setTimeoutTask('farm_push_check', 100, async () => {
-        if (!isCheckingFarm) await checkFarm();
+        if (!isFarmCheckInProgress()) await checkFarm();
     });
 }
 
