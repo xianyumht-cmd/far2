@@ -27,6 +27,18 @@ const {
     buildLandMap,
     classifyHarvestedLandsByMap,
 } = require('./farm-land-analyzer');
+const {
+    getAllLandsRaw,
+    harvest,
+    waterLand,
+    weedOut,
+    insecticide,
+    removePlant,
+    upgradeLand,
+    unlockLand,
+    getShopInfo,
+    buyGoods,
+} = require('./farm-api');
 
 // ============ 内部状态 ============
 let isCheckingFarm = false;
@@ -45,53 +57,13 @@ function setOperationLimitsCallback(callback) {
     onOperationLimitsUpdate = callback;
 }
 
-/**
- * 通用植物操作请求
- */
-async function sendPlantRequest(RequestType, ReplyType, method, landIds, hostGid) {
-    const body = RequestType.encode(RequestType.create({
-        land_ids: landIds,
-        host_gid: toLong(hostGid),
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', method, body);
-    return ReplyType.decode(replyBody);
-}
-
 async function getAllLands() {
-    const body = types.AllLandsRequest.encode(types.AllLandsRequest.create({})).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'AllLands', body);
-    const reply = types.AllLandsReply.decode(replyBody);
-    // 更新操作限制
+    const reply = await getAllLandsRaw();
+    // 保持原有副作用边界：transport 只负责 RPC，operation-limit 回调仍由 farm facade 触发。
     if (reply.operation_limits && onOperationLimitsUpdate) {
         onOperationLimitsUpdate(reply.operation_limits);
     }
     return reply;
-}
-
-async function harvest(landIds) {
-    const state = getUserState();
-    const body = types.HarvestRequest.encode(types.HarvestRequest.create({
-        land_ids: landIds,
-        host_gid: toLong(state.gid),
-        is_all: true,
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'Harvest', body);
-    return types.HarvestReply.decode(replyBody);
-}
-
-async function waterLand(landIds) {
-    const state = getUserState();
-    return sendPlantRequest(types.WaterLandRequest, types.WaterLandReply, 'WaterLand', landIds, state.gid);
-}
-
-async function weedOut(landIds) {
-    const state = getUserState();
-    return sendPlantRequest(types.WeedOutRequest, types.WeedOutReply, 'WeedOut', landIds, state.gid);
-}
-
-async function insecticide(landIds) {
-    const state = getUserState();
-    return sendPlantRequest(types.InsecticideRequest, types.InsecticideReply, 'Insecticide', landIds, state.gid);
 }
 
 // 普通肥料 ID
@@ -396,51 +368,6 @@ async function runFertilizerByConfig(plantedLands = [], options = {}) {
     }
 
     return { normal: fertilizedNormal, organic: fertilizedOrganic };
-}
-
-async function removePlant(landIds) {
-    const body = types.RemovePlantRequest.encode(types.RemovePlantRequest.create({
-        land_ids: landIds.map(id => toLong(id)),
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'RemovePlant', body);
-    return types.RemovePlantReply.decode(replyBody);
-}
-
-async function upgradeLand(landId) {
-    const body = types.UpgradeLandRequest.encode(types.UpgradeLandRequest.create({
-        land_id: toLong(landId),
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'UpgradeLand', body);
-    return types.UpgradeLandReply.decode(replyBody);
-}
-
-async function unlockLand(landId, doShared = false) {
-    const body = types.UnlockLandRequest.encode(types.UnlockLandRequest.create({
-        land_id: toLong(landId),
-        do_shared: !!doShared,
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.plantpb.PlantService', 'UnlockLand', body);
-    return types.UnlockLandReply.decode(replyBody);
-}
-
-// ============ 商店 API ============
-
-async function getShopInfo(shopId) {
-    const body = types.ShopInfoRequest.encode(types.ShopInfoRequest.create({
-        shop_id: toLong(shopId),
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.shoppb.ShopService', 'ShopInfo', body);
-    return types.ShopInfoReply.decode(replyBody);
-}
-
-async function buyGoods(goodsId, num, price) {
-    const body = types.BuyGoodsRequest.encode(types.BuyGoodsRequest.create({
-        goods_id: toLong(goodsId),
-        num: toLong(num),
-        price: toLong(price),
-    })).finish();
-    const { body: replyBody } = await sendMsgAsync('gamepb.shoppb.ShopService', 'BuyGoods', body);
-    return types.BuyGoodsReply.decode(replyBody);
 }
 
 // ============ 种植 ============
