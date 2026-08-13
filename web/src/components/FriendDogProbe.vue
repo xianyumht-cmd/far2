@@ -12,6 +12,8 @@ interface DogProbe {
   present?: boolean
   fieldNo?: number
   byteLength?: number
+  dogId?: number
+  remainingSeconds?: number
   parseComplete?: boolean
   readOnly?: boolean
   fields?: ProbeField[]
@@ -37,9 +39,29 @@ function getVarint(fieldNo: number) {
   return Number.isFinite(value) && value > 0 ? value : 0
 }
 
-const dogId = computed(() => getVarint(1))
+function formatDuration(totalSeconds: number) {
+  const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0))
+  if (seconds <= 0)
+    return '0秒'
+
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+
+  if (days > 0)
+    return `${days}天${hours}小时${minutes}分`
+  if (hours > 0)
+    return `${hours}小时${minutes}分`
+  if (minutes > 0)
+    return `${minutes}分${secs}秒`
+  return `${secs}秒`
+}
+
+const dogId = computed(() => Number(props.probe?.dogId) || getVarint(1))
 const dogName = computed(() => DOG_NAMES[dogId.value] || '')
-const field2Value = computed(() => getVarint(2))
+const remainingSeconds = computed(() => Number(props.probe?.remainingSeconds) || getVarint(2))
+const remainingText = computed(() => formatDuration(remainingSeconds.value))
 </script>
 
 <template>
@@ -53,7 +75,7 @@ const field2Value = computed(() => getVarint(2))
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="flex items-center gap-2 font-medium text-gray-700 dark:text-gray-200">
         <div class="i-carbon-data-vis-1" />
-        护主犬协议探针
+        护主犬状态
       </div>
       <span
         class="rounded px-2 py-0.5 text-xs"
@@ -74,21 +96,26 @@ const field2Value = computed(() => getVarint(2))
       <span class="rounded bg-violet-100 px-2 py-1 font-medium text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
         {{ dogName || '已识别犬种 ID' }}（{{ dogId }}）
       </span>
-      <span v-if="field2Value" class="rounded bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
-        未确认字段 f2：{{ field2Value }}
+      <span v-if="remainingSeconds" class="rounded bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+        剩余有效时长：{{ remainingText }}（{{ remainingSeconds }} 秒）
       </span>
     </div>
 
-    <div v-if="probe.fields?.length" class="mt-2 flex flex-wrap gap-1.5">
-      <span
-        v-for="(field, index) in probe.fields"
-        :key="`dog-probe-${index}`"
-        class="rounded bg-white px-2 py-1 font-mono text-xs text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300"
-      >
-        f{{ field.field }}/w{{ field.wire }}
-        <template v-if="field.varint !== undefined">={{ field.varint }}</template>
-        <template v-else-if="field.byteLength !== undefined"> · {{ field.byteLength }}B</template>
-      </span>
+    <div v-if="probe.fields?.length" class="mt-2">
+      <div class="mb-1 text-xs text-gray-400">
+        协议诊断
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <span
+          v-for="(field, index) in probe.fields"
+          :key="`dog-probe-${index}`"
+          class="rounded bg-white px-2 py-1 font-mono text-xs text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300"
+        >
+          f{{ field.field }}/w{{ field.wire }}
+          <template v-if="field.varint !== undefined">={{ field.varint }}</template>
+          <template v-else-if="field.byteLength !== undefined"> · {{ field.byteLength }}B</template>
+        </span>
+      </div>
     </div>
     <div v-else class="mt-2 text-xs text-gray-400">
       暂无可展示的嵌套 wire 字段。
