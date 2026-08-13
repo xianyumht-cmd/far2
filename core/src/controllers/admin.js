@@ -1395,6 +1395,26 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 活动发现层（P5C-A 只读；仅 ActivityService.List，无 Operate）
+    app.get('/api/activities', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+
+        try {
+            if (!provider || typeof provider.listActivities !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动只读发现接口不可用' });
+            }
+            const data = await provider.listActivities(id);
+            return res.json({ ok: true, data });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
     // API: 每日礼包状态总览
     app.get('/api/daily-gifts', async (req, res) => {
         const id = getAccId(req);

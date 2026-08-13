@@ -14,6 +14,7 @@
     "dog:readonly-selftest": "pnpm -C core dog:readonly-selftest",
     "career:readonly-selftest": "pnpm -C core career:readonly-selftest",
     "avatar-frame:readonly-selftest": "pnpm -C core avatar-frame:readonly-selftest",
+    "activity:readonly-selftest": "pnpm -C core activity:readonly-selftest",
     "qr:runtime-code": "pnpm -C core qr:runtime-code",
     "qr:process-map": "pnpm -C core qr:process-map",
     "qr:session-map": "pnpm -C core qr:session-map",

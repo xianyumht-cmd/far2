@@ -83,6 +83,7 @@ async function loadProto() {
         getResourcePath('proto', 'interactpb.proto'),
         getResourcePath('proto', 'dogpb.proto'),
         getResourcePath('proto', 'careerpb.proto'),
+        getResourcePath('proto', 'activitypb.proto'),
     ], { keepCase: true });
 
     // 网关
@@ -230,6 +231,17 @@ async function loadProto() {
     types.CareerLevelStat = root.lookupType('gamepb.careerpb.CareerLevelStat');
     types.CareerInfoGetRequest = root.lookupType('gamepb.careerpb.CareerInfoGetRequest');
     types.CareerInfoGetReply = root.lookupType('gamepb.careerpb.CareerInfoGetReply');
+
+    // 活动中心（P5C-A 只读 List/GetGroup；刻意不加载 Operate）
+    types.ActivityListRequest = root.lookupType('gamepb.activitypb.ListRequest');
+    types.ActivityListReply = root.lookupType('gamepb.activitypb.ListReply');
+    types.ActivityGetGroupRequest = root.lookupType('gamepb.activitypb.GetGroupRequest');
+    types.ActivityGetGroupReply = root.lookupType('gamepb.activitypb.GetGroupReply');
+    types.ActivityInfo = root.lookupType('gamepb.activitypb.ActivityInfo');
+    types.ActivityNode = root.lookupType('gamepb.activitypb.ActivityNode');
+    types.ActivityRandomShopInfo = root.lookupType('gamepb.activitypb.RandomShopInfo');
+    types.ActivityExchangeShopInfo = root.lookupType('gamepb.activitypb.ExchangeShopInfo');
+    types.ActivityDrawInfo = root.lookupType('gamepb.activitypb.DrawInfo');
 
     // Proto 加载完成
     log('系统', 'Protobuf 定义加载完成');

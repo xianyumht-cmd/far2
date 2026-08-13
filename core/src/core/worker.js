@@ -636,6 +636,9 @@ async function handleApiCall(msg) {
             case 'getAvatarFrames':
                 result = await require('../services/appearance').getAvatarFrameOverview();
                 break;
+            case 'listActivities':
+                result = await require('../services/activity-readonly').listActivityOverview();
+                break;
             case 'getShopProfiles':
                 result = await require('../services/catalog').getShopProfilesOverview();
                 break;
