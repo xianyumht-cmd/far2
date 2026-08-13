@@ -102,6 +102,7 @@ const confirmLoading = ref(false)
 const pendingAction = ref<(() => Promise<any>) | null>(null)
 const avatarErrorKeys = ref<Set<string>>(new Set())
 const searchKeyword = ref('')
+const guardDogOnly = ref(false)
 const localKnownFriendGidSyncCooldownSec = ref(300)
 const localFriendsListCacheTtlSec = ref(60)
 const showBatchAddGidModal = ref(false)
@@ -155,9 +156,13 @@ const sortedFriends = computed(() => {
   })
 })
 
+const guardDogFriendCount = computed(() => friends.value.filter((friend: any) => !!friend?.hasGuardDog).length)
+
 const filteredFriends = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
-  const list = sortedFriends.value
+  let list = sortedFriends.value
+  if (guardDogOnly.value)
+    list = list.filter((friend: any) => !!friend?.hasGuardDog)
   if (!keyword)
     return list
 
@@ -181,7 +186,7 @@ function goToPage(page: number) {
   currentPage.value = Math.max(1, Math.min(page, totalPages.value))
 }
 
-watch(searchKeyword, () => {
+watch([searchKeyword, guardDogOnly], () => {
   currentPage.value = 1
 })
 
@@ -705,6 +710,16 @@ async function handleBatchAddKnownFriendGids() {
 
         <template v-else>
           <div class="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 shadow dark:bg-gray-800">
+            <button
+              class="rounded px-3 py-1.5 text-sm transition"
+              :class="guardDogOnly
+                ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+                : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'"
+              @click="guardDogOnly = !guardDogOnly"
+            >
+              护主犬 {{ guardDogFriendCount }}
+            </button>
+            <span class="text-xs text-gray-400">访问好友后自动学习，不额外扫描</span>
             <div class="flex-1" />
             <button
               class="rounded bg-gray-100 px-3 py-1.5 text-sm text-gray-600 transition dark:bg-gray-700 hover:bg-gray-200 dark:text-gray-300 disabled:opacity-50 dark:hover:bg-gray-600"
@@ -742,6 +757,12 @@ async function handleBatchAddKnownFriendGids() {
                     {{ friend.name }} ({{ friend.gid }})
 
                     <span v-if="blacklistGidSet.has(Number(friend.gid))" class="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-400">已屏蔽</span>
+                    <span
+                      v-if="friend.hasGuardDog"
+                      class="rounded bg-violet-100 px-1.5 py-0.5 text-xs text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+                    >
+                      护主犬
+                    </span>
                   </div>
                   <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-400">
                     <span
