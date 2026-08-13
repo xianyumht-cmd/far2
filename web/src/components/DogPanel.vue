@@ -16,6 +16,15 @@ interface DogFoodItem {
   id: number
   duration: number
   count: number
+  name?: string
+  image?: string
+  itemType?: number
+  description?: string
+  effectDescription?: string
+  interactionType?: string
+  configCanUse?: boolean
+  recognizedDogFood?: boolean
+  staticMetadataSource?: string
 }
 
 interface DogOverview {
@@ -28,6 +37,9 @@ interface DogOverview {
     service?: string
     method?: string
     readOnly?: boolean
+    foodWriteSupported?: boolean
+    foodWriteEvidence?: string
+    foodWriteReason?: string
   }
 }
 
@@ -56,7 +68,12 @@ function formatTimeValue(value: number) {
     return `${numeric} 秒`
   if (numeric < 3600)
     return `${Math.floor(numeric / 60)} 分钟`
-  return `${Math.floor(numeric / 3600)} 小时`
+  const hours = Math.floor(numeric / 3600)
+  if (hours < 24)
+    return `${hours} 小时`
+  const days = Math.floor(hours / 24)
+  const remainHours = hours % 24
+  return remainHours > 0 ? `${days} 天 ${remainHours} 小时` : `${days} 天`
 }
 
 function dogStatusText(dog: DogItem) {
@@ -65,6 +82,10 @@ function dogStatusText(dog: DogItem) {
   if (Number(dog.status) > 0)
     return `状态 ${dog.status}`
   return '未激活'
+}
+
+function dogFoodName(food: DogFoodItem) {
+  return String(food.name || `狗粮 #${food.id}`)
 }
 
 async function refresh() {
@@ -177,12 +198,61 @@ onMounted(refresh)
       </div>
 
       <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-        <div class="mb-3 font-semibold text-gray-800 dark:text-gray-100">狗粮</div>
-        <div v-if="foods.length === 0" class="text-sm text-gray-500 dark:text-gray-400">当前没有返回狗粮数据。</div>
-        <div v-else class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <div v-for="food in foods" :key="`${food.id}-${food.duration}`" class="rounded-lg bg-gray-50 p-3 text-sm dark:bg-gray-900/30">
-            <div class="font-medium text-gray-800 dark:text-gray-100">狗粮 #{{ food.id }} ×{{ food.count }}</div>
-            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">持续时间: {{ formatTimeValue(food.duration) }}</div>
+        <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div class="font-semibold text-gray-800 dark:text-gray-100">狗粮 / 宠物养成</div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              foods[] 来自 GetDogInfo；名称与说明只读关联本地 ItemInfo，不代表已确认喂食协议。
+            </div>
+          </div>
+          <span class="mt-2 w-fit rounded bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-300 sm:mt-0">
+            P7E 只读审计
+          </span>
+        </div>
+
+        <div
+          v-if="overview.protocol?.foodWriteSupported === false"
+          class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300"
+        >
+          当前不提供喂食按钮：{{ overview.protocol?.foodWriteReason || '尚未获得可证实的狗粮写协议。' }}
+        </div>
+
+        <div v-if="foods.length === 0" class="mt-3 text-sm text-gray-500 dark:text-gray-400">
+          当前 GetDogInfo 没有返回狗粮数据。
+        </div>
+        <div v-else class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div v-for="food in foods" :key="`${food.id}-${food.duration}`" class="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+            <div class="flex items-start gap-3">
+              <img
+                v-if="food.image"
+                :src="food.image"
+                :alt="dogFoodName(food)"
+                class="h-10 w-10 shrink-0 rounded object-contain"
+              >
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="font-medium text-gray-800 dark:text-gray-100">{{ dogFoodName(food) }}</div>
+                  <span v-if="food.recognizedDogFood" class="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+                    type {{ food.itemType }}
+                  </span>
+                </div>
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">ID {{ food.id }} · 数量 {{ food.count }}</div>
+              </div>
+            </div>
+            <div class="mt-3 text-sm text-gray-700 dark:text-gray-300">
+              持续时间: {{ formatTimeValue(food.duration) }}
+            </div>
+            <div v-if="food.description" class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+              {{ food.description }}
+            </div>
+            <div class="mt-2 flex flex-wrap gap-2 text-[11px]">
+              <span class="rounded bg-gray-100 px-2 py-1 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                ItemInfo: {{ food.staticMetadataSource === 'ItemInfo' ? '已识别' : '未命中' }}
+              </span>
+              <span class="rounded bg-gray-100 px-2 py-1 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                can_use={{ food.configCanUse ? 1 : 0 }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
