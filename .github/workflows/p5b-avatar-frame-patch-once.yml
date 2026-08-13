@@ -1,0 +1,41 @@
+name: P5B avatar frame read-only source patch
+
+on:
+  push:
+    branches:
+      - feat/p5b-avatar-frame-readonly-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/p5b-avatar-frame-readonly-20260813
+          fetch-depth: 1
+
+      - name: Apply P5B patch
+        run: python3 scripts/p5b-avatar-frame-patch-once.py
+
+      - name: Source checks
+        run: |
+          node --check core/src/services/appearance.js
+          node --check core/src/core/worker.js
+          node --check core/src/runtime/data-provider.js
+          node --check core/src/controllers/admin.js
+          node --check core/scripts/avatar-frame-readonly-selftest.js
+          git diff --check
+
+      - name: Commit only P5B source files
+        run: |
+          rm -f .github/workflows/p5b-avatar-frame-patch-once.yml scripts/p5b-avatar-frame-patch-once.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/core/worker.js core/src/runtime/data-provider.js core/src/controllers/admin.js web/src/views/Personal.vue core/package.json package.json
+          git add -u .github/workflows/p5b-avatar-frame-patch-once.yml scripts/p5b-avatar-frame-patch-once.py
+          git commit -m "feat: wire avatar frame read-only inventory"
+          git push origin HEAD:feat/p5b-avatar-frame-readonly-20260813
