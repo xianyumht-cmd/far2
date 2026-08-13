@@ -20,6 +20,35 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+      - name: Scope the duplicate help anchor
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/patch-p7c-guard-dog-help.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''s = replace_once(
+              s,
+              "        const allowByExp = (!stopWhenExpLimit) || (canGetExpByCandidates(op.expIds) && canGetHelpExp);\\n",
+              "        const allowByExp = continueAfterExpLimit || (!stopWhenExpLimit) || (canGetExpByCandidates(op.expIds) && canGetHelpExp);\\n",
+              'visitFriendForHelp exp allow',
+          )'''
+          new = '''friend_help_start = s.find("async function visitFriendForHelp(")
+          if friend_help_start < 0:
+              raise SystemExit('visitFriendForHelp exp allow: function anchor missing')
+          friend_help_end = s.find("// ============ 好友巡查主循环 ============", friend_help_start)
+          if friend_help_end < 0:
+              raise SystemExit('visitFriendForHelp exp allow: end anchor missing')
+          friend_help_block = s[friend_help_start:friend_help_end]
+          old_allow = "        const allowByExp = (!stopWhenExpLimit) || (canGetExpByCandidates(op.expIds) && canGetHelpExp);\\n"
+          new_allow = "        const allowByExp = continueAfterExpLimit || (!stopWhenExpLimit) || (canGetExpByCandidates(op.expIds) && canGetHelpExp);\\n"
+          if friend_help_block.count(old_allow) != 1:
+              raise SystemExit(f'visitFriendForHelp exp allow: expected 1 scoped match, got {friend_help_block.count(old_allow)}')
+          friend_help_block = friend_help_block.replace(old_allow, new_allow, 1)
+          s = s[:friend_help_start] + friend_help_block + s[friend_help_end:]'''
+          if s.count(old) != 1:
+              raise SystemExit(f'patch-script anchor expected 1 match, got {s.count(old)}')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Apply exact P7C patch
         run: python3 scripts/patch-p7c-guard-dog-help.py
       - name: Install
