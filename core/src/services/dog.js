@@ -1,8 +1,10 @@
 const protobuf = require('protobufjs');
+const { getItemById, getItemImageById } = require('../config/gameConfig');
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
 
 const DOG_SERVICE = 'gamepb.dogpb.DogService';
+const DOG_FOOD_ITEM_TYPE = 9;
 
 function toSafeNumber(value) {
     if (value === undefined || value === null) return 0;
@@ -42,6 +44,29 @@ function extractTopLevelVarint(bodyBytes, fieldNo) {
     return null;
 }
 
+function normalizeDogFoodItem(food) {
+    const id = toSafeNumber(food && food.id);
+    const duration = toSafeNumber(food && food.duration);
+    const count = Math.max(0, Number(food && food.count) || 0);
+    const item = getItemById(id) || null;
+    const itemType = item ? (Number(item.type) || 0) : 0;
+
+    return {
+        id,
+        duration,
+        count,
+        name: item && item.name ? String(item.name) : `狗粮 #${id}`,
+        image: getItemImageById(id) || '',
+        itemType,
+        description: item && item.desc ? String(item.desc) : '',
+        effectDescription: item && item.effectDesc ? String(item.effectDesc) : '',
+        interactionType: item && item.interaction_type ? String(item.interaction_type) : '',
+        configCanUse: !!(item && Number(item.can_use) > 0),
+        recognizedDogFood: itemType === DOG_FOOD_ITEM_TYPE,
+        staticMetadataSource: item ? 'ItemInfo' : 'none',
+    };
+}
+
 function normalizeDogInfoReply(decoded, rawBody) {
     const reply = decoded && typeof decoded === 'object' ? decoded : {};
     const dogs = (Array.isArray(reply.dogs) ? reply.dogs : []).map(dog => ({
@@ -51,11 +76,7 @@ function normalizeDogInfoReply(decoded, rawBody) {
         level: Number(dog && dog.level) || 0,
         active: Number(dog && dog.active) || 0,
     }));
-    const foods = (Array.isArray(reply.foods) ? reply.foods : []).map(food => ({
-        id: toSafeNumber(food && food.id),
-        duration: toSafeNumber(food && food.duration),
-        count: Number(food && food.count) || 0,
-    }));
+    const foods = (Array.isArray(reply.foods) ? reply.foods : []).map(normalizeDogFoodItem);
     const claimableGiftCount = extractTopLevelVarint(rawBody, 7);
 
     return {
@@ -70,6 +91,9 @@ function normalizeDogInfoReply(decoded, rawBody) {
             requestBody: 'empty',
             claimableField: 7,
             readOnly: true,
+            foodWriteSupported: false,
+            foodWriteEvidence: 'unproven',
+            foodWriteReason: '当前仓库未注册已证实的狗粮喂食 RPC；ItemInfo type=9 狗粮 can_use=0，禁止复用 ItemService.Use 猜测写入。',
         },
     };
 }
@@ -88,8 +112,10 @@ async function getDogInfoOverview() {
 
 module.exports = {
     DOG_SERVICE,
+    DOG_FOOD_ITEM_TYPE,
     toSafeNumber,
     extractTopLevelVarint,
+    normalizeDogFoodItem,
     normalizeDogInfoReply,
     getDogInfoOverview,
 };
