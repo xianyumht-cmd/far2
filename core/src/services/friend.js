@@ -3,7 +3,7 @@
  */
 
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
-const { getPlantName, getPlantById, getSeedImageBySeedId, getPlantGrowTime } = require('../config/gameConfig');
+const { getPlantName, getPlantById, getSeedImageBySeedId, getPlantGrowTime, getMutantEffectsByIds } = require('../config/gameConfig');
 const { parentPort } = require('node:worker_threads');
 const {
     isAutomationOn,
@@ -20,6 +20,7 @@ const { sendMsgAsync, getUserState, networkEvents } = require('../utils/network'
 const { types } = require('../utils/proto');
 const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep, randomDelay } = require('../utils/utils');
 const { getCurrentPhase, setOperationLimitsCallback, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand } = require('./farm');
+const { buildMutationDetail } = require('./farm-mutation');
 const { getInteractRecords } = require('./interact');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
@@ -64,6 +65,19 @@ const OP_NAMES = {
     10007: '浇水',
     10008: '偷菜',
 };
+
+function buildFriendLandMutationDetail(plant, currentPhase, occupiedByMaster, resolveEffects = getMutantEffectsByIds) {
+    if (occupiedByMaster) {
+        return {
+            active: false,
+            configIds: [],
+            effects: [],
+            unknownConfigIds: [],
+            events: [],
+        };
+    }
+    return buildMutationDetail(plant, currentPhase, resolveEffects);
+}
 
 function postToMaster(payload) {
     try {
@@ -1024,6 +1038,7 @@ async function getFriendLandsDetail(friendGid) {
             const matureBegin = maturePhase ? toTimeSec(maturePhase.begin_time) : 0;
             const matureInSec = matureBegin > nowSec ? (matureBegin - nowSec) : 0;
             const totalGrowTime = getPlantGrowTime(plantId);
+            const mutation = buildFriendLandMutationDetail(plant, currentPhase, occupiedByMaster);
             let landStatus = 'growing';
             if (phaseVal === PlantPhase.MATURE) landStatus = plant.stealable ? 'stealable' : 'harvested';
             else if (phaseVal === PlantPhase.DEAD) landStatus = 'dead';
@@ -1048,6 +1063,10 @@ async function getFriendLandsDetail(friendGid) {
                 masterLandId,
                 occupiedLandIds,
                 plantSize,
+                mutation,
+                mutantConfigIds: mutation.configIds,
+                mutantEffects: mutation.effects,
+                mutantEvents: mutation.events,
             });
         }
 
@@ -1962,6 +1981,7 @@ module.exports = {
     getOperationLimits,
     getFriendsList,
     getFriendLandsDetail,
+    buildFriendLandMutationDetail,
     doFriendOperation,
     clearFriendsListCache,
 };
