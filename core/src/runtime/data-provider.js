@@ -136,6 +136,7 @@ function createDataProvider(options) {
         getDogInfo: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getDogInfo'),
         getCareerInfo: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getCareerInfo'),
         getAvatarFrames: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getAvatarFrames'),
+        listActivities: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'listActivities'),
         getShopProfiles: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getShopProfiles'),
         getShopInfo: (accountRef, shopId) => callWorkerApi(resolveAccountRefId(accountRef), 'getShopInfo', shopId),
 
