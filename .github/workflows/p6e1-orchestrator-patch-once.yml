@@ -1,0 +1,34 @@
+name: P6E1 farm orchestrator source patch
+
+on:
+  push:
+    branches:
+      - refactor/p6e1-farm-orchestrator-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/p6e1-farm-orchestrator-20260813
+
+      - name: Apply exact P6E1 source patch
+        run: |
+          python scripts/p6e1-orchestrator-patch-once.py
+          node --check core/src/services/farm-orchestrator.js
+          node --check core/scripts/farm-orchestrator-selftest.js
+          node --check core/src/services/farm.js
+          git diff --check
+
+      - name: Commit only intended source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/services/farm.js core/package.json package.json
+          git rm scripts/p6e1-orchestrator-patch-once.py .github/workflows/p6e1-orchestrator-patch-once.yml
+          git commit -m "refactor: wire farm orchestrator into facade"
+          git push origin HEAD:refactor/p6e1-farm-orchestrator-20260813
