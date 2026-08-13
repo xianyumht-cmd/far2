@@ -1,0 +1,42 @@
+name: P7C scheduler fix
+
+on:
+  push:
+    branches:
+      - fix/p7c-exp-limit-scheduler-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Apply exact patch
+        run: python3 .github/scripts/p7c_scheduler_fix.py
+      - name: Verify P7C scheduler boundary
+        run: |
+          node --check core/src/core/worker.js
+          node --check core/src/services/friend-dog-state.js
+          node core/scripts/friend-dog-help-priority-selftest.js
+          git diff --check
+      - name: Commit verified source only
+        shell: bash
+        run: |
+          rm .github/scripts/p7c_scheduler_fix.py .github/workflows/p7c-scheduler-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/core/worker.js core/src/services/friend-dog-state.js core/scripts/friend-dog-help-priority-selftest.js
+          git add -u .github/scripts/p7c_scheduler_fix.py .github/workflows/p7c-scheduler-fix.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: let guard dog help pass exp-limit scheduler gate"
+          git push origin HEAD:${GITHUB_REF_NAME}
