@@ -18,6 +18,7 @@
     "mutation:readonly-selftest": "node scripts/mutation-readonly-selftest.js",
     "dog:readonly-selftest": "node scripts/dog-readonly-selftest.js",
     "career:readonly-selftest": "node scripts/career-readonly-selftest.js",
+    "avatar-frame:readonly-selftest": "node scripts/avatar-frame-readonly-selftest.js",
     "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "qr:process-map": "node scripts/qq-process-map-test.js",
     "qr:session-map": "node scripts/qq-session-map-test.js",
