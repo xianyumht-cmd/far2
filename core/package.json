@@ -17,6 +17,7 @@
     "planting:2x2-selftest": "node scripts/purple-land-selftest.js && node scripts/planting-2x2-selftest.js && node scripts/seed-2x2-fallback-selftest.js",
     "mutation:readonly-selftest": "node scripts/mutation-readonly-selftest.js",
     "friend:mutation-selftest": "node scripts/friend-mutation-readonly-selftest.js",
+    "bag:use-ux-selftest": "node scripts/bag-use-ux-selftest.js",
     "dog:readonly-selftest": "node scripts/dog-readonly-selftest.js",
     "career:readonly-selftest": "node scripts/career-readonly-selftest.js",
     "avatar-frame:readonly-selftest": "node scripts/avatar-frame-readonly-selftest.js",

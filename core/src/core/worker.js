@@ -652,10 +652,10 @@ async function handleApiCall(msg) {
                 result = await require('../services/warehouse').getBagSeeds();
                 break;
             case 'useItem': {
-                const { useItem: _useItem } = require('../services/warehouse');
+                const { useItemWithDetail: _useItemWithDetail } = require('../services/warehouse');
                 const itemId = Number(args[0]) || 0;
-                const count = Math.max(1, Number(args[1]) || 1);
-                result = await _useItem(itemId, count, []);
+                const count = Math.max(1, Math.floor(Number(args[1]) || 1));
+                result = await _useItemWithDetail(itemId, count, []);
                 break;
             }
             case 'sellItems': {

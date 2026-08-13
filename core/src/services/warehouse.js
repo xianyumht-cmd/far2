@@ -115,6 +115,60 @@ function getBagItems(bagReply) {
     return bagReply && bagReply.items ? bagReply.items : [];
 }
 
+function normalizeUseRewardItem(item) {
+    const id = toNum(item && item.id);
+    const count = Math.max(0, toNum(item && item.count));
+    const uid = Math.max(0, toNum(item && item.uid));
+    const info = getItemById(id) || null;
+    let name = info && info.name ? String(info.name) : '';
+    let category = 'item';
+
+    if (id === 1 || id === 1001) {
+        name = '金币';
+        category = 'gold';
+    } else if (id === 1101) {
+        name = '经验';
+        category = 'exp';
+    } else if (getPlantByFruitId(id)) {
+        if (!name) name = `${getFruitName(id)}果实`;
+        category = 'fruit';
+    } else if (getPlantBySeedId(id)) {
+        const plant = getPlantBySeedId(id);
+        if (!name) name = `${plant && plant.name ? plant.name : '未知'}种子`;
+        category = 'seed';
+    }
+    if (!name) name = `物品${id}`;
+
+    return {
+        id,
+        count,
+        uid,
+        name,
+        image: getItemImageById(id) || '',
+        category,
+        itemType: info ? (Number(info.type) || 0) : 0,
+        isNew: !!(item && item.is_new),
+    };
+}
+
+function normalizeUseItemReply(reply, itemId, count) {
+    const requestedCount = Math.max(1, Math.floor(Number(count) || 1));
+    const rewards = Array.isArray(reply && reply.items)
+        ? reply.items.map(normalizeUseRewardItem).filter((item) => item.id > 0 && item.count > 0)
+        : [];
+    return {
+        usedItemId: Math.max(0, toNum(itemId)),
+        usedCount: requestedCount,
+        rewards,
+    };
+}
+
+async function useItemWithDetail(itemId, count = 1, landIds = []) {
+    const normalizedCount = Math.max(1, Math.floor(Number(count) || 1));
+    const reply = await useItem(itemId, normalizedCount, landIds);
+    return normalizeUseItemReply(reply, itemId, normalizedCount);
+}
+
 function isFertilizerRelatedItemId(itemId) {
     const id = Number(itemId) || 0;
     if (id <= 0) return false;
@@ -555,6 +609,9 @@ module.exports = {
     getBagDetail,
     sellItems,
     useItem,
+    useItemWithDetail,
+    normalizeUseRewardItem,
+    normalizeUseItemReply,
     batchUseItems,
     openFertilizerGiftPacksSilently,
     getFertilizerGiftDailyState: () => ({
