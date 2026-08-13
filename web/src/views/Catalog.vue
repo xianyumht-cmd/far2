@@ -172,6 +172,18 @@ function conditionText(condition: { type: number, param: number }) {
   return `条件${condition.type}:${condition.param}`
 }
 
+function petGoodsBlockReason(goods: ShopGoods) {
+  if (!goods.unlocked)
+    return '尚未解锁'
+  if (goods.limitCount > 0 && goods.boughtNum >= goods.limitCount)
+    return '已达限购'
+  return ''
+}
+
+function rewardText(items: Array<{ name?: string, id?: number, count?: number }> = []) {
+  return items.map(item => `${item.name || `物品${item.id || 0}`}×${Math.max(1, Number(item.count) || 1)}`).join('、')
+}
+
 function clearActionState() {
   actionMessage.value = ''
   actionError.value = ''
@@ -264,6 +276,39 @@ async function buyAllMissingSeeds() {
   }
   catch (error: any) {
     actionError.value = errorText(error, '批量购买种子失败')
+  }
+  finally {
+    actionLoading.value = ''
+  }
+}
+
+async function buyPetGoods(goods: ShopGoods) {
+  if (selectedShop.value?.shopType !== 3)
+    return
+  const blocked = petGoodsBlockReason(goods)
+  if (blocked) {
+    actionError.value = `当前不可购买：${blocked}`
+    return
+  }
+  if (!window.confirm(`购买「${goods.name}」1 份？\n服务器当前显示价格：${numberText(goods.price)} 金币\n\n提交时会重新读取服务器价格、解锁和限购状态。`))
+    return
+
+  clearActionState()
+  actionLoading.value = `pet-buy-${goods.goodsId}`
+  try {
+    const res = await api.post('/api/catalog/pet-shop/buy', { goodsId: goods.goodsId })
+    if (!res.data?.ok)
+      throw new Error(res.data?.error || '宠物购买失败')
+    const data = res.data.data || {}
+    const purchase = data.purchase || {}
+    const got = rewardText(purchase.getItems || [])
+    const cost = rewardText(purchase.costItems || [])
+    actionMessage.value = `宠物购买成功：${purchase.name || goods.name}，实际价格 ${numberText(purchase.price || goods.price)} 金币${got ? `；获得 ${got}` : ''}${cost ? `；消耗 ${cost}` : ''}。`
+    await loadShopInfo(selectedShopId.value)
+  }
+  catch (error: any) {
+    actionError.value = errorText(error, '宠物购买失败')
+    await loadShopInfo(selectedShopId.value)
   }
   finally {
     actionLoading.value = ''
@@ -621,6 +666,19 @@ onMounted(() => loadIllustrated())
             </div>
             <div v-if="goods.conditions.length" class="mt-2 flex flex-wrap gap-1">
               <span v-for="condition in goods.conditions" :key="`${condition.type}-${condition.param}`" class="rounded bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">{{ conditionText(condition) }}</span>
+            </div>
+            <div v-if="selectedShop?.shopType === 3" class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+              <div v-if="petGoodsBlockReason(goods)" class="rounded-lg bg-gray-50 px-3 py-2 text-center text-xs text-gray-500 dark:bg-gray-900/30">
+                {{ petGoodsBlockReason(goods) }}
+              </div>
+              <button
+                v-else
+                class="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                :disabled="busy"
+                @click="buyPetGoods(goods)"
+              >
+                {{ actionLoading === `pet-buy-${goods.goodsId}` ? '购买中...' : `购买 ${numberText(goods.price)} 金币` }}
+              </button>
             </div>
           </div>
         </div>

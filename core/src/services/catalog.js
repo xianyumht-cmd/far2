@@ -10,10 +10,19 @@ const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
 const { toLong, toNum, sleep } = require('../utils/utils');
 const { getBagSeeds } = require('./warehouse');
+const { getDogInfoOverview } = require('./dog');
 
 const SHOP_TYPE_LABELS = { 1: '道具商店', 2: '种子商店', 3: '宠物商店' };
 const ILLUSTRATED_TYPE_LABELS = { 1: '作物图鉴', 2: '变异图鉴' };
 const SEED_SHOP_TYPE = 2;
+const PET_SHOP_TYPE = 3;
+const KNOWN_DOG_NAMES = {
+    90001: '田园犬',
+    90002: '牧羊犬',
+    90003: '斑点狗',
+    90011: '柯基',
+    90021: '护主犬',
+};
 const BULK_BUY_DELAY_MS = 250;
 const BULK_BUY_LIMIT = 100;
 
@@ -29,6 +38,7 @@ function buildCatalogItemName(itemId) {
     if (!id) return '';
     const item = getItemById(id);
     if (item && item.name) return String(item.name);
+    if (KNOWN_DOG_NAMES[id]) return KNOWN_DOG_NAMES[id];
     const plantName = getPlantNameBySeedId(id);
     return plantName && plantName !== `种子${id}` ? plantName : `物品${id}`;
 }
@@ -316,6 +326,20 @@ async function getSeedShopSnapshot() {
     return { seedShop, info: await getShopInfoById(seedShop.shopId) };
 }
 
+async function getPetShopSnapshot() {
+    const profiles = await getShopProfilesOverview();
+    const petShop = profiles.shops.find(shop => shop.shopType === PET_SHOP_TYPE);
+    if (!petShop || !petShop.shopId) throw new Error('当前服务器未返回宠物商店');
+    return { petShop, info: await getShopInfoById(petShop.shopId) };
+}
+
+function getPetGoodsBlockReason(goods) {
+    if (!goods || !goods.goodsId) return '该商品不属于当前宠物商店';
+    if (!goods.unlocked) return '该宠物商品尚未解锁';
+    if (goods.limitCount > 0 && goods.boughtNum >= goods.limitCount) return '该宠物商品已达限购';
+    return '';
+}
+
 async function getMissingSeedPurchasePlan() {
     // All of these RPCs share one Farm websocket. Keep them sequential so a page
     // refresh cannot consume several pending slots while friend/task loops are active.
@@ -395,6 +419,50 @@ async function buySeedGoodsSafely(goodsId) {
     return normalizePurchaseReply(goods, await sendBuyGoods(goods.goodsId, goods.price));
 }
 
+function normalizePetPurchaseReply(goods, reply) {
+    return {
+        goodsId: goods.goodsId,
+        itemId: goods.itemId,
+        dogId: goods.itemId,
+        name: goods.name,
+        price: goods.price,
+        count: Math.max(1, goods.itemCount || 1),
+        getItems: (Array.isArray(reply && reply.get_items) ? reply.get_items : []).map(normalizeRewardItem),
+        costItems: (Array.isArray(reply && reply.cost_items) ? reply.cost_items : []).map(normalizeRewardItem),
+    };
+}
+
+async function buyPetGoodsSafely(goodsId) {
+    const id = toNum(goodsId);
+    if (!id) return { ok: false, reason: 'invalid_goods', error: 'Invalid goodsId' };
+
+    // Always re-read the server pet shop immediately before the write. Client price/shop data is never trusted.
+    const { petShop, info } = await getPetShopSnapshot();
+    const goods = info.goods.find(row => row.goodsId === id);
+    const blockReason = getPetGoodsBlockReason(goods);
+    if (blockReason) {
+        return {
+            ok: false,
+            reason: !goods ? 'not_pet_shop' : (!goods.unlocked ? 'locked' : 'limit_reached'),
+            error: blockReason,
+            shop: petShop,
+            goods: goods || null,
+        };
+    }
+
+    const reply = await sendBuyGoods(goods.goodsId, goods.price);
+    const purchase = normalizePetPurchaseReply(goods, reply);
+    let dogInfo = null;
+    let dogInfoError = '';
+    try {
+        dogInfo = await getDogInfoOverview();
+    }
+    catch (err) {
+        dogInfoError = err && err.message ? err.message : String(err || 'unknown');
+    }
+    return { ok: true, shop: petShop, purchase, dogInfo, dogInfoError };
+}
+
 async function buyAllMissingIllustratedSeeds() {
     const plan = await getMissingSeedPurchasePlan();
     const targets = plan.items.filter(item => item.canBuy).slice(0, BULK_BUY_LIMIT);
@@ -427,6 +495,7 @@ async function runCatalogAction(input) {
     if (action === 'getMissingSeedPurchasePlan') return getMissingSeedPurchasePlan();
     if (action === 'buyIllustratedSeed') return buySeedGoodsSafely(input.goodsId);
     if (action === 'buyAllMissingIllustratedSeeds') return buyAllMissingIllustratedSeeds();
+    if (action === 'buyPetGoods') return buyPetGoodsSafely(input.goodsId);
     throw new Error(`Unsupported catalog action: ${action || '(empty)'}`);
 }
 
@@ -438,6 +507,8 @@ async function getShopInfoOverview(shopIdOrAction) {
 }
 
 module.exports = {
+    buildCatalogItemName,
+    getPetGoodsBlockReason,
     getIllustratedOverview,
     claimIllustratedRewards,
     getShopProfilesOverview,

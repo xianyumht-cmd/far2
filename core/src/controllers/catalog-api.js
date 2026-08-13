@@ -233,6 +233,29 @@ function registerCatalogApi(app, options = {}) {
         }
     });
 
+    app.post('/api/catalog/pet-shop/buy', async (req, res) => {
+        const accountId = requireAccount(req, res);
+        if (!accountId) return;
+        const goodsId = Number(req.body && req.body.goodsId);
+        if (!Number.isSafeInteger(goodsId) || goodsId <= 0) {
+            return res.status(400).json({ ok: false, error: 'Invalid goodsId' });
+        }
+        try {
+            const data = await enqueueAccountCatalog(accountId, () => runCatalogActionForAccount(accountId, {
+                action: 'buyPetGoods',
+                goodsId,
+            }));
+            if (data && data.ok === false) {
+                return res.status(409).json({ ok: false, error: data.error || '当前宠物商品不可购买', data });
+            }
+            return res.json({ ok: true, data });
+        }
+        catch (err) {
+            if (err && err.statusCode === 503) return res.status(503).json({ ok: false, error: err.message });
+            return fail(res, err);
+        }
+    });
+
     app.get('/api/catalog/shops', async (req, res) => {
         const accountId = requireAccount(req, res);
         if (!accountId) return;

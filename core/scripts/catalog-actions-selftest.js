@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const fetch = require('node-fetch');
 const { registerCatalogApi } = require('../src/controllers/catalog-api');
+const { buildCatalogItemName, getPetGoodsBlockReason } = require('../src/services/catalog');
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -12,6 +13,8 @@ async function main() {
     let activeProviderCalls = 0;
     let maxProviderCalls = 0;
     let buyActionCount = 0;
+    let petBuyActionCount = 0;
+    let lastPetActionInput = null;
     let plan = {
         shop: { shopId: 2, shopName: '种子商店', shopType: 2, shopTypeLabel: '种子商店' },
         items: [
@@ -60,6 +63,19 @@ async function main() {
                     buyActionCount++;
                     const goodsId = Number(input.goodsId);
                     return { goodsId, price: goodsId === 12 ? 20 : 10, count: 1 };
+                }
+                if (action === 'buyPetGoods') {
+                    petBuyActionCount++;
+                    lastPetActionInput = { ...input };
+                    const goodsId = Number(input.goodsId);
+                    if (goodsId === 13) {
+                        return { ok: false, reason: 'limit_reached', error: '该宠物商品已达限购' };
+                    }
+                    return {
+                        ok: true,
+                        purchase: { goodsId, itemId: 90003, dogId: 90003, name: '斑点狗', price: 1000000, getItems: [], costItems: [] },
+                        dogInfo: { dogs: [{ id: 90003, active: 1 }] },
+                    };
                 }
                 throw new Error(`unexpected action ${action}`);
             });
@@ -173,6 +189,41 @@ async function main() {
         assert.equal(changedBulk.status, 409);
         console.log('✅ server-side plan change rejected PASS');
 
+        assert.equal(buildCatalogItemName(90011), '柯基');
+        assert.equal(getPetGoodsBlockReason({ goodsId: 13, unlocked: true, boughtNum: 1, limitCount: 1 }), '该宠物商品已达限购');
+        assert.equal(getPetGoodsBlockReason({ goodsId: 14, unlocked: true, boughtNum: 0, limitCount: 1 }), '');
+        console.log('✅ pet catalog name + limit state PASS');
+
+        const invalidPetBuy = await request('/api/catalog/pet-shop/buy', {
+            method: 'POST', body: JSON.stringify({ goodsId: 0, price: 1 }),
+        });
+        assert.equal(invalidPetBuy.status, 400);
+        console.log('✅ invalid pet purchase rejected PASS');
+
+        const petLimit = await request('/api/catalog/pet-shop/buy', {
+            method: 'POST', body: JSON.stringify({ goodsId: 13, price: 1 }),
+        });
+        assert.equal(petLimit.status, 409);
+        assert.equal(petLimit.body.data.reason, 'limit_reached');
+        console.log('✅ pet limit revalidation surfaced as conflict PASS');
+
+        const petBuy = await request('/api/catalog/pet-shop/buy', {
+            method: 'POST', body: JSON.stringify({ goodsId: 14, price: 1 }),
+        });
+        assert.equal(petBuy.status, 200);
+        assert.equal(petBuy.body.data.purchase.price, 1000000);
+        assert.equal(lastPetActionInput.goodsId, 14);
+        assert.equal(Object.prototype.hasOwnProperty.call(lastPetActionInput, 'price'), false);
+        console.log('✅ pet purchase ignores client price PASS');
+
+        const beforeForbiddenPetBuy = petBuyActionCount;
+        const forbiddenPetBuy = await request('/api/catalog/pet-shop/buy', {
+            method: 'POST', body: JSON.stringify({ goodsId: 14 }), headers: { 'x-account-id': '2' },
+        });
+        assert.equal(forbiddenPetBuy.status, 403);
+        assert.equal(petBuyActionCount, beforeForbiddenPetBuy);
+        console.log('✅ cross-account pet purchase denied PASS');
+
         const forbidden = await request('/api/catalog/illustrated/claim', {
             method: 'POST', body: '{}', headers: { 'x-account-id': '2' },
         });
@@ -190,6 +241,9 @@ async function main() {
             outOfPlanPurchaseRejected: true,
             clientPriceTrusted: false,
             staleBulkRejected: true,
+            petPurchaseLimitProtected: true,
+            petClientPriceTrusted: false,
+            petCrossAccountDenied: true,
             realQqTouched: false,
             realPurchaseTouched: false,
         }, null, 2));
