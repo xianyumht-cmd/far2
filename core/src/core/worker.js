@@ -633,6 +633,9 @@ async function handleApiCall(msg) {
             case 'getCareerInfo':
                 result = await require('../services/career').getCareerOverview();
                 break;
+            case 'getAvatarFrames':
+                result = await require('../services/appearance').getAvatarFrameOverview();
+                break;
             case 'getShopProfiles':
                 result = await require('../services/catalog').getShopProfilesOverview();
                 break;

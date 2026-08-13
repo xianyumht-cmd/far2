@@ -1375,6 +1375,26 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 头像框库存（P5B 只读；复用 Bag，不提供使用/佩戴接口）
+    app.get('/api/appearance/avatar-frames', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+
+        try {
+            if (!provider || typeof provider.getAvatarFrames !== 'function') {
+                return res.status(503).json({ ok: false, error: '头像框库存只读接口不可用' });
+            }
+            const data = await provider.getAvatarFrames(id);
+            return res.json({ ok: true, data });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
     // API: 每日礼包状态总览
     app.get('/api/daily-gifts', async (req, res) => {
         const id = getAccId(req);
