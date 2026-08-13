@@ -28,7 +28,7 @@ jobs:
           node --check core/src/core/worker.js
           node --check core/src/runtime/data-provider.js
           node --check core/src/controllers/admin.js
-          node core/scripts/dog-readonly-selftest.js
+          node --check core/scripts/dog-readonly-selftest.js
           git diff --check
 
       - name: Commit only P4A source files
