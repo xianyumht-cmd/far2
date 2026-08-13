@@ -93,13 +93,14 @@ function normalizeDogInfoReply(decoded, rawBody) {
             claimableField: 7,
             readOnly: true,
             foodWriteSupported: false,
-            foodWriteEvidence: 'request-shape-proven',
+            foodWriteEvidence: 'request-wire-proven',
             foodWriteMethod: ADD_FOOD_METHOD,
             foodWriteRequest: {
                 foodIdField: 1,
-                countField: 2,
+                field2: 2,
+                field2Semantics: 'unproven',
             },
-            foodWriteReason: '官方客户端实机已证实 DogService.AddFood 请求为 food_id(field 1) + count(field 2)；FAR2 仍未开放写入，等待服务端库存重读、数量校验和写后复核链完成。',
+            foodWriteReason: '官方客户端实机已证实 DogService.AddFood 的 field 1=狗粮ID、field 2=1；field 2 的业务语义尚未通过差分样本证实，FAR2 继续禁用写入。',
         },
     };
 }

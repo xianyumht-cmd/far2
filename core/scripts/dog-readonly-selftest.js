@@ -51,15 +51,19 @@ async function main() {
     assert.equal(overview.protocol.readOnly, true);
     assert.equal(overview.protocol.method, 'GetDogInfo');
     assert.equal(overview.protocol.foodWriteSupported, false);
-    assert.equal(overview.protocol.foodWriteEvidence, 'request-shape-proven');
+    assert.equal(overview.protocol.foodWriteEvidence, 'request-wire-proven');
     assert.equal(overview.protocol.foodWriteMethod, 'AddFood');
-    assert.deepEqual(overview.protocol.foodWriteRequest, { foodIdField: 1, countField: 2 });
+    assert.deepEqual(overview.protocol.foodWriteRequest, {
+        foodIdField: 1,
+        field2: 2,
+        field2Semantics: 'unproven',
+    });
 
     const dogProtoRoot = protobuf.loadSync(path.join(__dirname, '..', 'src', 'proto', 'dogpb.proto'), { keepCase: true });
     const AddFoodRequest = dogProtoRoot.lookupType('gamepb.dogpb.AddFoodRequest');
     const encodedAddFood = Buffer.from(AddFoodRequest.encode(AddFoodRequest.create({
         food_id: 90004,
-        count: 1,
+        arg2: 1,
     })).finish());
 
     // 2026-08-14 official-client live evidence after local tsdk.wasm decrypt:
@@ -72,7 +76,8 @@ async function main() {
     console.log('✅ dogpb loads PASS');
     console.log('✅ GetDogInfo known fields normalize PASS');
     console.log('✅ type=9 dog food metadata enrichment PASS');
-    console.log('✅ AddFoodRequest field layout matches live decrypted wire PASS');
+    console.log('✅ AddFoodRequest wire layout matches live decrypted evidence PASS');
+    console.log('✅ AddFood field 2 business meaning remains unproven PASS');
     console.log('✅ dog food runtime write remains disabled PASS');
     console.log('✅ unknown top-level field 7 claimable count is preserved PASS');
     console.log('\n=== RESULT ===');
@@ -83,7 +88,8 @@ async function main() {
             service: 'gamepb.dogpb.DogService',
             method: 'AddFood',
             foodId: 90004,
-            count: 1,
+            field2Value: 1,
+            field2Semantics: 'unproven',
             encodedHex: encodedAddFood.toString('hex'),
             expectedLivePlainHex: '0894bf051001',
             matched: true,
