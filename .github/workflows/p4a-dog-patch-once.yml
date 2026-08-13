@@ -1,0 +1,42 @@
+name: P4A dog read-only source patch
+
+on:
+  push:
+    branches:
+      - feat/p4a-dog-readonly-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/p4a-dog-readonly-20260813
+          fetch-depth: 1
+
+      - name: Apply P4A patch
+        run: python3 scripts/p4a-dog-patch-once.py
+
+      - name: Source checks
+        run: |
+          node --check core/src/services/dog.js
+          node --check core/src/utils/proto.js
+          node --check core/src/core/worker.js
+          node --check core/src/runtime/data-provider.js
+          node --check core/src/controllers/admin.js
+          node core/scripts/dog-readonly-selftest.js
+          git diff --check
+
+      - name: Commit only P4A source files
+        run: |
+          rm -f .github/workflows/p4a-dog-patch-once.yml scripts/p4a-dog-patch-once.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/utils/proto.js core/src/core/worker.js core/src/runtime/data-provider.js core/src/controllers/admin.js web/src/views/Personal.vue core/package.json package.json
+          git add -u .github/workflows/p4a-dog-patch-once.yml scripts/p4a-dog-patch-once.py
+          git commit -m "feat: wire guard dog read-only status"
+          git push origin HEAD:feat/p4a-dog-readonly-20260813
