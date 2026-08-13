@@ -1,0 +1,42 @@
+name: P5A career read-only source patch
+
+on:
+  push:
+    branches:
+      - feat/p5a-career-readonly-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/p5a-career-readonly-20260813
+          fetch-depth: 1
+
+      - name: Apply P5A patch
+        run: python3 scripts/p5a-career-patch-once.py
+
+      - name: Source checks
+        run: |
+          node --check core/src/services/career.js
+          node --check core/src/utils/proto.js
+          node --check core/src/core/worker.js
+          node --check core/src/runtime/data-provider.js
+          node --check core/src/controllers/admin.js
+          node --check core/scripts/career-readonly-selftest.js
+          git diff --check
+
+      - name: Commit only P5A source files
+        run: |
+          rm -f .github/workflows/p5a-career-patch-once.yml scripts/p5a-career-patch-once.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/utils/proto.js core/src/core/worker.js core/src/runtime/data-provider.js core/src/controllers/admin.js web/src/views/Personal.vue core/package.json package.json
+          git add -u .github/workflows/p5a-career-patch-once.yml scripts/p5a-career-patch-once.py
+          git commit -m "feat: wire personal career read-only status"
+          git push origin HEAD:feat/p5a-career-readonly-20260813
