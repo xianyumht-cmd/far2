@@ -26,10 +26,10 @@ jobs:
           from pathlib import Path
           p = Path('.github/scripts/p7d_pet_shop_patch.py')
           s = p.read_text(encoding='utf-8')
-          old = """function conditionText(condition: { type: number, param: number }) {\n    if (condition.type === 1)\n        return `Lv${condition.param}`\n    if (condition.type === 2)\n        return '需解锁卡'\n    return `条件${condition.type}:${condition.param}`\n}\n\nfunction clearActionState() {\n"""
-          new = """function conditionText(condition: { type: number, param: number }) {\n  if (condition.type === 1)\n    return `Lv${condition.param}`\n  if (condition.type === 2)\n    return '需解锁卡'\n  return `条件${condition.type}:${condition.param}`\n}\n\nfunction clearActionState() {\n"""
+          old = r"""function conditionText(condition: { type: number, param: number }) {\n    if (condition.type === 1)\n        return `Lv${condition.param}`\n    if (condition.type === 2)\n        return '需解锁卡'\n    return `条件${condition.type}:${condition.param}`\n}\n\nfunction clearActionState() {\n"""
+          new = r"""function conditionText(condition: { type: number, param: number }) {\n  if (condition.type === 1)\n    return `Lv${condition.param}`\n  if (condition.type === 2)\n    return '需解锁卡'\n  return `条件${condition.type}:${condition.param}`\n}\n\nfunction clearActionState() {\n"""
           if old not in s:
-              raise SystemExit('expected P7D conditionText script anchor not found')
+              raise SystemExit('expected literal P7D conditionText script anchor not found')
           p.write_text(s.replace(old, new, 1), encoding='utf-8')
           PY
       - name: Apply exact P7D patch
