@@ -630,6 +630,9 @@ async function handleApiCall(msg) {
             case 'getDogInfo':
                 result = await require('../services/dog').getDogInfoOverview();
                 break;
+            case 'getCareerInfo':
+                result = await require('../services/career').getCareerOverview();
+                break;
             case 'getShopProfiles':
                 result = await require('../services/catalog').getShopProfilesOverview();
                 break;

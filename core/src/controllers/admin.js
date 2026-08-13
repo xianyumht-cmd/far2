@@ -1355,6 +1355,26 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 个人生涯（P5A 只读；不提供领奖/修改资料接口）
+    app.get('/api/career/info', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+
+        try {
+            if (!provider || typeof provider.getCareerInfo !== 'function') {
+                return res.status(503).json({ ok: false, error: '个人生涯只读接口不可用' });
+            }
+            const data = await provider.getCareerInfo(id);
+            return res.json({ ok: true, data });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
     // API: 每日礼包状态总览
     app.get('/api/daily-gifts', async (req, res) => {
         const id = getAccId(req);
