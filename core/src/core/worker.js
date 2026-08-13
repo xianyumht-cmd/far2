@@ -10,6 +10,7 @@ const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, runBadOnceOnStartup, isHelpExpLimitReached, getFriendsList, getFriendLandsDetail, doFriendOperation } = require('../services/friend');
+const { getGuardDogGidSet, shouldRunHelpTickAfterExpLimit } = require('../services/friend-dog-state');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -244,10 +245,14 @@ async function runHelpTick(auto) {
     if (!auto.friend_help) {
         return;
     }
-    // 检查是否开启了经验满不帮忙，且经验已达上限
+    // 经验满后仍允许“已确认且仍有效的护主犬好友”进入 friend.js 的精确过滤。
+    // 没有已知有效护主犬时仍保持原来的跳过行为，避免额外扫描好友。
     const stopWhenExpLimit = !!auto.friend_help_exp_limit;
-    if (stopWhenExpLimit && isHelpExpLimitReached()) {
-        // 计算下次调度时间，但不执行巡查
+    const expLimitReached = stopWhenExpLimit && isHelpExpLimitReached();
+    const activeGuardDogCount = expLimitReached
+        ? getGuardDogGidSet(process.env.FARM_ACCOUNT_ID || '').size
+        : 0;
+    if (!shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit, expLimitReached, activeGuardDogCount })) {
         const helpMs = randomIntervalMs(
             CONFIG.helpCheckIntervalMin || 10000,
             CONFIG.helpCheckIntervalMax || 10000

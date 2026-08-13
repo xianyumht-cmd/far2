@@ -179,6 +179,14 @@ function canContinueHelpAfterExpLimit(friend) {
     return !!(friend && friend.hasGuardDog);
 }
 
+function shouldRunHelpTickAfterExpLimit(options = {}) {
+    const stopWhenExpLimit = options.stopWhenExpLimit === true;
+    const expLimitReached = options.expLimitReached === true;
+    if (!stopWhenExpLimit || !expLimitReached) return true;
+    const activeGuardDogCount = Math.max(0, Number.parseInt(options.activeGuardDogCount, 10) || 0);
+    return activeGuardDogCount > 0;
+}
+
 function clearFriendDogStateMemoryForTest() {
     memoryCaches.clear();
 }
@@ -192,5 +200,6 @@ module.exports = {
     getGuardDogGidSet,
     compareHelpTargets,
     canContinueHelpAfterExpLimit,
+    shouldRunHelpTickAfterExpLimit,
     clearFriendDogStateMemoryForTest,
 };

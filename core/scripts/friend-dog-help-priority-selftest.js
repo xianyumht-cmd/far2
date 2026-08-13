@@ -4,6 +4,7 @@ const {
     normalizeCacheObject,
     compareHelpTargets,
     canContinueHelpAfterExpLimit,
+    shouldRunHelpTickAfterExpLimit,
 } = require('../src/services/friend-dog-state');
 
 function main() {
@@ -35,6 +36,12 @@ function main() {
     assert.equal(canContinueHelpAfterExpLimit(targets[0]), true);
     assert.equal(canContinueHelpAfterExpLimit(targets[2]), false);
     console.log('✅ exp-limit continuation is guard-dog only PASS');
+
+    assert.equal(shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit: false, expLimitReached: true, activeGuardDogCount: 0 }), true);
+    assert.equal(shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit: true, expLimitReached: false, activeGuardDogCount: 0 }), true);
+    assert.equal(shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit: true, expLimitReached: true, activeGuardDogCount: 0 }), false);
+    assert.equal(shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit: true, expLimitReached: true, activeGuardDogCount: 1 }), true);
+    console.log('✅ worker exp-limit gate re-enters help only for known active guard dogs PASS');
 
     console.log('\n=== RESULT ===');
     console.log(JSON.stringify({
