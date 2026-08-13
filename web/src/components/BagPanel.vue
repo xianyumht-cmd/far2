@@ -63,7 +63,7 @@ const confirmModal = ref({
   message: '',
   type: 'primary' as 'primary' | 'danger',
   loading: false,
-  action: '' as 'sell' | 'use' | 'batchSell',
+  action: '' as 'sell' | 'batchSell',
   item: null as any,
   selectedItems: [] as any[],
 })
@@ -71,6 +71,18 @@ const confirmModal = ref({
 const batchMode = ref(false)
 const selectedForBatch = ref<Set<number>>(new Set())
 const batchSellResult = ref<{ gold: number, goldBean: number } | null>(null)
+
+const useModal = ref({
+  show: false,
+  loading: false,
+  item: null as any,
+  count: 1,
+})
+const lastUseResult = ref<{
+  itemName: string
+  usedCount: number
+  rewards: Array<{ id: number, count: number, name: string, image?: string, category?: string }>
+} | null>(null)
 
 const selectedSellableCount = computed(() => {
   return selectedForBatch.value.size
@@ -132,16 +144,62 @@ function handleSellClick(item: any) {
 }
 
 function handleUseClick(item: any) {
-  confirmModal.value = {
+  const maxCount = Math.max(1, Math.floor(Number(item?.count) || 1))
+  useModal.value = {
     show: true,
-    title: '确认使用',
-    message: `确定要使用全部 ${item.name || `物品${item.id}`} 吗?\n数量：${item.count || 0}`,
-    type: 'primary',
     loading: false,
-    action: 'use',
     item,
-    selectedItems: [],
+    count: Math.min(1, maxCount),
   }
+}
+
+function normalizeUseCount() {
+  const maxCount = Math.max(1, Math.floor(Number(useModal.value.item?.count) || 1))
+  const next = Math.floor(Number(useModal.value.count) || 1)
+  useModal.value.count = Math.min(maxCount, Math.max(1, next))
+}
+
+async function handleUseConfirm() {
+  if (!currentAccountId.value || !useModal.value.item)
+    return
+
+  normalizeUseCount()
+  const item = useModal.value.item
+  const count = useModal.value.count
+  useModal.value.loading = true
+  try {
+    const res = await bagStore.useItem(currentAccountId.value, Number(item.id), count)
+    if (res.ok) {
+      const data = res.data || {}
+      const rewards = Array.isArray(data.rewards) ? data.rewards : []
+      lastUseResult.value = {
+        itemName: item.name || `物品${item.id}`,
+        usedCount: Number(data.usedCount || count),
+        rewards,
+      }
+      const rewardText = rewards.length > 0
+        ? rewards.map((reward: any) => `${reward.name || `物品${reward.id}`}x${reward.count || 0}`).join('，')
+        : '服务器未返回奖励明细'
+      toastStore.success(`已使用 ${count} 个 ${item.name || `物品${item.id}`}；${rewardText}`)
+      useModal.value.show = false
+      await loadBag()
+    }
+    else {
+      toastStore.error(`使用失败: ${res.error || '未知错误'}`)
+    }
+  }
+  catch (e: any) {
+    toastStore.error(`使用失败: ${e.message || '未知错误'}`)
+  }
+  finally {
+    useModal.value.loading = false
+  }
+}
+
+function handleUseCancel() {
+  if (useModal.value.loading)
+    return
+  useModal.value.show = false
 }
 
 async function handleConfirm() {
@@ -206,16 +264,6 @@ async function handleConfirm() {
       }
       else {
         toastStore.error(`批量出售失败: ${res.error || '未知错误'}`)
-      }
-    }
-    else if (action === 'use' && item) {
-      const res = await bagStore.useItem(currentAccountId.value, Number(item.id), Number(item.count || 1))
-      if (res.ok) {
-        toastStore.success(`已使用 ${item.name || `物品${item.id}`}`)
-        await loadBag()
-      }
-      else {
-        toastStore.error(`使用失败: ${res.error || '未知错误'}`)
       }
     }
   }
@@ -426,6 +474,24 @@ useIntervalFn(loadBag, 60000)
         </template>
       </div>
 
+      <div v-if="lastUseResult" class="mb-4 border border-emerald-200 rounded-lg bg-emerald-50 p-3 text-sm dark:border-emerald-800 dark:bg-emerald-900/20">
+        <div class="font-medium text-emerald-700 dark:text-emerald-300">
+          已使用 {{ lastUseResult.itemName }} x{{ lastUseResult.usedCount }}
+        </div>
+        <div v-if="lastUseResult.rewards.length" class="mt-2 flex flex-wrap gap-2">
+          <span
+            v-for="reward in lastUseResult.rewards"
+            :key="`${reward.id}-${reward.count}`"
+            class="rounded-full bg-white px-2.5 py-1 text-gray-700 shadow-sm dark:bg-gray-800 dark:text-gray-200"
+          >
+            {{ reward.name || `物品${reward.id}` }} x{{ reward.count }}
+          </span>
+        </div>
+        <div v-else class="mt-1 text-gray-500 dark:text-gray-400">
+          服务器未返回奖励明细
+        </div>
+      </div>
+
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-5 md:grid-cols-4 sm:grid-cols-3 xl:grid-cols-6">
         <div
           v-for="item in filteredItems"
@@ -454,7 +520,7 @@ useIntervalFn(loadBag, 60000)
               <button
                 v-if="canUse(item)"
                 class="rounded bg-green-500 px-1.5 py-0.5 text-[10px] text-white opacity-70 transition dark:bg-green-600 hover:opacity-100"
-                title="使用全部"
+                title="选择使用数量"
                 @click.stop="handleUseClick(item)"
               >
                 用
@@ -508,13 +574,55 @@ useIntervalFn(loadBag, 60000)
       </div>
     </div>
 
+    <div v-if="useModal.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" @click="handleUseCancel">
+      <div class="max-w-sm w-full rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800" @click.stop>
+        <h3 class="text-xl text-gray-900 font-bold dark:text-gray-100">
+          使用物品
+        </h3>
+        <div class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          {{ useModal.item?.name || `物品${useModal.item?.id || ''}` }} · 当前 x{{ useModal.item?.count || 0 }}
+        </div>
+        <label class="mt-5 block text-sm text-gray-700 font-medium dark:text-gray-300">
+          使用数量
+        </label>
+        <input
+          v-model.number="useModal.count"
+          type="number"
+          min="1"
+          :max="Math.max(1, Number(useModal.item?.count || 1))"
+          step="1"
+          class="mt-2 w-full border border-gray-300 rounded-lg bg-white px-3 py-2 text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-blue-500"
+          @blur="normalizeUseCount"
+        >
+        <div class="mt-2 text-xs text-gray-400">
+          默认只使用 1 个，最多 {{ useModal.item?.count || 1 }} 个。确认后才会发送使用请求。
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+          <button
+            class="rounded-lg bg-gray-100 px-4 py-2 text-sm text-gray-700 font-medium dark:bg-gray-700 dark:text-gray-200"
+            :disabled="useModal.loading"
+            @click="handleUseCancel"
+          >
+            取消
+          </button>
+          <button
+            class="rounded-lg bg-green-600 px-4 py-2 text-sm text-white font-medium disabled:opacity-60 hover:bg-green-700"
+            :disabled="useModal.loading"
+            @click="handleUseConfirm"
+          >
+            {{ useModal.loading ? '使用中...' : `确认使用 ${useModal.count} 个` }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <ConfirmModal
       :show="confirmModal.show"
       :title="confirmModal.title"
       :message="confirmModal.message"
       :type="confirmModal.type"
       :loading="confirmModal.loading"
-      :confirm-text="confirmModal.action === 'sell' ? '确认出售' : confirmModal.action === 'batchSell' ? '确认出售' : '确认使用'"
+      :confirm-text="'确认出售'"
       @confirm="handleConfirm"
       @cancel="handleCancel"
     />

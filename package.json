@@ -12,6 +12,7 @@
     "planting:2x2-selftest": "pnpm -C core planting:2x2-selftest",
     "mutation:readonly-selftest": "pnpm -C core mutation:readonly-selftest",
     "friend:mutation-selftest": "pnpm -C core friend:mutation-selftest",
+    "bag:use-ux-selftest": "pnpm -C core bag:use-ux-selftest",
     "dog:readonly-selftest": "pnpm -C core dog:readonly-selftest",
     "career:readonly-selftest": "pnpm -C core career:readonly-selftest",
     "avatar-frame:readonly-selftest": "pnpm -C core avatar-frame:readonly-selftest",
