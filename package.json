@@ -20,6 +20,7 @@
     "farm:fertilizer-selftest": "pnpm -C core farm:fertilizer-selftest",
     "planting:service-selftest": "pnpm -C core planting:service-selftest",
     "farm:orchestrator-selftest": "pnpm -C core farm:orchestrator-selftest",
+    "farm:scheduler-selftest": "pnpm -C core farm:scheduler-selftest",
     "qr:runtime-code": "pnpm -C core qr:runtime-code",
     "qr:process-map": "pnpm -C core qr:process-map",
     "qr:session-map": "pnpm -C core qr:session-map",
