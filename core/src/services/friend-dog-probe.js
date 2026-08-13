@@ -83,6 +83,17 @@ function sanitizeWireField(field) {
     return result;
 }
 
+function getPositiveVarint(fields, fieldNo) {
+    const field = (Array.isArray(fields) ? fields : []).find(item => (
+        Number(item && item.field) === fieldNo
+        && Number(item && item.wire) === 0
+        && item.varint !== undefined
+    ));
+    if (!field) return 0;
+    const value = Number.parseInt(String(field.varint), 10);
+    return Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
 function buildFriendDogProbe(rawVisitEnterBody) {
     const outer = scanWireFields(rawVisitEnterBody);
     const dogField = outer.fields.find(field => field.field === BRIEF_DOG_FIELD_NO && field.wire === 2 && field.bytes);
@@ -91,6 +102,8 @@ function buildFriendDogProbe(rawVisitEnterBody) {
             present: false,
             fieldNo: BRIEF_DOG_FIELD_NO,
             byteLength: 0,
+            dogId: 0,
+            remainingSeconds: 0,
             fields: [],
             parseComplete: outer.complete,
             readOnly: true,
@@ -98,10 +111,15 @@ function buildFriendDogProbe(rawVisitEnterBody) {
     }
 
     const nested = scanWireFields(dogField.bytes);
+    const dogId = getPositiveVarint(nested.fields, 1);
+    const remainingSeconds = getPositiveVarint(nested.fields, 2);
+
     return {
         present: true,
         fieldNo: BRIEF_DOG_FIELD_NO,
         byteLength: dogField.bytes.length,
+        dogId,
+        remainingSeconds,
         fields: nested.fields.map(sanitizeWireField),
         parseComplete: nested.complete,
         readOnly: true,
