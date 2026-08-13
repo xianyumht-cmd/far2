@@ -2,14 +2,11 @@
  * 自己的农场操作 - 收获/浇水/除草/除虫/铲除/种植/商店/巡田
  */
 
-const { CONFIG, PlantPhase, PHASE_NAMES } = require('../config/config');
+const { PlantPhase, PHASE_NAMES } = require('../config/config');
 const { getPlantNameBySeedId, getPlantName, getPlantGrowTime, getAllSeeds, getPlantById, getSeedImageBySeedId, getMutantEffectsByIds } = require('../config/gameConfig');
-const { isAutomationOn, getFertilizerBuyOrganicCount, getFertilizerBuyOrganicThresholdHours, getFertilizerBuyNormalCount, getFertilizerBuyNormalThresholdHours, getFertilizerBuyCheckIntervalMinutes } = require('../models/store');
-const { getUserState, networkEvents, getWsErrorState } = require('../utils/network');
-const { toNum, getServerTimeSec, toTimeSec, log, logWarn } = require('../utils/utils');
-const { createScheduler } = require('./scheduler');
+const { getUserState, getWsErrorState } = require('../utils/network');
+const { toNum, getServerTimeSec, toTimeSec, logWarn } = require('../utils/utils');
 const { getBag, getBagItems, getContainerHoursFromBagItems } = require('./warehouse');
-const { autoBuyFertilizer, checkAndBuyFertilizerBoth } = require('./mall');
 const { buildMutationDetail } = require('./farm-mutation');
 const {
     getDisplayLandContext,
@@ -26,13 +23,7 @@ const {
 const { createFarmFertilizerService } = require('./farm-fertilizer');
 const { createPlantingService } = require('./planting-service');
 const { createFarmOrchestrator } = require('./farm-orchestrator');
-
-// ============ 内部状态 ============
-let farmLoopRunning = false;
-let externalSchedulerMode = false;
-let fertilizerBuyCheckTimer = null;
-let lastFertilizerBuyCheckAt = 0;
-const farmScheduler = createScheduler('farm');
+const { createFarmSchedulerService } = require('./farm-scheduler');
 
 // ============ 农场 API ============
 
@@ -77,6 +68,15 @@ const {
     plant2x2Seed,
     plantFromBagSeeds,
     plantFromShop,
+});
+
+const {
+    startFarmCheckLoop,
+    stopFarmCheckLoop,
+    refreshFarmCheckLoop,
+} = createFarmSchedulerService({
+    checkFarm,
+    isChecking: isFarmCheckInProgress,
 });
 
 // ============ 种植执行：由 planting-service.js 提供 ============
@@ -300,120 +300,7 @@ async function getLandsDetail() {
 
 // ============ 巡田业务编排：由 farm-orchestrator.js 提供 ============
 
-function scheduleNextFarmCheck(delayMs = CONFIG.farmCheckInterval) {
-    if (externalSchedulerMode) return;
-    if (!farmLoopRunning) return;
-    farmScheduler.setTimeoutTask('farm_check_loop', Math.max(0, delayMs), async () => {
-        if (!farmLoopRunning) return;
-        await checkFarm();
-        if (!farmLoopRunning) return;
-        scheduleNextFarmCheck(CONFIG.farmCheckInterval);
-    });
-}
-
-function startFarmCheckLoop(options = {}) {
-    if (farmLoopRunning) return;
-    externalSchedulerMode = !!options.externalScheduler;
-    farmLoopRunning = true;
-    networkEvents.on('landsChanged', onLandsChangedPush);
-    if (!externalSchedulerMode) {
-        scheduleNextFarmCheck(2000);
-    }
-    startFertilizerBuyCheckTimer();
-}
-
-let lastPushTime = 0;
-function onLandsChangedPush(lands) {
-    if (!isAutomationOn('farm_push')) {
-        return;
-    }
-    if (isFarmCheckInProgress()) return;
-    const now = Date.now();
-    if (now - lastPushTime < 500) return;
-    lastPushTime = now;
-    log('农场', `收到推送: ${lands.length}块土地变化，检查中...`, {
-        module: 'farm', event: '土地推送通知', result: 'trigger_check', count: lands.length
-    });
-    farmScheduler.setTimeoutTask('farm_push_check', 100, async () => {
-        if (!isFarmCheckInProgress()) await checkFarm();
-    });
-}
-
-function stopFarmCheckLoop() {
-    farmLoopRunning = false;
-    externalSchedulerMode = false;
-    farmScheduler.clearAll();
-    networkEvents.removeListener('landsChanged', onLandsChangedPush);
-    stopFertilizerBuyCheckTimer();
-}
-
-function refreshFarmCheckLoop(delayMs = 200) {
-    if (!farmLoopRunning) return;
-    scheduleNextFarmCheck(delayMs);
-}
-
-// ============ 化肥自动购买定时检测 ============
-function startFertilizerBuyCheckTimer() {
-    if (fertilizerBuyCheckTimer) {
-        clearInterval(fertilizerBuyCheckTimer);
-    }
-    
-    if (!isAutomationOn('fertilizer_buy_organic') && !isAutomationOn('fertilizer_buy_normal')) {
-        return;
-    }
-    
-    const intervalMinutes = getFertilizerBuyCheckIntervalMinutes();
-    const intervalMs = intervalMinutes * 60 * 1000;
-    
-    fertilizerBuyCheckTimer = setInterval(() => {
-        checkFertilizerBuyOnce();
-    }, intervalMs);
-    
-    log('农场', `化肥自动购买检测定时器已启动，间隔 ${intervalMinutes} 分钟`, {
-        module: 'farm',
-        event: '购买化肥计时器',
-        result: 'start',
-        intervalMinutes,
-    });
-}
-
-function stopFertilizerBuyCheckTimer() {
-    if (fertilizerBuyCheckTimer) {
-        clearInterval(fertilizerBuyCheckTimer);
-        fertilizerBuyCheckTimer = null;
-    }
-    log('农场', '化肥自动购买检测定时器已停止', {
-        module: 'farm',
-        event: '购买化肥计时器',
-        result: 'stop',
-    });
-}
-
-async function checkFertilizerBuyOnce() {
-    if (!isAutomationOn('fertilizer_buy_organic') && !isAutomationOn('fertilizer_buy_normal')) {
-        return;
-    }
-    
-    try {
-        const options = {
-            buyOrganic: isAutomationOn('fertilizer_buy_organic'),
-            buyNormal: isAutomationOn('fertilizer_buy_normal'),
-            organicCount: getFertilizerBuyOrganicCount(),
-            organicThresholdHours: getFertilizerBuyOrganicThresholdHours(),
-            normalCount: getFertilizerBuyNormalCount(),
-            normalThresholdHours: getFertilizerBuyNormalThresholdHours(),
-        };
-
-        await checkAndBuyFertilizerBoth(options);
-    } catch (e) {
-        logWarn('农场', `化肥自动购买检测失败: ${e.message}`, {
-            module: 'farm',
-            event: 'fertilizer_auto_buy',
-            result: 'error',
-            error: e.message,
-        });
-    }
-}
+// ============ 巡田调度：由 farm-scheduler.js 提供 ============
 
 module.exports = {
     checkFarm, startFarmCheckLoop, stopFarmCheckLoop,
