@@ -1,0 +1,51 @@
+name: P7C guard dog help priority
+
+on:
+  push:
+    branches:
+      - feat/p7c-guard-dog-help-priority-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Apply exact P7C patch
+        run: python3 scripts/patch-p7c-guard-dog-help.py
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Validate P7C
+        run: |
+          pnpm friend:dog-help-selftest
+          pnpm friend:dog-probe-selftest
+          pnpm build:web
+          node --check core/src/services/friend-dog-state.js
+          node --check core/src/services/friend.js
+          git diff --check
+      - name: Commit only intended source changes
+        run: |
+          rm -f scripts/patch-p7c-guard-dog-help.py .github/workflows/p7c-guard-dog-help.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            core/src/services/friend-dog-state.js \
+            core/src/services/friend.js \
+            core/scripts/friend-dog-help-priority-selftest.js \
+            core/package.json \
+            package.json \
+            web/src/stores/friend.ts \
+            web/src/views/Friends.vue \
+            scripts/patch-p7c-guard-dog-help.py \
+            .github/workflows/p7c-guard-dog-help.yml
+          git commit -m "feat: prioritize guard dog friend help" || true
+          git push
