@@ -1,0 +1,39 @@
+name: P6B farm API source patch
+
+on:
+  push:
+    branches:
+      - refactor/p6b-farm-api-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/p6b-farm-api-20260813
+          fetch-depth: 1
+
+      - name: Apply P6B extraction
+        run: python3 scripts/p6b-farm-api-patch-once.py
+
+      - name: Source checks
+        run: |
+          node --check core/src/services/farm-api.js
+          node --check core/src/services/farm.js
+          node --check core/scripts/farm-api-selftest.js
+          git diff --check
+
+      - name: Commit only P6B source files
+        run: |
+          rm -f .github/workflows/p6b-farm-api-patch-once.yml scripts/p6b-farm-api-patch-once.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/services/farm.js core/package.json package.json
+          git add -u .github/workflows/p6b-farm-api-patch-once.yml scripts/p6b-farm-api-patch-once.py
+          git commit -m "refactor: use extracted farm API transport"
+          git push origin HEAD:refactor/p6b-farm-api-20260813
