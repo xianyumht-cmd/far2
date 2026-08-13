@@ -133,6 +133,7 @@ function createDataProvider(options) {
         getDailyGifts: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getDailyGiftOverview'),
         getSeeds: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getSeeds'),
         getIllustrated: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getIllustrated'),
+        getDogInfo: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getDogInfo'),
         getShopProfiles: (accountRef) => callWorkerApi(resolveAccountRefId(accountRef), 'getShopProfiles'),
         getShopInfo: (accountRef, shopId) => callWorkerApi(resolveAccountRefId(accountRef), 'getShopInfo', shopId),
 
