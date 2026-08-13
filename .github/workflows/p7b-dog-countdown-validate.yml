@@ -1,0 +1,30 @@
+name: P7B friend dog countdown validation
+
+on:
+  push:
+    branches:
+      - feat/p7b-friend-dog-countdown-20260813
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Validate friend dog countdown
+        run: |
+          pnpm friend:dog-probe-selftest
+          pnpm build:web
+          node --check core/src/services/friend-dog-probe.js
+          git diff --check origin/main...HEAD
