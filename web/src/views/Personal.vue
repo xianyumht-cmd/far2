@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import BagPanel from '@/components/BagPanel.vue'
+import DogPanel from '@/components/DogPanel.vue'
 import FarmPanel from '@/components/FarmPanel.vue'
 import TaskPanel from '@/components/TaskPanel.vue'
 
-const currentTab = ref<'farm' | 'bag' | 'task'>('farm')
+const currentTab = ref<'farm' | 'bag' | 'task' | 'dog'>('farm')
 </script>
 
 <template>
@@ -49,6 +50,19 @@ const currentTab = ref<'farm' | 'bag' | 'task'>('farm')
           <span>我的任务</span>
         </div>
       </button>
+      <button
+        class="rounded-lg px-4 py-2 font-medium transition-colors"
+        :class="currentTab === 'dog'
+          ? 'text-white shadow-md'
+          : 'bg-white text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'"
+        :style="currentTab === 'dog' ? { backgroundColor: 'var(--theme-primary)' } : {}"
+        @click="currentTab = 'dog'"
+      >
+        <div class="flex items-center space-x-2">
+          <div class="i-carbon-paw text-lg" />
+          <span>护主犬</span>
+        </div>
+      </button>
     </div>
 
     <div class="flex-1 overflow-hidden overflow-y-auto">
@@ -61,7 +75,7 @@ const currentTab = ref<'farm' | 'bag' | 'task'>('farm')
         leave-from-class="transform opacity-100 scale-100"
         leave-to-class="transform opacity-0 scale-95"
       >
-        <component :is="currentTab === 'farm' ? FarmPanel : (currentTab === 'bag' ? BagPanel : TaskPanel)" />
+        <component :is="currentTab === 'farm' ? FarmPanel : (currentTab === 'bag' ? BagPanel : (currentTab === 'task' ? TaskPanel : DogPanel))" />
       </Transition>
     </div>
   </div>

@@ -81,6 +81,7 @@ async function loadProto() {
         getResourcePath('proto', 'sharepb.proto'),
         getResourcePath('proto', 'illustratedpb.proto'),
         getResourcePath('proto', 'interactpb.proto'),
+        getResourcePath('proto', 'dogpb.proto'),
     ], { keepCase: true });
 
     // 网关
@@ -216,6 +217,12 @@ async function loadProto() {
     types.ItemNotify = root.lookupType('gamepb.itempb.ItemNotify');
     types.GoodsUnlockNotify = root.lookupType('gamepb.shoppb.GoodsUnlockNotify');
     types.TaskInfoNotify = root.lookupType('gamepb.taskpb.TaskInfoNotify');
+
+    // 护主犬（P4A 只读 GetDogInfo）
+    types.DogInfo = root.lookupType('gamepb.dogpb.DogInfo');
+    types.DogFood = root.lookupType('gamepb.dogpb.DogFood');
+    types.GetDogInfoRequest = root.lookupType('gamepb.dogpb.GetDogInfoRequest');
+    types.GetDogInfoReply = root.lookupType('gamepb.dogpb.GetDogInfoReply');
 
     // Proto 加载完成
     log('系统', 'Protobuf 定义加载完成');

@@ -1335,6 +1335,26 @@ function startAdminServer(dataProvider) {
         }
     });
 
+    // API: 护主犬状态（P4A 只读；不提供领取/喂食/修改接口）
+    app.get('/api/dog/info', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+
+        try {
+            if (!provider || typeof provider.getDogInfo !== 'function') {
+                return res.status(503).json({ ok: false, error: '护主犬只读接口不可用' });
+            }
+            const data = await provider.getDogInfo(id);
+            return res.json({ ok: true, data });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
     // API: 每日礼包状态总览
     app.get('/api/daily-gifts', async (req, res) => {
         const id = getAccId(req);

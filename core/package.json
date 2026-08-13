@@ -16,6 +16,7 @@
     "land:controls-selftest": "node scripts/land-controls-selftest.js",
     "planting:2x2-selftest": "node scripts/purple-land-selftest.js && node scripts/planting-2x2-selftest.js && node scripts/seed-2x2-fallback-selftest.js",
     "mutation:readonly-selftest": "node scripts/mutation-readonly-selftest.js",
+    "dog:readonly-selftest": "node scripts/dog-readonly-selftest.js",
     "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "qr:process-map": "node scripts/qq-process-map-test.js",
     "qr:session-map": "node scripts/qq-session-map-test.js",
