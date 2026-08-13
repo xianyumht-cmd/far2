@@ -1,0 +1,47 @@
+name: P7D pet shop safe purchase
+
+on:
+  push:
+    branches:
+      - feat/p7d-pet-shop-safe-purchase-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Enable pnpm
+        run: corepack enable
+      - name: Apply exact P7D patch
+        run: python3 .github/scripts/p7d_pet_shop_patch.py
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify catalog safety and Web build
+        run: |
+          pnpm catalog:actions-selftest
+          pnpm build:web
+          node --check core/src/services/catalog.js
+          node --check core/src/controllers/catalog-api.js
+          git diff --check
+      - name: Commit verified source only
+        shell: bash
+        run: |
+          rm .github/scripts/p7d_pet_shop_patch.py .github/workflows/p7d-pet-shop-validate.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/services/catalog.js core/src/controllers/catalog-api.js core/scripts/catalog-actions-selftest.js web/src/views/Catalog.vue
+          git add -u .github/scripts/p7d_pet_shop_patch.py .github/workflows/p7d-pet-shop-validate.yml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "feat: add safe pet shop purchase flow"
+          git push origin HEAD:${GITHUB_REF_NAME}
