@@ -1,0 +1,34 @@
+name: P6D planting service source patch
+
+on:
+  push:
+    branches:
+      - refactor/p6d-planting-service-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/p6d-planting-service-20260813
+
+      - name: Apply exact P6D source patch
+        run: |
+          python scripts/p6d-planting-service-patch-once.py
+          node --check core/src/services/planting-service.js
+          node --check core/scripts/planting-service-selftest.js
+          node --check core/src/services/farm.js
+          git diff --check
+
+      - name: Commit only intended source changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/services/farm.js core/package.json package.json
+          git rm scripts/p6d-planting-service-patch-once.py .github/workflows/p6d-planting-service-patch-once.yml
+          git commit -m "refactor: wire planting service into farm facade"
+          git push origin HEAD:refactor/p6d-planting-service-20260813
