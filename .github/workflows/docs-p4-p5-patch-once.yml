@@ -1,0 +1,35 @@
+name: P4 P5 handoff patch
+
+on:
+  push:
+    branches:
+      - docs/p4-p5-readonly-handoff-20260813
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/p4-p5-readonly-handoff-20260813
+          fetch-depth: 1
+
+      - name: Patch project state
+        run: python3 scripts/project-state-p4-p5-patch.py
+
+      - name: Check markdown diff
+        run: git diff --check
+
+      - name: Commit handoff update
+        run: |
+          rm -f .github/workflows/docs-p4-p5-patch-once.yml scripts/project-state-p4-p5-patch.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PROJECT_STATE.md
+          git add -u .github/workflows/docs-p4-p5-patch-once.yml scripts/project-state-p4-p5-patch.py
+          git commit -m "docs: advance handoff through P5B"
+          git push origin HEAD:docs/p4-p5-readonly-handoff-20260813
