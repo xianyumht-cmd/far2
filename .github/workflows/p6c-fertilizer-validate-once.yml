@@ -1,0 +1,43 @@
+name: P6C fertilizer validation
+
+on:
+  push:
+    branches:
+      - refactor/p6c-farm-fertilizer-20260813
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/p6c-farm-fertilizer-20260813
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate P6C and dependent contracts
+        run: |
+          pnpm farm:fertilizer-selftest
+          pnpm farm:api-selftest
+          pnpm farm:land-analyzer-selftest
+          pnpm land:controls-selftest
+          pnpm planting:2x2-selftest
+          pnpm mutation:readonly-selftest
+          pnpm build:web
+          node --check core/src/services/farm-fertilizer.js
+          node --check core/src/services/farm.js
+          git diff --check
