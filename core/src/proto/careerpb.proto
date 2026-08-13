@@ -1,0 +1,33 @@
+syntax = "proto3";
+package gamepb.careerpb;
+
+service CareerService {
+  rpc CareerInfoGet(CareerInfoGetRequest) returns (CareerInfoGetReply);
+}
+
+message CareerInfoGetRequest {}
+
+message CareerStatItem {
+  int64 fruit_id = 1;
+  int64 count = 2;
+}
+
+message CareerLevelStat {
+  int64 fruit_id = 1;
+  int64 count = 2;
+  int32 level = 4;
+}
+
+message CareerInfoGetReply {
+  repeated CareerStatItem items = 1;
+  int64 stats_total = 2;
+  int64 stats_count = 3;
+  string name = 4;
+  string avatar = 5;
+  int32 level = 9;
+  int64 exp = 10;
+  int64 gid = 11;
+  repeated CareerLevelStat level_stats = 12;
+  int32 achieved_levels = 13;
+  string openid = 15;
+}

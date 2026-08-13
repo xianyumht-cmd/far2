@@ -82,6 +82,7 @@ async function loadProto() {
         getResourcePath('proto', 'illustratedpb.proto'),
         getResourcePath('proto', 'interactpb.proto'),
         getResourcePath('proto', 'dogpb.proto'),
+        getResourcePath('proto', 'careerpb.proto'),
     ], { keepCase: true });
 
     // 网关
@@ -223,6 +224,12 @@ async function loadProto() {
     types.DogFood = root.lookupType('gamepb.dogpb.DogFood');
     types.GetDogInfoRequest = root.lookupType('gamepb.dogpb.GetDogInfoRequest');
     types.GetDogInfoReply = root.lookupType('gamepb.dogpb.GetDogInfoReply');
+
+    // 个人生涯（P5A 只读 CareerInfoGet）
+    types.CareerStatItem = root.lookupType('gamepb.careerpb.CareerStatItem');
+    types.CareerLevelStat = root.lookupType('gamepb.careerpb.CareerLevelStat');
+    types.CareerInfoGetRequest = root.lookupType('gamepb.careerpb.CareerInfoGetRequest');
+    types.CareerInfoGetReply = root.lookupType('gamepb.careerpb.CareerInfoGetReply');
 
     // Proto 加载完成
     log('系统', 'Protobuf 定义加载完成');

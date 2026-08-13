@@ -12,6 +12,7 @@
     "planting:2x2-selftest": "pnpm -C core planting:2x2-selftest",
     "mutation:readonly-selftest": "pnpm -C core mutation:readonly-selftest",
     "dog:readonly-selftest": "pnpm -C core dog:readonly-selftest",
+    "career:readonly-selftest": "pnpm -C core career:readonly-selftest",
     "qr:runtime-code": "pnpm -C core qr:runtime-code",
     "qr:process-map": "pnpm -C core qr:process-map",
     "qr:session-map": "pnpm -C core qr:session-map",
