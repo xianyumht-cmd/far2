@@ -80,6 +80,22 @@ export const useFriendStore = defineStore('friend', () => {
     }
   }
 
+  function syncFriendDogSummary(friendId: string, probe: any) {
+    const key = String(friendId)
+    const idx = friends.value.findIndex(f => String(f?.gid || '') === key)
+    if (idx < 0)
+      return
+
+    const dogId = Number(probe?.dogId) || 0
+    const remainingSeconds = Math.max(0, Number(probe?.remainingSeconds) || 0)
+    friends.value[idx] = {
+      ...friends.value[idx],
+      dogId,
+      dogRemainingSeconds: remainingSeconds,
+      hasGuardDog: dogId === 90021 && remainingSeconds > 0,
+    }
+  }
+
   async function fetchFriends(accountId: string, forceSync = false) {
     if (!accountId)
       return
@@ -162,6 +178,7 @@ export const useFriendStore = defineStore('friend', () => {
         friendLands.value[friendId] = lands
         friendDogProbes.value[friendId] = res.data.data.dogProbe || null
         syncFriendPlantSummary(friendId, lands, summary)
+        syncFriendDogSummary(friendId, friendDogProbes.value[friendId])
       }
     }
     finally {

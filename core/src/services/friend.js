@@ -22,6 +22,13 @@ const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep, randomD
 const { getCurrentPhase, setOperationLimitsCallback, buildLandMap, getDisplayLandContext, isOccupiedSlaveLand } = require('./farm');
 const { buildMutationDetail } = require('./farm-mutation');
 const { buildFriendDogProbe } = require('./friend-dog-probe');
+const {
+    rememberFriendDogProbe,
+    getFriendDogInfo,
+    getGuardDogGidSet,
+    compareHelpTargets,
+    canContinueHelpAfterExpLimit,
+} = require('./friend-dog-state');
 const { getInteractRecords } = require('./interact');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
@@ -518,10 +525,20 @@ async function enterFriendFarm(friendGid) {
     })).finish();
     const { body: replyBody } = await sendMsgAsync('gamepb.visitpb.VisitService', 'Enter', body);
     const reply = types.VisitEnterReply.decode(replyBody);
-    // 协议发现只复用这次 Enter 的 raw reply，不增加任何 Visit/Dog 请求。
-    // field 3 的内部结构未被真实回包确认前，只保留 wire 摘要，不猜 Dog DTO。
+    // 复用本次 Enter 的 raw reply 学习好友护主犬状态，不增加任何 Visit/Dog 请求。
+    const dogProbe = buildFriendDogProbe(replyBody);
+    const accountId = process.env.FARM_ACCOUNT_ID || '';
+    const dogInfo = rememberFriendDogProbe(accountId, friendGid, dogProbe, getServerTimeSec());
+    if (Array.isArray(friendsListCache)) {
+        const cachedFriend = friendsListCache.find(item => toNum(item && item.gid) === toNum(friendGid));
+        if (cachedFriend) {
+            cachedFriend.dogId = dogInfo ? dogInfo.dogId : 0;
+            cachedFriend.dogRemainingSeconds = dogInfo ? dogInfo.remainingSeconds : 0;
+            cachedFriend.hasGuardDog = !!(dogInfo && dogInfo.hasGuardDog);
+        }
+    }
     Object.defineProperty(reply, '__far2BriefDogProbe', {
-        value: buildFriendDogProbe(replyBody),
+        value: dogProbe,
         enumerable: false,
         configurable: false,
         writable: false,
@@ -910,21 +927,30 @@ async function getFriendsList(forceSync = false) {
         const reply = await getAllFriends(forceSync);
         const friends = reply.game_friends || [];
         const state = getUserState();
+        const accountId = process.env.FARM_ACCOUNT_ID || '';
+        const nowSec = getServerTimeSec();
         const result = friends
             .filter(f => toNum(f.gid) !== state.gid && f.name !== '小小农夫' && f.remark !== '小小农夫')
-            .map(f => ({
-                gid: toNum(f.gid),
-                name: f.remark || f.name || `GID:${toNum(f.gid)}`,
-                avatarUrl: String(f.avatar_url || '').trim(),
-                level: toNum(f.level),
-                gold: toNum(f.gold),
-                plant: f.plant ? {
-                    stealNum: toNum(f.plant.steal_plant_num),
-                    dryNum: toNum(f.plant.dry_num),
-                    weedNum: toNum(f.plant.weed_num),
-                    insectNum: toNum(f.plant.insect_num),
-                } : null,
-            }))
+            .map(f => {
+                const gid = toNum(f.gid);
+                const dogInfo = getFriendDogInfo(accountId, gid, nowSec);
+                return {
+                    gid,
+                    name: f.remark || f.name || `GID:${gid}`,
+                    avatarUrl: String(f.avatar_url || '').trim(),
+                    level: toNum(f.level),
+                    gold: toNum(f.gold),
+                    dogId: dogInfo ? dogInfo.dogId : 0,
+                    dogRemainingSeconds: dogInfo ? dogInfo.remainingSeconds : 0,
+                    hasGuardDog: !!(dogInfo && dogInfo.hasGuardDog),
+                    plant: f.plant ? {
+                        stealNum: toNum(f.plant.steal_plant_num),
+                        dryNum: toNum(f.plant.dry_num),
+                        weedNum: toNum(f.plant.weed_num),
+                        insectNum: toNum(f.plant.insect_num),
+                    } : null,
+                };
+            })
             .sort((a, b) => {
                 // 固定顺序：先按名称，再按 GID，避免刷新时顺序抖动
                 const an = String(a.name || '');
@@ -1485,12 +1511,13 @@ async function visitFriendForSteal(friend, totalActions, myGid, accountId) {
 
 // ============ 仅帮助 ============
 
-async function visitFriendForHelp(friend, totalActions, myGid, accountId, ignoreExpLimit = false) {
+async function visitFriendForHelp(friend, totalActions, myGid, accountId, ignoreExpLimit = false, continueAfterExpLimit = false) {
     const { gid, name } = friend;
 
-    const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
-    if (!stopWhenExpLimit) canGetHelpExp = true;
-    if (stopWhenExpLimit && !canGetHelpExp) {
+    const configuredExpLimit = !!isAutomationOn('friend_help_exp_limit');
+    const stopWhenExpLimit = configuredExpLimit && !ignoreExpLimit;
+    if (!configuredExpLimit || ignoreExpLimit) canGetHelpExp = true;
+    if (stopWhenExpLimit && !continueAfterExpLimit && !canGetHelpExp) {
         return { acted: false, entered: false };
     }
 
@@ -1525,7 +1552,7 @@ async function visitFriendForHelp(friend, totalActions, myGid, accountId, ignore
     ];
 
     for (const op of helpOps) {
-        const allowByExp = (!stopWhenExpLimit) || (canGetExpByCandidates(op.expIds) && canGetHelpExp);
+        const allowByExp = continueAfterExpLimit || (!stopWhenExpLimit) || (canGetExpByCandidates(op.expIds) && canGetHelpExp);
         if (op.list.length > 0 && allowByExp) {
             const precheck = await checkCanOperateRemote(gid, op.id);
             if (precheck.canOperate) {
@@ -1591,6 +1618,7 @@ async function checkFriends(options = {}) {
         }
 
         const blacklist = new Set(getFriendBlacklist(accountId));
+        const guardDogGidSet = getGuardDogGidSet(accountId, getServerTimeSec());
 
         const stealFriends = [];
         const helpFriends = [];
@@ -1614,7 +1642,8 @@ async function checkFriends(options = {}) {
             }
 
             if ((dryNum > 0 || weedNum > 0 || insectNum > 0) && effectiveHelpEnabled) {
-                helpFriends.push({ gid, name, dryNum, weedNum, insectNum });
+                const hasGuardDog = guardDogGidSet.has(gid);
+                helpFriends.push({ gid, name, dryNum, weedNum, insectNum, hasGuardDog });
             }
 
             visitedGids.add(gid);
@@ -1622,12 +1651,8 @@ async function checkFriends(options = {}) {
 
         // 排序：偷菜多的优先
         stealFriends.sort((a, b) => b.stealNum - a.stealNum);
-        // 排序：帮助需求多的优先
-        helpFriends.sort((a, b) => {
-            const helpA = a.dryNum + a.weedNum + a.insectNum;
-            const helpB = b.dryNum + b.weedNum + b.insectNum;
-            return helpB - helpA;
-        });
+        // 排序：已确认有护主犬的好友优先，其次按帮助需求数量。
+        helpFriends.sort(compareHelpTargets);
 
         const totalActions = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
 
@@ -1668,18 +1693,28 @@ async function checkFriends(options = {}) {
                 const friend = helpFriends[i];
                 log('好友', `批量帮助第 ${i + 1}/${helpFriends.length} 个好友: ${friend.name}`, { module: 'friend', event: '批量帮助开始', index: i + 1, total: helpFriends.length, friendName: friend.name });
 
-                // 检查是否还能获得帮助经验
-                // const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit');
+                // 经验达到上限后，仅继续帮助已确认仍有有效护主犬的好友。
                 const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
-                if (stopWhenExpLimit && !canGetHelpExp) {
-                    log('好友', `批量帮助中断：经验已达上限`, { module: 'friend', event: '批量帮助中断', reason: 'exp_limit' });
+                const expLimitReached = stopWhenExpLimit && !canGetHelpExp;
+                if (expLimitReached && !canContinueHelpAfterExpLimit(friend)) {
+                    log('好友', `批量帮助中断：经验已达上限，护主犬好友已优先处理完毕`, {
+                        module: 'friend', event: '批量帮助中断', reason: 'exp_limit_non_guard_dog'
+                    });
                     break;
                 }
 
                 try {
-                    // await visitFriendForHelp(friend, totalActions, state.gid, state.accountId);
-                    await visitFriendForHelp(friend, totalActions, state.gid, state.accountId, ignoreExpLimit);
-                    log('好友', `批量帮助第 ${i + 1} 个好友完成: ${friend.name}`, { module: 'friend', event: '批量帮助完成', index: i + 1, friendName: friend.name });
+                    await visitFriendForHelp(
+                        friend,
+                        totalActions,
+                        state.gid,
+                        state.accountId,
+                        ignoreExpLimit,
+                        !!friend.hasGuardDog,
+                    );
+                    log('好友', `批量帮助第 ${i + 1} 个好友完成: ${friend.name}${friend.hasGuardDog ? ' [护主犬优先]' : ''}`, {
+                        module: 'friend', event: '批量帮助完成', index: i + 1, friendName: friend.name, hasGuardDog: !!friend.hasGuardDog
+                    });
                 } catch (e) {
                     log('好友', `批量帮助第 ${i + 1} 个好友失败: ${friend.name}, 错误: ${e.message}`, { module: 'friend', event: '批量帮助失败', index: i + 1, friendName: friend.name, error: e.message });
                 }

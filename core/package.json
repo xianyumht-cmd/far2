@@ -19,6 +19,7 @@
     "friend:mutation-selftest": "node scripts/friend-mutation-readonly-selftest.js",
     "bag:use-ux-selftest": "node scripts/bag-use-ux-selftest.js",
     "friend:dog-probe-selftest": "node scripts/friend-dog-probe-selftest.js",
+    "friend:dog-help-selftest": "node scripts/friend-dog-help-priority-selftest.js",
     "dog:readonly-selftest": "node scripts/dog-readonly-selftest.js",
     "career:readonly-selftest": "node scripts/career-readonly-selftest.js",
     "avatar-frame:readonly-selftest": "node scripts/avatar-frame-readonly-selftest.js",
