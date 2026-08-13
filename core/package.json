@@ -26,6 +26,7 @@
     "planting:service-selftest": "node scripts/planting-service-selftest.js",
     "farm:orchestrator-selftest": "node scripts/farm-orchestrator-selftest.js",
     "farm:scheduler-selftest": "node scripts/farm-scheduler-selftest.js",
+    "farm:query-selftest": "node scripts/farm-query-selftest.js",
     "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "qr:process-map": "node scripts/qq-process-map-test.js",
     "qr:session-map": "node scripts/qq-session-map-test.js",
