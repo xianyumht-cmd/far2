@@ -11,6 +11,7 @@
     "start": "node client.js",
     "dev": "node client.js",
     "startup:scope-selftest": "node scripts/startup-account-scope-selftest.js",
+    "startup:crop-registry-selftest": "node scripts/startup-crop-registry-selftest.js",
     "illustrated:proto-selftest": "node scripts/illustrated-proto-selftest.js",
     "catalog:actions-selftest": "node scripts/catalog-actions-selftest.js",
     "land:controls-selftest": "node scripts/land-controls-selftest.js",
