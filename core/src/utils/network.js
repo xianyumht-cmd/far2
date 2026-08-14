@@ -122,14 +122,18 @@ async function releaseAutomationAfterStartupRegistry(onLoginSuccess) {
         const tiers = formatTierSummary(registry) || '无';
         const full = readiness.fullReadComplete === true;
         const cropTotal = toNum(live.total);
-        const derived = toNum(live.liveDerivedSeedIdentities);
+        const offsetDerived = toNum(live.liveDerivedSeedIdentities);
+        const runtimeDerived = toNum(live.runtimeOverlaySeedIdentities);
+        const dynamicIdentities = offsetDerived + runtimeDerived;
         const unknownFootprints = toNum(live.unresolvedFootprints);
 
-        log('系统', `启动作物数据同步${full ? '完成' : '不完整'}: 作物图鉴${cropTotal}项 ${tiers}，动态种子${derived}，未知格数${unknownFootprints}`, {
+        log('系统', `启动作物数据同步${full ? '完成' : '不完整'}: 作物图鉴${cropTotal}项 ${tiers}，动态种子${dynamicIdentities}(运行时${runtimeDerived}/offset${offsetDerived})，未知格数${unknownFootprints}`, {
             module: 'system',
             event: '启动作物数据同步',
             result: full ? 'ok' : 'waiting',
             fullReadComplete: full,
+            runtimeOverlaySeedIdentities: runtimeDerived,
+            offsetDerivedSeedIdentities: offsetDerived,
             componentState: readiness.componentState || {},
             componentErrors: Array.isArray(registry && registry.componentErrors) ? registry.componentErrors : [],
             persistedPath: String((registry && registry.persistedPath) || ''),

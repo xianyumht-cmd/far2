@@ -120,7 +120,8 @@ function main() {
     assert.equal(snapshot.mappingRule.validated, true);
     assert.equal(snapshot.mappingRule.dominantOffset, 20000);
     assert.equal(snapshot.mappingRule.matchedPairs, 20);
-    console.log('✅ exact +20000 live mapping rule PASS');
+    assert.equal(snapshot.mappingRule.identityPromotionAllowed, false);
+    console.log('✅ exact +20000 pattern remains diagnostic-only PASS');
 
     const ordinary = snapshot.crops.find(row => row.seedId === 20001);
     assert.ok(ordinary);
@@ -138,18 +139,19 @@ function main() {
     console.log('✅ static size=2 remains proven 2x2 PASS');
 
     for (const [seedId, fruitId, tier] of liveTargets) {
-        const crop = snapshot.crops.find(row => row.seedId === seedId);
-        assert.ok(crop, `missing live-derived crop ${seedId}`);
+        const crop = snapshot.crops.find(row => row.fruitId === fruitId);
+        assert.ok(crop, `missing illustrated crop ${fruitId}`);
+        assert.equal(crop.seedId, 0, `offset-only candidate ${seedId} must not become identity`);
         assert.equal(crop.fruitId, fruitId);
         assert.equal(crop.illustratedTier, tier);
-        assert.equal(crop.seedIdSource, 'validated-live-fruit-offset');
-        assert.equal(crop.identityConfidence, 'proven-live-illustrated-map');
-        assert.equal(crop.size, 0, `tier must not infer size for ${seedId}`);
+        assert.equal(crop.seedIdSource, 'unknown');
+        assert.equal(crop.identityConfidence, 'unknown');
+        assert.equal(crop.size, 0, `tier must not infer size for ${fruitId}`);
         assert.equal(crop.gridCount, 0);
         assert.equal(crop.footprintSource, 'unknown');
         assert.equal(crop.autoPlantReady, false);
     }
-    console.log('✅ six live illustrated seed identities proven while footprint stays unknown PASS');
+    console.log('✅ offset-only illustrated candidates never promote seed identity PASS');
 
     const fertilizer = snapshot.observedItems.find(row => row.itemId === 80001);
     assert.ok(fertilizer);

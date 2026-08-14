@@ -125,6 +125,7 @@ function decorateSnapshot(snapshot, rawPlants, runtimeOverlay = null) {
         cropIllustratedType: 1,
         mutationIllustratedType: 2,
         cropTierMeaning: 'server-tier-preserved; tier alone never proves footprint',
+        fruitOffsetIdentityPolicy: 'diagnostic-only; never promotes seed identity',
         ordinaryStaticSizeRule: 'Plant.size=0 => 1x1',
         runtimePlantSizeRule: overlayEntries.length
             ? 'calibrated official runtime: size=null => 1x1; size=2 => 2x2'
@@ -216,6 +217,7 @@ function decorateSnapshot(snapshot, rawPlants, runtimeOverlay = null) {
         liveIllustratedSeedWithoutFootprintNeverAutoPlants: true,
         runtimeOverlayRequiresKnownSizeCalibration: true,
         runtimeOverlayOverridesFruitOffsetGuess: true,
+        fruitOffsetNeverPromotesIdentity: true,
     };
     return snapshot;
 }
@@ -230,6 +232,9 @@ function buildCropRegistrySnapshotV2(input = {}) {
     const runtimePlants = runtimeOverlayPlants(runtimeOverlay);
     const snapshot = buildCropRegistrySnapshot({
         ...input,
+        // Official runtime Plant proved at least one real exception
+        // (fruit 49002 -> seed 20416), so +20000 can never prove identity.
+        allowOffsetIdentityPromotion: false,
         plants: [...normalizeStaticPlants(rawPlants), ...runtimePlants],
     });
     return decorateSnapshot(snapshot, rawPlants, runtimeOverlay);

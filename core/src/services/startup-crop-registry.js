@@ -166,6 +166,10 @@ function buildCropRegistrySnapshot(input = {}) {
         : { profiles: { shops: [] }, shops: [], seedIds: [] };
     const bagItems = Array.isArray(input.bagItems) ? input.bagItems : [];
     const components = input.components && typeof input.components === 'object' ? input.components : {};
+    // Legacy V1 callers may opt into the historical offset promotion, but the
+    // production V2 Registry explicitly disables it. Offset is diagnostic only
+    // for production because official runtime Plant already proved exceptions.
+    const allowOffsetIdentityPromotion = input.allowOffsetIdentityPromotion !== false;
 
     const cropItems = Array.isArray(cropIllustrated.items) ? cropIllustrated.items : [];
     const offsetRule = buildIllustratedOffsetRule(cropItems, plants);
@@ -197,7 +201,7 @@ function buildCropRegistrySnapshot(input = {}) {
         const plant = plantByFruit.get(fruitId) || null;
         let seedId = toNum(plant && plant.seed_id);
         let seedIdSource = seedId > 0 ? 'static-plant-fruit-map' : 'unknown';
-        if (!seedId && offsetRule.validated) {
+        if (!seedId && allowOffsetIdentityPromotion && offsetRule.validated) {
             const candidate = fruitId - offsetRule.dominantOffset;
             if (isSeedLikeId(candidate)) {
                 seedId = candidate;
@@ -356,7 +360,10 @@ function buildCropRegistrySnapshot(input = {}) {
             cropInferenceReady,
             componentState,
         },
-        mappingRule: offsetRule,
+        mappingRule: {
+            ...offsetRule,
+            identityPromotionAllowed: allowOffsetIdentityPromotion,
+        },
         sources: {
             cropIllustrated: {
                 protocol: cropIllustrated.protocol || null,
