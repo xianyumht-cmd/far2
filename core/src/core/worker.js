@@ -26,6 +26,11 @@ const { sellAllFruits, getBag, getBagItems, openFertilizerGiftPacksSilently } = 
 const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
+const { installDogFeedActionHook } = require('../services/dog-feed-action-hook');
+
+// WorkerThread mode starts worker.js directly, so install the P7E manual-feed
+// action bridge here as well. The hook is idempotent for fork/pkg paths.
+installDogFeedActionHook();
 
 if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
     process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
