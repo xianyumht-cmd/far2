@@ -33,7 +33,8 @@
     "static-plant-overlay:auto-scan": "node scripts/qq-static-plant-overlay-auto-scan.js",
     "static-plant-overlay:selftest": "node scripts/qq-static-plant-overlay-selftest.js && node scripts/qq-static-plant-overlay-auto-selftest.js",
     "runtime-plant-overlay:capture": "node scripts/qq-runtime-plant-overlay-launcher.js",
-    "runtime-plant-overlay:selftest": "node scripts/qq-runtime-plant-overlay-selftest.js",
+    "runtime-plant-overlay:selftest": "node scripts/qq-runtime-plant-overlay-selftest.js && node scripts/runtime-plant-overlay-evidence-selftest.js",
+    "runtime-plant-overlay:import": "node scripts/runtime-plant-overlay-import.js",
     "event-seed:selftest": "node scripts/event-seed-priority-selftest.js && node scripts/qq-seed-config-learner-selftest.js && node scripts/learned-seed-resolver-selftest.js && node scripts/event-seed-shop-guard-selftest.js && node scripts/event-seed-shop-wrapper-selftest.js && node scripts/event-seed-empty-farm-regression-selftest.js",
     "farm:land-analyzer-selftest": "node scripts/farm-land-analyzer-selftest.js",
     "farm:api-selftest": "node scripts/farm-api-selftest.js",
@@ -63,7 +64,7 @@
     "build:release": "pkg . --no-bytecode --targets node18-win-x64,node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "build:win": "pkg . --no-bytecode --targets node18-win-x64 --out-path dist",
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
-    "build:mac": "pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist",
+    "build:mac": "pkg . --no-bytecode --targets node18-linux-x64,node18-macos-x64,node18-macos-arm64 --out-path dist",
     "lint": "eslint . --fix",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
