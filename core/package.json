@@ -24,7 +24,7 @@
     "career:readonly-selftest": "node scripts/career-readonly-selftest.js",
     "avatar-frame:readonly-selftest": "node scripts/avatar-frame-readonly-selftest.js",
     "activity:readonly-selftest": "node scripts/activity-readonly-selftest.js",
-    "event-seed:selftest": "node scripts/event-seed-priority-selftest.js && node scripts/qq-seed-config-learner-selftest.js && node scripts/learned-seed-resolver-selftest.js && node scripts/event-seed-shop-guard-selftest.js && node scripts/event-seed-shop-wrapper-selftest.js",
+    "event-seed:selftest": "node scripts/event-seed-priority-selftest.js && node scripts/qq-seed-config-learner-selftest.js && node scripts/learned-seed-resolver-selftest.js && node scripts/event-seed-shop-guard-selftest.js && node scripts/event-seed-shop-wrapper-selftest.js && node scripts/event-seed-empty-farm-regression-selftest.js",
     "farm:land-analyzer-selftest": "node scripts/farm-land-analyzer-selftest.js",
     "farm:api-selftest": "node scripts/farm-api-selftest.js",
     "farm:fertilizer-selftest": "node scripts/farm-fertilizer-selftest.js",

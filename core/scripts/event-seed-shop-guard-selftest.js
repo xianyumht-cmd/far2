@@ -59,8 +59,8 @@ function main() {
                 }],
             },
         },
-    }), true);
-    console.log('✅ activity reference upgrades unresolved candidate to protective block PASS');
+    }), false);
+    console.log('✅ generic activity reference does not upgrade a medium unresolved item into a shop-blocking seed PASS');
 
     console.log('\n=== RESULT ===');
     console.log(JSON.stringify({

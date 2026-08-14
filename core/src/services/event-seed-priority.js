@@ -50,13 +50,14 @@ function inspectSeedEvidence(itemId, itemInfo, plant, activityItemIds = new Set(
     const namespaceCandidate = isSeedNamespaceId(id);
     const activityReferenced = activityItemIds instanceof Set && activityItemIds.has(id);
     const strongItemEvidence = itemTypeSeed || interactionPlant || nameLooksSeed;
-    const candidate = knownPlant || strongItemEvidence || activityReferenced || namespaceCandidate;
+    // Activity nodes can reference fertilizers, currencies, fruits and other rewards.
+    // An activity reference may enrich a seed-like candidate, but cannot create
+    // seed identity by itself.
+    const candidate = knownPlant || strongItemEvidence || namespaceCandidate;
 
     let confidence = 'none';
     if (knownPlant) confidence = 'proven-config';
     else if (strongItemEvidence) confidence = 'high';
-    else if (activityReferenced && namespaceCandidate) confidence = 'high';
-    else if (activityReferenced) confidence = 'medium';
     else if (namespaceCandidate) confidence = 'medium';
 
     const evidence = [];
