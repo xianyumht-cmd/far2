@@ -17,110 +17,133 @@
 - User confirmed stealing itself works and accepted the logging/backoff behavior.
 - Stealing core logic was not redesigned.
 
-## Active priority — event/activity seeds in bag
+### Event/activity seed auto-discovery + priority planting
+
+- COMPLETE / ACCEPTED.
+- PR #48 merged to `main` as merge commit `ab2480960fe81e8b80a90936be3a5cee74836790`.
+- Windows validation ran against exact PR head `5e59fa81130084c76433b77eb7d12f31908740c3`.
+- New event-seed suite, existing 2x2, planting-service, farm-orchestrator, Activity readonly, syntax and diff checks all passed.
+- FAR2Farm restarted and remained `Running` during natural runtime observation.
+- No unknown seed footprint is trial-planted.
+- QQ-cache learning requires direct same-object `seed_id/seedId + size` evidence.
+- Learned 1x1/2x2 special seeds can be consumed before ordinary shop fallback without requiring `bag_priority`.
+- Pending 2x2 seeds reserve only necessary land footprint; unrelated empty land can continue normal planting.
+
+## Active priority — automatic activity discovery / participation / claiming
 
 Current branch:
 
-`feature/event-seed-autodiscovery-20260814`
+`feature/activity-autodiscovery-20260814`
 
 Goal:
 
-- recognize activity/event seeds already present in the bag before buying ordinary shop seeds;
-- support both 1x1 and 2x2 event crops;
-- work under normal account planting strategies, not only `bag_priority`;
-- automatically learn new seed mappings from official local evidence when possible;
-- fail closed for genuinely unknown mappings: never trial-plant an unknown footprint.
+```text
+new activity
+  -> discover structure
+  -> classify capability / reward / seed references
+  -> match only a proven write adapter
+  -> revalidate server precondition
+  -> perform one proven action
+  -> post-read verify
+  -> event seed enters the already-accepted seed-learning / priority-planting chain
+```
 
-### A-stage — discovery + pre-shop priority
+Unknown activity structures remain read-only.
 
-Implemented on the feature branch.
+### P5C-B — deep read-only discovery
 
-Evidence sources:
+Implemented on the current branch.
 
-- Bag items;
-- existing Plant config / proven static fallbacks;
-- ItemInfo seed metadata;
-- readonly `ActivityService.List` structures;
-- normal seed-shop membership.
+Existing `/api/activities` / Worker `listActivities` path is preserved. The old List-only top-level contract remains compatible, while the readonly module now adds deep discovery through:
 
-Behavior:
+```text
+ActivityService.List
+  -> choose active root groups (visible first)
+  -> ActivityService.GetGroup, sequential, max 12 roots per scan
+  -> normalize full ActivityNode trees
+  -> structure fingerprints
+  -> capability / reward / seed-like item classification
+```
 
-- known special/event 1x1 seed -> plant from bag before ordinary shop fallback;
-- known special/event 2x2 seed -> existing four-land PlantService path before ordinary shop fallback;
-- unresolved high-confidence seed -> zero trial writes, preserve the opportunity and record evidence;
-- namespace-only medium candidate -> record/learn, but do not permanently stall a healthy farm without stronger evidence.
+Capabilities currently classified:
 
-Runtime discovery state:
+- random shop;
+- exchange shop;
+- draw pool;
+- JSON/raw payload;
+- child activity nodes.
 
-`core/data/seed_discovery/<account>.json`
+Potential actions such as free draw / exchange / random-shop opportunities are surfaced as signals only:
 
-### B-stage — official QQ-cache automatic learning
+`autoOperate=false`
 
-Implemented on the feature branch.
+No generic activity write RPC has been added.
 
-For an unresolved seed-like item, FAR2 can inspect local official QQ Farm miniapp cache:
+Compatibility / resource rules:
 
-`%APPDATA%\QQEX\miniapp\temps\miniapp_src\1112386029_3_*`
+- current `activity-readonly.js` path is a thin compatibility wrapper;
+- the previously accepted List implementation is copied unchanged to `activity-readonly-base.js`;
+- deep discovery failure falls back to the old List-only response;
+- successful deep discovery is cached for 60 seconds;
+- one GetGroup failure does not abort remaining groups;
+- not-yet-active roots are not probed by default.
 
-Strict readonly proof rule:
+### P5C-C — official ActivityService write evidence capture
 
-- `seed_id=<target>` / `seedId=<target>` and `size` must be **direct fields at the same object level**;
-- nested parent/child fields cannot be combined;
-- raw `size=0/1` -> 1x1;
-- raw `size=2` -> 2x2;
-- conflicting/unsupported values -> reject;
-- a numeric ID coincidence alone is never enough.
+Implemented on the current branch, not yet used for a real activity action.
 
-Positive deterministic mappings are persisted to:
+Tool:
 
-`core/data/seed_discovery/qq_cache_learned.json`
+`pnpm -C core activity:wire-capture`
 
-Negative scans are memory-cached for 10 minutes to avoid repeatedly scanning QQ cache every farm tick.
+It temporarily instruments up to the 3 newest official QQ Farm `game.js` caches and captures only outgoing requests where:
 
-Learned mappings are injected only into the bag/event-seed priority layer. They do not automatically become ordinary shop-buy candidates.
+```text
+service == gamepb.activitypb.ActivityService
+message_type == request
+method != List
+method != GetGroup
+```
 
-### 2x2 reservation safety
+The capture contains only method + encrypted ActivityService business body. FAR2 itself sends no activity write during capture.
 
-A pending learned/special 2x2 seed does not lock every empty land.
+After the official action finishes, the tool restores the original QQ cache bytes before decoding evidence. A dedicated selftest verifies the restore path with temporary files.
 
-The shop wrapper reuses the existing 2x2 reservation planner:
+Captured request bodies are decrypted locally with the existing TSDK WASM and generic-wire parsed without assigning guessed business field names.
 
-- reserve only the needed 2x2 footprint;
-- let unrelated empty land continue the original planting strategy;
-- if the unlocked layout cannot form a reservable 2x2 group, do not permanently stall normal planting;
-- real 1x1 special-seed partial/write failures remain fail-closed for that cycle.
+### Write-adapter graduation rule
 
-### Offline verification
+An activity structure may become automatically writable only after all of these are proven:
 
-Unified command:
+1. exact official service + method;
+2. repeatable request-wire shape;
+3. business semantics for required fields;
+4. readonly server precondition proving the action is valid now;
+5. post-write readonly verification;
+6. no automatic retry when the write result is uncertain.
 
-`pnpm -C core event-seed:selftest`
+Until then, `autoOperate=false`.
 
-It covers discovery, shop classification, activity evidence, persistence, zero-write unknowns, known 1x1/2x2 priority planting, QQ-cache direct-field proof/rejection, learned mapping integration, confidence guard, and 2x2 reservation behavior.
+## Current validation target
 
-Before merging this feature branch:
+Before merging the activity branch:
 
-1. run the unified event-seed selftest;
-2. run existing 2x2 / planting-service / farm-orchestrator regressions;
-3. run syntax/diff checks;
-4. perform one natural Windows FAR2 runtime observation on the feature branch;
-5. inspect any generated `core/data/seed_discovery/*.json` and logs before deciding merge.
+1. run `activity:readonly-selftest`;
+2. run `activity:discovery-selftest` including the wire-capture parser/restore selftest;
+3. run event-seed regressions to ensure the new activity wrapper remains compatible with seed discovery;
+4. build WebUI / syntax / diff checks;
+5. restart FAR2Farm on the branch and query `/api/activities` once;
+6. save the real List+GetGroup discovery snapshot;
+7. keep the PR Draft until the readonly runtime result is reviewed.
 
-## Next priority — automatic activity participation / claiming
-
-After event-seed identification/priority planting is accepted:
-
-- discover new activity groups/nodes/rewards/seed sources from readonly activity structures;
-- classify activity structures instead of hardcoding every activity ID;
-- automatically execute only activity write schemas that have been proven;
-- keep unknown activity structures readonly and collect evidence;
-- cover activities that provide both 1x1 and 2x2 seeds.
+The write-evidence capture is a separate later action because it requires one real action in the official client. Prefer a free/claimable harmless activity action; do not use a paid draw or paid exchange merely for evidence.
 
 ## Priority rule
 
-Do not return to pet expansion. Do not reopen the stealing-core investigation unless a real regression appears.
+Do not return to pet expansion. Do not reopen stealing core unless a real regression appears.
 
 Current order:
 
-1. finish and accept event-seed auto-discovery / priority planting;
-2. automatic activity discovery / participation / claiming.
+1. validate and merge deep activity discovery / evidence tooling;
+2. use official-client evidence to prove the first safe activity write adapter;
+3. expand adapters by structure fingerprint, not by hardcoded event title/ID.
