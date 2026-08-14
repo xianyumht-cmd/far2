@@ -12,9 +12,11 @@ const {
 const { getAllLandsRaw } = require('./farm-api');
 const { createFarmFertilizerService } = require('./farm-fertilizer');
 const { createPlantingService } = require('./planting-service');
+const { createEventSeedPriorityService } = require('./event-seed-priority');
 const { createFarmOrchestrator } = require('./farm-orchestrator');
 const { createFarmSchedulerService } = require('./farm-scheduler');
 const { createFarmQueryService } = require('./farm-query-service');
+const { logWarn } = require('../utils/utils');
 
 // ============ 农场 API ============
 
@@ -40,13 +42,57 @@ const { runFertilizerByConfig } = createFarmFertilizerService({
 });
 
 const {
+    plantSeeds,
     plant2x2Seed,
     plantFromBagSeeds,
-    plantFromShop,
+    plantFromShop: plantFromShopBase,
 } = createPlantingService({
     // 背包 2x2 探测必须继续经过 facade wrapper，保持 operation-limit callback 语义。
     getAllLands,
 });
+
+const { runBeforeShop: runEventSeedPriorityBeforeShop } = createEventSeedPriorityService({
+    // 活动/特殊种子仍复用已验收的 PlantService 写链，不新增或猜测 RPC。
+    getAllLands,
+    plantSeeds,
+    plant2x2Seed,
+});
+
+async function plantFromShopWithEventSeedPriority(landIds, state, overrideStrategy) {
+    let prepass;
+    try {
+        prepass = await runEventSeedPriorityBeforeShop({
+            landIds,
+            state,
+        });
+    } catch (error) {
+        // 背包/活动识别链异常时 fail-closed：宁可本轮留空，也不在证据不完整时买普通种子覆盖活动种子机会。
+        logWarn('种植', `活动种子优先链异常，本轮暂停商店补种: ${error.message}`, {
+            module: 'farm',
+            event: '活动种子发现',
+            result: 'priority_prepass_error',
+        });
+        return { plantedLands: [] };
+    }
+
+    const plantedLands = Array.isArray(prepass && prepass.plantedLandIds)
+        ? [...prepass.plantedLandIds]
+        : [];
+    const remainingLandIds = Array.isArray(prepass && prepass.remainingLandIds)
+        ? prepass.remainingLandIds
+        : [];
+
+    if (prepass && prepass.blockShopFallback) {
+        return { plantedLands: [...new Set(plantedLands)] };
+    }
+    if (remainingLandIds.length === 0) {
+        return { plantedLands: [...new Set(plantedLands)] };
+    }
+
+    const shopResult = await plantFromShopBase(remainingLandIds, state, overrideStrategy);
+    plantedLands.push(...(Array.isArray(shopResult && shopResult.plantedLands) ? shopResult.plantedLands : []));
+    return { plantedLands: [...new Set(plantedLands)] };
+}
 
 const {
     checkFarm,
@@ -58,7 +104,7 @@ const {
     runFertilizerByConfig,
     plant2x2Seed,
     plantFromBagSeeds,
-    plantFromShop,
+    plantFromShop: plantFromShopWithEventSeedPriority,
 });
 
 const {
