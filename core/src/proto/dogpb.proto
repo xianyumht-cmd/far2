@@ -26,3 +26,12 @@ message DogFood {
     int64 duration = 2;
     int32 count = 3;
 }
+
+// P7E official-client live evidence (2026-08-14):
+// DogService.AddFood request body 08 94 bf 05 10 01 decodes to
+// field 1 = 90004 (1-day dog food), field 2 = 1.
+// The business meaning of field 2 remains intentionally opaque.
+message AddFoodRequest {
+    int64 food_id = 1;
+    int32 arg2 = 2;
+}
