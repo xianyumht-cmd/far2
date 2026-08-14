@@ -23,6 +23,16 @@ function getWarehouseModule() {
     return warehouseModule;
 }
 
+// 启动 Crop Registry 也延迟加载：catalog/activity 最终都会回到 network.sendMsgAsync，
+// 必须等 network 模块完成初始化并且登录 websocket 已建立后再 require。
+let startupCropRegistryModule = null;
+function getStartupCropRegistryModule() {
+    if (!startupCropRegistryModule) {
+        startupCropRegistryModule = require('../services/startup-crop-registry-v2');
+    }
+    return startupCropRegistryModule;
+}
+
 // ============ 事件发射器 (用于推送通知) ============
 const networkEvents = new EventEmitter();
 
@@ -33,6 +43,8 @@ let serverSeq = 0;
 const pendingCallbacks = new Map();
 let wsErrorState = { code: 0, at: 0, message: '' };
 const networkScheduler = createScheduler('network');
+let startupAutomationReleased = false;
+let startupRegistryAttempt = 0;
 
 function rejectAllPendingRequests(reason = '请求被中断') {
     const entries = Array.from(pendingCallbacks.entries());
@@ -67,23 +79,78 @@ function clearWsErrorState() {
     wsErrorState = { code: 0, at: 0, message: '' };
 }
 
-// 登录后从背包获取金豆豆数量
-async function fetchGoldBeanFromBag() {
+async function fetchStartupBagItems() {
+    const warehouse = getWarehouseModule();
+    const bagReply = await warehouse.getBag();
+    const items = warehouse.getBagItems(bagReply) || [];
+    let goldBean = 0;
+    let coupon = 0;
+    for (const item of items) {
+        const id = toNum(item && item.id);
+        const count = Math.max(0, toNum(item && item.count));
+        if (id === 1005) goldBean = count;
+        if (id === 1002) coupon = count;
+    }
+    userState.goldBean = goldBean;
+    userState.coupon = coupon;
+    if (goldBean > 0) log('系统', `金豆豆数量: ${goldBean}`);
+    return items;
+}
+
+function formatTierSummary(snapshot) {
+    const stats = Array.isArray(snapshot && snapshot.tierStats) ? snapshot.tierStats : [];
+    return stats.map(row => `T${toNum(row && row.tier)}=${toNum(row && row.total)}`).join('/');
+}
+
+async function releaseAutomationAfterStartupRegistry(onLoginSuccess) {
+    if (startupAutomationReleased) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !userState.gid) return;
+
+    startupRegistryAttempt += 1;
+    const attempt = startupRegistryAttempt;
     try {
-        const warehouse = getWarehouseModule();
-        const bagReply = await warehouse.getBag();
-        const items = warehouse.getBagItems(bagReply);
-        for (const item of (items || [])) {
-            const id = toNum(item && item.id);
-            const count = toNum(item && item.count);
-            if (id === 1005 && count > 0) {
-                userState.goldBean = count;
-                log('系统', `金豆豆数量: ${count}`);
-                break;
-            }
+        log('系统', `启动作物数据同步中... (第${attempt}次)`);
+        const bagItems = await fetchStartupBagItems();
+        const accountId = process.env.FARM_ACCOUNT_ID || String(userState.gid || '');
+        const registry = await getStartupCropRegistryModule().refreshStartupCropRegistry({
+            accountId,
+            bagItems,
+        });
+
+        const readiness = registry && registry.readiness ? registry.readiness : {};
+        const live = registry && registry.liveIllustratedSummary ? registry.liveIllustratedSummary : {};
+        const tiers = formatTierSummary(registry) || '无';
+        const full = readiness.fullReadComplete === true;
+        const cropTotal = toNum(live.total);
+        const derived = toNum(live.liveDerivedSeedIdentities);
+        const unknownFootprints = toNum(live.unresolvedFootprints);
+
+        log('系统', `启动作物数据同步${full ? '完成' : '不完整'}: 作物图鉴${cropTotal}项 ${tiers}，动态种子${derived}，未知格数${unknownFootprints}`, {
+            module: 'system',
+            event: '启动作物数据同步',
+            result: full ? 'ok' : 'waiting',
+            fullReadComplete: full,
+            componentState: readiness.componentState || {},
+            componentErrors: Array.isArray(registry && registry.componentErrors) ? registry.componentErrors : [],
+            persistedPath: String((registry && registry.persistedPath) || ''),
+        });
+
+        if (!full) {
+            logWarn('系统', '完整图鉴/活动/种子商店尚未全部同步成功，农场自动化暂不启动；30秒后自动重试。');
+            networkScheduler.setTimeoutTask('startup_crop_registry_retry', 30000, () => {
+                releaseAutomationAfterStartupRegistry(onLoginSuccess).catch(() => null);
+            });
+            return;
         }
-    } catch (e) {
-        // 忽略获取失败
+
+        startupAutomationReleased = true;
+        networkScheduler.clear('startup_crop_registry_retry');
+        if (onLoginSuccess) await onLoginSuccess(registry);
+    } catch (error) {
+        logWarn('系统', `启动作物数据同步失败: ${error && error.message ? error.message : String(error || 'unknown')}；农场自动化暂不启动，30秒后重试。`);
+        networkScheduler.setTimeoutTask('startup_crop_registry_retry', 30000, () => {
+            releaseAutomationAfterStartupRegistry(onLoginSuccess).catch(() => null);
+        });
     }
 }
 
@@ -455,14 +522,14 @@ async function sendLogin(onLoginSuccess) {
                 }
                 console.warn('===============================');
                 console.warn('');
-
-                // 登录后主动获取背包中的金豆豆数量
-                fetchGoldBeanFromBag();
-
             }
 
+            // 心跳属于连接保活，不是农场自动化。先启动心跳，再完成完整只读
+            // Crop Registry；worker 的 onLoginSuccess 只有在 Registry 全部组件成功后才释放。
             startHeartbeat();
-            if (onLoginSuccess) onLoginSuccess();
+            releaseAutomationAfterStartupRegistry(onLoginSuccess).catch((error) => {
+                logWarn('系统', `启动作物数据 Gate 异常: ${error && error.message ? error.message : String(error || 'unknown')}`);
+            });
         } catch (e) {
             log('登录', `解码失败: ${e.message}`);
         }
@@ -490,13 +557,7 @@ function startHeartbeat() {
             logWarn('心跳', `连接可能已断开 (${Math.round(timeSinceLastResponse/1000)}s 无响应, pending=${pendingCallbacks.size})`);
             if (heartbeatMissCount >= MAX_HEARTBEAT_MISS) {
                 log('心跳', '心跳超时，立即重连...');
-                // 清理待处理的回调，避免堆积
-                // pendingCallbacks.forEach((cb, _seq) => {
-                //     try { cb(new Error('连接超时，已清理')); } catch {}
-                // });
-                // pendingCallbacks.clear();
                 rejectAllPendingRequests('连接超时，已清理');
-                // 立即触发重连
                 reconnect(null);
                 return;
             }
@@ -523,6 +584,9 @@ let savedCode = null;
 
 function connect(code, onLoginSuccess) {
     savedLoginCallback = onLoginSuccess;
+    startupAutomationReleased = false;
+    startupRegistryAttempt = 0;
+    networkScheduler.clear('startup_crop_registry_retry');
     if (code) savedCode = code;
     const url = `${CONFIG.serverUrl}?platform=${CONFIG.platform}&os=${CONFIG.os}&ver=${CONFIG.clientVersion}&code=${savedCode}&openID=`;
 
@@ -572,7 +636,8 @@ function connect(code, onLoginSuccess) {
 function cleanup(reason = '网络清理') {
     rejectAllPendingRequests(`请求已中断: ${reason}`);
     networkScheduler.clearAll();
-    // pendingCallbacks.clear();
+    startupAutomationReleased = false;
+    startupRegistryAttempt = 0;
 }
 
 function reconnect(newCode) {
