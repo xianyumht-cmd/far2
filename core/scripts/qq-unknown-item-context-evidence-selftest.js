@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { scanUnknownItemContexts } = require('../src/services/qq-unknown-item-context-evidence');
+const { scanUnknownItemContexts } = require('../src/services/qq-unknown-item-context-evidence-v2');
 
 function write(file, text) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -43,10 +43,13 @@ function main() {
         assert.equal(byId.get(21037).occurrenceCount, 2);
         assert.equal(byId.get(21037).uniqueContextCount, 1);
         assert.ok(byId.get(21037).aggregateKeywords.includes('seed'));
+        assert.ok(byId.get(21037).aggregateKeywords.includes('activity'));
         assert.equal(byId.get(21037).contexts[0].sourceFiles.length, 2);
         console.log('✅ duplicate cache copies collapse into one context signature PASS');
+        console.log('✅ camelCase activitySeedIds is recognized as clue-only seed/activity context PASS');
 
         assert.ok(byId.get(21221).aggregateKeywords.includes('reward'));
+        assert.ok(byId.get(21221).aggregateKeywords.includes('item'));
         assert.ok(byId.get(21221).aggregateKeys.includes('item_id'));
         assert.ok(byId.get(21221).aggregateStrings.includes('星币奖励'));
         console.log('✅ reward-like nearby keys/strings are retained as clue-only context PASS');
@@ -54,6 +57,7 @@ function main() {
         assert.ok(byId.get(21251).aggregateKeywords.includes('exchange'));
         assert.equal(byId.get(29003).occurrenceCount, 2);
         assert.equal(Object.prototype.hasOwnProperty.call(byId.get(29003), 'classification'), false);
+        console.log('✅ exchangeCost camelCase clue is detected without promoting identity PASS');
         console.log('✅ plain numeric occurrence remains evidence-only with no identity classification PASS');
 
         const serialized = JSON.stringify(result);
