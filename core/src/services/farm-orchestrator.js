@@ -165,6 +165,7 @@ function createFarmOrchestrator(options = {}) {
     async function autoPlantEmptyLands(deadLandIds, emptyLandIds) {
         let landsToPlant = [...emptyLandIds];
         const state = getState();
+        const actualPlantedLandIds = [];
 
         if (deadLandIds.length > 0) {
             try {
@@ -201,6 +202,7 @@ function createFarmOrchestrator(options = {}) {
             });
             landsToPlant = twoByTwo.remainingLandIds || landsToPlant;
             if (twoByTwo.plantedLandIds && twoByTwo.plantedLandIds.length > 0) {
+                actualPlantedLandIds.push(...twoByTwo.plantedLandIds);
                 await runFertilizer(twoByTwo.plantedLandIds);
             }
         } catch (error) {
@@ -209,7 +211,9 @@ function createFarmOrchestrator(options = {}) {
             });
         }
 
-        if (landsToPlant.length === 0) return;
+        if (landsToPlant.length === 0) {
+            return { plantedLands: [...new Set(actualPlantedLandIds.map(id => toNum(id)).filter(Boolean))] };
+        }
 
         const accountStrategy = String(getStrategy() || '').trim();
 
@@ -221,10 +225,10 @@ function createFarmOrchestrator(options = {}) {
                 logWarning('种植', `读取背包种子失败，本轮跳过第二优先策略以避免误购: ${error.message}`, {
                     module: 'farm', event: '种植种子', result: 'bag_load_error',
                 });
-                return { plantedLands: [] };
+                return { plantedLands: [...new Set(actualPlantedLandIds.map(id => toNum(id)).filter(Boolean))] };
             }
 
-            const plantedLands = bagResult.plantedLandIds || [];
+            const cyclePlantedLandIds = [...(bagResult.plantedLandIds || [])];
             if (bagResult.fallbackAllowed && bagResult.remainingLandIds.length > 0) {
                 const fallbackStrategy = getBagFallback() || 'level';
                 logInfo('种植', `开始按第二优先策略"${strategyLabel(fallbackStrategy)}"补种剩余空地`, {
@@ -232,19 +236,22 @@ function createFarmOrchestrator(options = {}) {
                     remainingCount: bagResult.remainingLandIds.length,
                 });
                 const shopResult = await plantFromShop(bagResult.remainingLandIds, state, fallbackStrategy);
-                plantedLands.push(...(shopResult.plantedLands || []));
+                cyclePlantedLandIds.push(...(shopResult.plantedLands || []));
             }
 
-            if (plantedLands.length > 0) {
-                await runFertilizer(plantedLands);
+            if (cyclePlantedLandIds.length > 0) {
+                actualPlantedLandIds.push(...cyclePlantedLandIds);
+                await runFertilizer(cyclePlantedLandIds);
             }
-            return;
+            return { plantedLands: [...new Set(actualPlantedLandIds.map(id => toNum(id)).filter(Boolean))] };
         }
 
         const shopResult = await plantFromShop(landsToPlant, state);
         if (shopResult.plantedLands && shopResult.plantedLands.length > 0) {
+            actualPlantedLandIds.push(...shopResult.plantedLands);
             await runFertilizer(shopResult.plantedLands);
         }
+        return { plantedLands: [...new Set(actualPlantedLandIds.map(id => toNum(id)).filter(Boolean))] };
     }
 
     async function resolveRemovableHarvestedLands(harvestedLandIds, harvestReply) {
@@ -381,10 +388,15 @@ function createFarmOrchestrator(options = {}) {
             }
             if (allDeadLands.length > 0 || allEmptyLands.length > 0) {
                 try {
-                    const plantCount = allDeadLands.length + allEmptyLands.length;
-                    await autoPlantEmptyLands(allDeadLands, allEmptyLands);
-                    actions.push(`种植${plantCount}`);
-                    record('plant', plantCount);
+                    const plantResult = await autoPlantEmptyLands(allDeadLands, allEmptyLands);
+                    const actualPlantIds = [...new Set((plantResult?.plantedLands || [])
+                        .map(id => toNum(id))
+                        .filter(Boolean))];
+                    const plantCount = actualPlantIds.length;
+                    if (plantCount > 0) {
+                        actions.push(`种植${plantCount}`);
+                        record('plant', plantCount);
+                    }
                 } catch (error) {
                     logWarning('种植', error.message);
                 }
