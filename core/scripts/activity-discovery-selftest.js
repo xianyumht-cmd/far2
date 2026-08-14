@@ -155,7 +155,11 @@ async function main() {
     assert.equal(discovered.groupSummary.failed, 1);
     assert.equal(discovered.framework.readOnly, true);
     assert.equal(discovered.framework.autoOperateEnabled, false);
-    console.log('✅ one GetGroup failure does not abort other activity discovery PASS');
+    assert.equal(discovered.framework.deepDiscovery, true);
+    assert.equal(discovered.summary.total, listOverview.summary.total);
+    assert.deepEqual(discovered.activities.map(row => row.id), listOverview.activities.map(row => row.id));
+    assert.deepEqual(discovered.discovery.summary.seedLikeItemIds.sort((a, b) => a - b), [20901, 20902, 20903]);
+    console.log('✅ one GetGroup failure does not abort discovery and List-only top-level contract remains compatible PASS');
 
     const normalized = normalizeActivityNode(groupReply.group, now);
     assert.equal(normalized.children[0].parentId, 100);
@@ -166,7 +170,8 @@ async function main() {
     console.log(JSON.stringify({
         ok: true,
         requestedGroupIds: requested,
-        seedLikeItemIds: discovered.summary.seedLikeItemIds,
+        seedLikeItemIds: discovered.discovery.summary.seedLikeItemIds,
+        legacySummaryPreserved: true,
         realQqTouched: false,
         activityRpcTouched: false,
         activityWriteTouched: false,
