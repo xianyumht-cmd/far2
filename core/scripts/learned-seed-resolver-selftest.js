@@ -10,6 +10,7 @@ const {
     createRuntimeCropRegistryReader,
     buildRegistryPlantIndex,
 } = require('../src/services/runtime-crop-registry-resolver');
+const { buildBagSeedsFromItems } = require('../src/services/registry-aware-bag-seeds');
 const { createEventSeedPriorityService } = require('../src/services/event-seed-priority');
 
 function makeRegistryCrop(seedId, fruitId, name, size, overrides = {}) {
@@ -140,6 +141,21 @@ async function main() {
         assert.equal(registryResolver(29003).size, 2);
         assert.equal(registryLearnerCalls, 0);
         console.log('✅ proven Registry Plant wins before QQ cache learning PASS');
+
+        const registryBagSeeds = buildBagSeedsFromItems([
+            { id: 21037, count: 2 },
+            { id: 29003, count: 1 },
+            { id: 80001, count: 99 },
+        ], {
+            getPlantBySeedId: registryResolver,
+            getSeedImageBySeedId: () => '',
+            getItemImageById: () => '',
+        });
+        assert.deepEqual(registryBagSeeds.map(row => [row.seedId, row.count, row.plantSize, row.runtimeRegistry]), [
+            [21037, 2, 1, true],
+            [29003, 1, 2, true],
+        ]);
+        console.log('✅ bag-priority reader includes Registry activity seeds and excludes non-seeds PASS');
 
         const oneByOneWrites = [];
         const oneByOneService = createEventSeedPriorityService({
