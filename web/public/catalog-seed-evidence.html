@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FAR2 图鉴种子证据探针</title>
+  <style>
+    :root { color-scheme: light dark; font-family: "Microsoft YaHei", system-ui, sans-serif; }
+    body { margin: 0; background: #0f172a; color: #e2e8f0; }
+    main { max-width: 1100px; margin: 0 auto; padding: 28px 20px 48px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { color: #94a3b8; line-height: 1.7; }
+    .card { margin-top: 18px; padding: 18px; border: 1px solid #334155; border-radius: 14px; background: #111827; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    input { flex: 1; min-width: 280px; padding: 10px 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: inherit; }
+    button { padding: 10px 14px; border: 0; border-radius: 8px; cursor: pointer; background: #2563eb; color: white; }
+    button.secondary { background: #475569; }
+    table { width: 100%; margin-top: 14px; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid #334155; text-align: left; vertical-align: top; }
+    th { color: #94a3b8; font-weight: 600; }
+    .hit { color: #4ade80; font-weight: 700; }
+    .miss { color: #fbbf24; font-weight: 700; }
+    .note { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: #172033; color: #cbd5e1; font-size: 13px; line-height: 1.65; }
+    pre { max-height: 360px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: #cbd5e1; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>FAR2 图鉴种子证据探针</h1>
+  <p>只调用 <code>GET /api/catalog/illustrated</code>。不会领取图鉴奖励、不会购买、不会发送 Plant。目标是把背包未知 ID 与服务器原始图鉴字段交叉比对。</p>
+
+  <section class="card">
+    <div class="row">
+      <input id="ids" value="21037,21050,21221,21251,26032,29003" aria-label="待检查 ID">
+      <button id="run">读取服务器图鉴</button>
+      <button id="download" class="secondary" disabled>下载证据 JSON</button>
+    </div>
+    <div id="status" class="note">尚未读取。</div>
+    <div style="overflow:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>目标 ID</th>
+            <th>raw illustratedId 命中</th>
+            <th>mapped seedId 命中</th>
+            <th>名称 / 图鉴状态</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="note">判读规则：raw 命中只能证明“服务器图鉴 field 1 与目标 ID 相等”。在确认 field 1 的真实语义前，不会据此自动种植。未命中也不能证明它不是活动种子。</div>
+  </section>
+
+  <section class="card">
+    <strong>正向语义样本</strong>
+    <p>下面保留服务器前 20 个图鉴项的 illustratedId / fruitId / seedId / name，用来判断 field 1 到底更像果实 ID 还是种子 ID。</p>
+    <pre id="samples">尚未读取。</pre>
+  </section>
+</main>
+<script>
+(() => {
+  const idsInput = document.getElementById('ids');
+  const runButton = document.getElementById('run');
+  const downloadButton = document.getElementById('download');
+  const status = document.getElementById('status');
+  const rows = document.getElementById('rows');
+  const samples = document.getElementById('samples');
+  let lastEvidence = null;
+
+  const parseIds = () => [...new Set(String(idsInput.value || '')
+    .split(/[\s,，]+/)
+    .map(Number)
+    .filter(v => Number.isInteger(v) && v > 0))];
+
+  async function run() {
+    const token = localStorage.getItem('admin_token') || '';
+    const accountId = localStorage.getItem('current_account_id') || '';
+    const targets = parseIds();
+    if (!token || !accountId) {
+      status.textContent = '缺少 WebUI 登录态：请先在 FAR2 正常登录并选择账号，再打开本页。';
+      return;
+    }
+    if (!targets.length) {
+      status.textContent = '没有有效 ID。';
+      return;
+    }
+
+    runButton.disabled = true;
+    downloadButton.disabled = true;
+    status.textContent = `正在通过运行中的 FAR2 worker 只读查询图鉴，账号 ${accountId}…`;
+    rows.innerHTML = '';
+    samples.textContent = '读取中…';
+
+    try {
+      const response = await fetch('/api/catalog/illustrated', {
+        method: 'GET',
+        headers: {
+          'x-admin-token': token,
+          'x-account-id': accountId,
+        },
+        cache: 'no-store',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || payload.message || `HTTP ${response.status}`);
+      }
+
+      const data = payload.data || {};
+      const items = Array.isArray(data.items) ? data.items : [];
+      const results = targets.map(targetId => {
+        const rawHits = items.filter(item => Number(item.illustratedId) === targetId);
+        const mappedSeedHits = items.filter(item => Number(item.seedId) === targetId);
+        return { targetId, rawHits, mappedSeedHits };
+      });
+
+      for (const result of results) {
+        const raw = result.rawHits[0] || null;
+        const mapped = result.mappedSeedHits[0] || null;
+        const display = raw || mapped;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><code>${result.targetId}</code></td>
+          <td class="${raw ? 'hit' : 'miss'}">${raw ? `YES · ${raw.illustratedId}` : 'NO'}</td>
+          <td class="${mapped ? 'hit' : 'miss'}">${mapped ? `YES · ${mapped.seedId}` : 'NO'}</td>
+          <td>${display ? `${String(display.name || '')} · ${display.unlocked ? '已解锁' : '未解锁'} · fruitId=${Number(display.fruitId) || 0}` : '—'}</td>`;
+        rows.appendChild(tr);
+      }
+
+      const semanticSamples = items.slice(0, 20).map(item => ({
+        illustratedId: Number(item.illustratedId) || 0,
+        fruitId: Number(item.fruitId) || 0,
+        seedId: Number(item.seedId) || 0,
+        name: String(item.name || ''),
+        unlocked: Boolean(item.unlocked),
+      }));
+      samples.textContent = JSON.stringify(semanticSamples, null, 2);
+
+      lastEvidence = {
+        generatedAt: new Date().toISOString(),
+        accountId,
+        protocol: data.protocol || null,
+        summary: data.summary || null,
+        targets,
+        results,
+        semanticSamples,
+        safety: {
+          endpoint: 'GET /api/catalog/illustrated',
+          claimCalled: false,
+          purchaseCalled: false,
+          plantCalled: false,
+        },
+      };
+      status.textContent = `读取完成：服务器图鉴 ${items.length} 项；目标 ${targets.length} 个；raw 命中 ${results.filter(r => r.rawHits.length).length} 个；mapped seed 命中 ${results.filter(r => r.mappedSeedHits.length).length} 个。`;
+      downloadButton.disabled = false;
+    } catch (error) {
+      lastEvidence = null;
+      status.textContent = `读取失败：${error && error.message ? error.message : error}`;
+      samples.textContent = '读取失败。';
+    } finally {
+      runButton.disabled = false;
+    }
+  }
+
+  downloadButton.addEventListener('click', () => {
+    if (!lastEvidence) return;
+    const blob = new Blob([JSON.stringify(lastEvidence, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `far2-illustrated-seed-evidence-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  runButton.addEventListener('click', run);
+  const params = new URLSearchParams(location.search);
+  if (params.get('ids')) idsInput.value = params.get('ids');
+  run();
+})();
+</script>
+</body>
+</html>
