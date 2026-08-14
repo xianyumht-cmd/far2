@@ -135,6 +135,56 @@ function collectContainingObjectSnippets(text, index, options = {}) {
     return snippets;
 }
 
+/**
+ * Keep only direct fields of the outer object. Nested object/array contents are replaced
+ * with spaces while top-level quoted values are preserved. This prevents a parent object
+ * `size` from being combined with a child object's `seed_id` (or vice versa).
+ */
+function maskTopLevelObject(text) {
+    const source = String(text || '');
+    if (!source.startsWith('{')) return '';
+
+    let depth = 0;
+    let quote = '';
+    let escaped = false;
+    let output = '';
+
+    for (let i = 0; i < source.length; i++) {
+        const ch = source[i];
+        if (quote) {
+            output += depth === 1 ? ch : ' ';
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch === '\\') {
+                escaped = true;
+                continue;
+            }
+            if (ch === quote) quote = '';
+            continue;
+        }
+
+        if (ch === '"' || ch === "'" || ch === '`') {
+            quote = ch;
+            output += depth === 1 ? ch : ' ';
+            continue;
+        }
+        if (ch === '{' || ch === '[') {
+            depth++;
+            output += depth === 1 ? ch : ' ';
+            continue;
+        }
+        if (ch === '}' || ch === ']') {
+            output += depth === 1 ? ch : ' ';
+            depth--;
+            continue;
+        }
+        output += depth === 1 ? ch : ' ';
+    }
+    return output;
+}
+
 function uniqueNumericMatches(text, pattern) {
     const values = new Set();
     for (const match of String(text || '').matchAll(pattern)) {
@@ -149,22 +199,25 @@ function parsePlantObjectText(text, seedId) {
     const snippet = String(text || '');
     if (id <= 0 || !snippet) return null;
 
-    const seedPattern = new RegExp(`(?:["']?seed_id["']?|["']?seedId["']?)\\s*:\\s*${id}(?!\\d)`, 'i');
-    if (!seedPattern.test(snippet)) return null;
+    const topLevel = maskTopLevelObject(snippet);
+    if (!topLevel) return null;
 
-    const rawSizes = uniqueNumericMatches(snippet, /(?:["']?size["']?)\s*:\s*(-?\d+)/gi);
+    const seedPattern = new RegExp(`(?:["']?seed_id["']?|["']?seedId["']?)\\s*:\\s*${id}(?!\\d)`, 'i');
+    if (!seedPattern.test(topLevel)) return null;
+
+    const rawSizes = uniqueNumericMatches(topLevel, /(?:["']?size["']?)\s*:\s*(-?\d+)/gi);
     if (rawSizes.length !== 1) return null;
     const rawSize = rawSizes[0];
     const plantSize = rawSize === 2 ? 2 : (rawSize === 0 || rawSize === 1 ? 1 : 0);
     if (![1, 2].includes(plantSize)) return null;
 
     const names = [];
-    for (const match of snippet.matchAll(/(?:["']?name["']?)\s*:\s*["']([^"'\\]{1,80})["']/gi)) {
+    for (const match of topLevel.matchAll(/(?:["']?name["']?)\s*:\s*["']([^"'\\]{1,80})["']/gi)) {
         const value = String(match[1] || '').trim();
         if (value && !names.includes(value)) names.push(value);
     }
     const levels = uniqueNumericMatches(
-        snippet,
+        topLevel,
         /(?:["']?land_level_need["']?|["']?landLevelNeed["']?)\s*:\s*(\d+)/gi,
     );
 
@@ -174,7 +227,7 @@ function parsePlantObjectText(text, seedId) {
         rawSize,
         name: names.length === 1 ? names[0] : '',
         requiredLevel: levels.length === 1 ? Math.max(0, levels[0]) : 0,
-        evidence: 'qq-cache:same-object-seed_id+size',
+        evidence: 'qq-cache:same-direct-object-seed_id+size',
     };
 }
 
@@ -265,7 +318,7 @@ function persistLearned(seedId, result) {
         rawSize: Number(result.rawSize),
         name: String(result.name || ''),
         requiredLevel: Math.max(0, Number(result.requiredLevel) || 0),
-        evidence: String(result.evidence || 'qq-cache:same-object-seed_id+size'),
+        evidence: String(result.evidence || 'qq-cache:same-direct-object-seed_id+size'),
         corroboratingHits: Math.max(1, Number(result.corroboratingHits) || 1),
         sourceFile: String(result.sourceFile || ''),
         sourceFolder: String(result.sourceFolder || ''),
@@ -359,6 +412,7 @@ module.exports = {
     findFarmFolders,
     listCandidateFiles,
     collectContainingObjectSnippets,
+    maskTopLevelObject,
     parsePlantObjectText,
     scanTextForSeedConfig,
     selectDeterministicHit,
