@@ -1,6 +1,8 @@
 const assert = require('node:assert/strict');
 const {
     normalizeStaticPlant,
+    requireIllustratedItems,
+    requireDeepActivity,
     buildCropRegistrySnapshotV2,
 } = require('../src/services/startup-crop-registry-v2');
 
@@ -36,6 +38,21 @@ function main() {
     assert.equal(normalizeStaticPlant({ size: 2 }).size, 2, 'raw Plant.size=2 must stay 2x2');
     assert.equal(normalizeStaticPlant(null), null, 'missing plant must stay missing');
     console.log('✅ static Plant.size normalization PASS');
+
+    assert.throws(() => requireIllustratedItems({ items: [] }, 'crop illustrated'), /no items/);
+    assert.doesNotThrow(() => requireIllustratedItems({ items: [{ illustratedId: 40001 }] }, 'crop illustrated'));
+    assert.throws(() => requireDeepActivity({ framework: { deepDiscovery: false }, discovery: null }), /incomplete/);
+    assert.throws(() => requireDeepActivity({
+        framework: { deepDiscovery: true },
+        discovery: { nodes: [] },
+        groupSummary: { requested: 2, loaded: 1, failed: 1 },
+    }), /groups incomplete/);
+    assert.doesNotThrow(() => requireDeepActivity({
+        framework: { deepDiscovery: true },
+        discovery: { nodes: [] },
+        groupSummary: { requested: 2, loaded: 2, failed: 0 },
+    }));
+    console.log('✅ empty illustrated / shallow activity cannot masquerade as complete PASS');
 
     // Twenty exact static fruit/seed pairs are enough to prove +20000 without
     // relying on namespace guesses. This mirrors the live evidence rule.
