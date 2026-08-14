@@ -405,6 +405,8 @@ function createEventSeedPriorityService(options = {}) {
             totalPlanted: 0,
             occupiedCount: 0,
             blockShopFallback: false,
+            knownSeedBlock: false,
+            knownSeedBlockReasons: [],
             unresolvedSeedIds: [],
             prioritySeedIds: [],
             inspection: null,
@@ -441,6 +443,14 @@ function createEventSeedPriorityService(options = {}) {
         let totalPlanted = 0;
         let occupiedCount = 0;
         let blockShopFallback = unresolved.length > 0;
+        let knownSeedBlock = false;
+        const knownSeedBlockReasons = [];
+        const markKnownSeedBlock = (reason) => {
+            knownSeedBlock = true;
+            if (reason && !knownSeedBlockReasons.includes(reason)) {
+                knownSeedBlockReasons.push(reason);
+            }
+        };
 
         if (lockedPrioritySeeds.length > 0) {
             maybeLog(
@@ -456,11 +466,15 @@ function createEventSeedPriorityService(options = {}) {
             .map(row => ({ ...row, remainingCount: row.count }));
         const oneByOneSeeds = usablePrioritySeeds.filter(row => row.safeToPlant && row.plantSize === 1);
         const unsupportedKnown = usablePrioritySeeds.filter(row => !row.safeToPlant || ![1, 2].includes(row.plantSize));
-        if (unsupportedKnown.length > 0) blockShopFallback = true;
+        if (unsupportedKnown.length > 0) {
+            blockShopFallback = true;
+            markKnownSeedBlock('unsupported-known');
+        }
 
         if (twoByTwoSeeds.length > 0 && remainingLandIds.length > 0) {
             if (typeof readAllLands !== 'function' || typeof plant2x2 !== 'function') {
                 blockShopFallback = true;
+                markKnownSeedBlock('2x2-unavailable');
             } else {
                 try {
                     const latest = await readAllLands();
@@ -484,6 +498,7 @@ function createEventSeedPriorityService(options = {}) {
                                 seed.remainingCount -= 1;
                             } catch (error) {
                                 blockShopFallback = true;
+                                markKnownSeedBlock('2x2-failed');
                                 maybeLog(
                                     accountId,
                                     `2x2-failed:${seed.seedId}`,
@@ -500,6 +515,7 @@ function createEventSeedPriorityService(options = {}) {
                     const unplanted2x2 = twoByTwoSeeds.filter(seed => seed.remainingCount > 0);
                     if (unplanted2x2.length > 0) {
                         blockShopFallback = true;
+                        markKnownSeedBlock('2x2-waiting');
                         maybeLog(
                             accountId,
                             `2x2-wait:${unplanted2x2.map(row => row.seedId).join(',')}`,
@@ -509,6 +525,7 @@ function createEventSeedPriorityService(options = {}) {
                     }
                 } catch (error) {
                     blockShopFallback = true;
+                    markKnownSeedBlock('2x2-probe-failed');
                     maybeLog(
                         accountId,
                         '2x2-probe-failed',
@@ -523,6 +540,7 @@ function createEventSeedPriorityService(options = {}) {
         if (oneByOneSeeds.length > 0 && remainingLandIds.length > 0) {
             if (typeof plantOneByOne !== 'function') {
                 blockShopFallback = true;
+                markKnownSeedBlock('1x1-unavailable');
             } else {
                 for (const seed of oneByOneSeeds) {
                     if (remainingLandIds.length === 0) break;
@@ -549,6 +567,7 @@ function createEventSeedPriorityService(options = {}) {
 
                     if (plantedCount < maxPlantCount && remainingLandIds.length > 0) {
                         blockShopFallback = true;
+                        markKnownSeedBlock('1x1-partial');
                         maybeLog(
                             accountId,
                             `1x1-partial:${seed.seedId}`,
@@ -599,6 +618,8 @@ function createEventSeedPriorityService(options = {}) {
             totalPlanted,
             occupiedCount,
             blockShopFallback,
+            knownSeedBlock,
+            knownSeedBlockReasons,
             unresolvedSeedIds: unresolved.map(row => row.seedId),
             prioritySeedIds: prioritySeeds.map(row => row.seedId),
             inspection: inspected,

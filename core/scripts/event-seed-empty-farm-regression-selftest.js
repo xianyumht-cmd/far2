@@ -6,6 +6,7 @@ const {
 } = require('../src/services/event-seed-priority');
 const { shouldBlockShopFallback } = require('../src/services/event-seed-shop-guard');
 const { createFarmOrchestrator } = require('../src/services/farm-orchestrator');
+const { createEventSeedShopWrapper } = require('../src/services/event-seed-shop-wrapper');
 
 async function main() {
   console.log('FAR2 Event Seed Empty-Farm Regression Self-Test');
@@ -72,6 +73,63 @@ async function main() {
     }] } },
   }), true);
   console.log('✅ high-confidence seed evidence remains fail-closed PASS');
+
+  const knownSeed = {
+    seed_id: 20901,
+    name: '已知活动作物',
+    size: 0,
+    land_level_need: 1,
+  };
+  const mixedService = createEventSeedPriorityService({
+    getBag: async () => ({ item_bag: { items: [
+      { id: 20901, count: 2 },
+      { id: 21050, count: 1 },
+    ] } }),
+    getBagItems: r => r.item_bag.items,
+    getItemById: id => Number(id) === 21050
+      ? { id: 21050, type: 5, name: '未知活动种子', interaction_type: 'plant' }
+      : { id: 20901, type: 5, name: '已知活动种子', interaction_type: 'plant' },
+    getPlantBySeedId: id => Number(id) === 20901 ? knownSeed : null,
+    getShopInfo: async () => ({ goods_list: [{ item_id: 20002 }] }),
+    listActivityOverview: async () => ({ activities: [] }),
+    getBagSeedPriority: () => [],
+    plantSeeds: async () => ({
+      planted: 0,
+      occupiedLandIds: [],
+      plantedLandIds: [],
+    }),
+    discoveryStateStore: { record: () => {} },
+    log: () => {},
+    logWarn: () => {},
+    sleep: async () => {},
+  });
+  const mixedPrepass = await mixedService.runBeforeShop({
+    landIds: [1, 2],
+    state: { level: 113 },
+    accountId: 'mixed-fixture',
+  });
+  assert.equal(mixedPrepass.blockShopFallback, true);
+  assert.equal(mixedPrepass.knownSeedBlock, true);
+  assert.ok(mixedPrepass.knownSeedBlockReasons.includes('1x1-partial'));
+  assert.deepEqual(mixedPrepass.unresolvedSeedIds, [21050]);
+
+  let mixedShopCalls = 0;
+  const mixedWrapper = createEventSeedShopWrapper({
+    runEventSeedPriorityBeforeShop: async () => mixedPrepass,
+    plantFromShopBase: async () => {
+      mixedShopCalls++;
+      return { plantedLands: [] };
+    },
+    getAllLands: async () => ({ lands: [
+      { id: 1, unlocked: true, plant: null },
+      { id: 2, unlocked: true, plant: null },
+    ] }),
+    log: () => {},
+    logWarn: () => {},
+  });
+  assert.deepEqual(await mixedWrapper([1, 2], { level: 113 }), { plantedLands: [] });
+  assert.equal(mixedShopCalls, 0);
+  console.log('✅ known + unknown mixed prepass exposes knownSeedBlock and keeps known 1x1 failure fail-closed PASS');
 
   const records = [];
   const orchestrator = createFarmOrchestrator({
