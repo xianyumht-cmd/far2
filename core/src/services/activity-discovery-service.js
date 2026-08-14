@@ -114,18 +114,27 @@ function createActivityDiscoveryService(options = {}) {
                 });
             }
         }
-        const snapshot = buildActivityDiscoverySnapshot({
+
+        const discovery = buildActivityDiscoverySnapshot({
             listOverview,
             groups,
             groupRequested: candidates.length,
         });
+
+        // Backward compatibility: /api/activities historically returned the List-only
+        // overview. Keep those top-level fields untouched and append deep discovery data.
         return {
-            ...snapshot,
+            ...listOverview,
+            discovery,
             groups,
+            deepSummary: discovery.summary,
+            groupSummary: discovery.groupSummary,
             framework: {
+                ...(listOverview.framework || {}),
                 listTransport: 'ActivityService.List',
                 groupTransport: 'ActivityService.GetGroup',
                 maxGroupsPerScan: groupLimit,
+                deepDiscovery: true,
                 readOnly: true,
                 autoOperateEnabled: false,
             },
