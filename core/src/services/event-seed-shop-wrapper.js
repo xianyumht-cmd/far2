@@ -67,8 +67,47 @@ function createEventSeedShopWrapper(options = {}) {
 
         const unresolved = normalizeIds(prepass && prepass.unresolvedSeedIds);
         if (unresolved.length > 0) {
-            // High-confidence unresolved seeds are protected by the outer confidence guard.
-            return [];
+            // A high-confidence unresolved seed may be 1x1 or 2x2. Preserve one possible
+            // 2x2 footprint, but never leave the entire farm empty while learning.
+            if (typeof readAllLands !== 'function') {
+                return [];
+            }
+
+            try {
+                const latest = await readAllLands();
+                const lands = Array.isArray(latest && latest.lands) ? latest.lands : [];
+                const plan = plan2x2(lands, remaining, 1);
+                const reserved = new Set(normalizeIds(plan && plan.reservedLandIds));
+
+                if (reserved.size === 0) {
+                    logWarning('种植', '检测到高置信未知活动种子，但当前无法形成可预留 2x2 组合；本轮允许普通策略继续种植', {
+                        module: 'farm',
+                        event: '活动种子未知尺寸预留',
+                        result: 'unknown_no_reservable_group',
+                        seedIds: unresolved,
+                    });
+                    return remaining;
+                }
+
+                const allowed = remaining.filter(id => !reserved.has(id));
+                logInfo('种植', `为高置信未知活动种子预留 ${reserved.size} 块地，其余 ${allowed.length} 块继续原种植策略`, {
+                    module: 'farm',
+                    event: '活动种子未知尺寸预留',
+                    result: 'unknown_reserved',
+                    seedIds: unresolved,
+                    reservedLandIds: [...reserved],
+                    shopAllowedLandIds: allowed,
+                });
+                return allowed;
+            } catch (error) {
+                logWarning('种植', `高置信未知活动种子预留失败，本轮保持保守不买普通种子: ${error.message}`, {
+                    module: 'farm',
+                    event: '活动种子未知尺寸预留',
+                    result: 'unknown_reservation_error',
+                    seedIds: unresolved,
+                });
+                return [];
+            }
         }
 
         const usableSpecial = getUsableSpecialSeeds(prepass, state.level);

@@ -24,12 +24,11 @@ function shouldBlockShopFallback(prepass) {
     const unresolvedSet = new Set(unresolvedIds);
     const highConfidence = candidates.some(row => (
         unresolvedSet.has(Number(row && row.seedId) || 0)
-        && (
-            row && row.activityReferenced === true
-            || String((row && row.confidence) || '') === 'high'
-        )
+        && String((row && row.confidence) || '') === 'high'
     ));
 
+    // Activity references alone are generic reward evidence; only strong seed
+    // evidence may stop ordinary planting.
     if (highConfidence) return true;
 
     // If a resolved special seed also participated, keep the conservative block because
