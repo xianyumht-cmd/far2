@@ -5,6 +5,8 @@ const {
     compareHelpTargets,
     canContinueHelpAfterExpLimit,
     shouldRunHelpTickAfterExpLimit,
+    selectHelpTargetsAfterExpLimit,
+    getHelpTickDelayMs,
 } = require('../src/services/friend-dog-state');
 
 function main() {
@@ -42,6 +44,44 @@ function main() {
     assert.equal(shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit: true, expLimitReached: true, activeGuardDogCount: 0 }), false);
     assert.equal(shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit: true, expLimitReached: true, activeGuardDogCount: 1 }), true);
     console.log('✅ worker exp-limit gate re-enters help only for known active guard dogs PASS');
+
+    const selectedAfterLimit = selectHelpTargetsAfterExpLimit(targets, {
+        stopWhenExpLimit: true,
+        expLimitReached: true,
+    });
+    assert.deepEqual(selectedAfterLimit.targets.map(item => item.gid), [3, 2]);
+    assert.equal(selectedAfterLimit.eligibleGuardDogCount, 2);
+    assert.equal(selectedAfterLimit.skippedNonGuardDogCount, 1);
+
+    const selectedBeforeLimit = selectHelpTargetsAfterExpLimit(targets, {
+        stopWhenExpLimit: true,
+        expLimitReached: false,
+    });
+    assert.deepEqual(selectedBeforeLimit.targets.map(item => item.gid), [3, 2, 1]);
+    console.log('✅ current help targets are narrowed to guard-dog friends only after EXP cap PASS');
+
+    assert.equal(getHelpTickDelayMs({
+        baseDelayMs: 10_000,
+        stopWhenExpLimit: true,
+        expLimitReached: true,
+        eligibleGuardDogCount: 0,
+        noEligibleBackoffMs: 60_000,
+    }), 60_000);
+    assert.equal(getHelpTickDelayMs({
+        baseDelayMs: 10_000,
+        stopWhenExpLimit: true,
+        expLimitReached: true,
+        eligibleGuardDogCount: 1,
+        noEligibleBackoffMs: 60_000,
+    }), 10_000);
+    assert.equal(getHelpTickDelayMs({
+        baseDelayMs: 10_000,
+        stopWhenExpLimit: false,
+        expLimitReached: true,
+        eligibleGuardDogCount: 0,
+        noEligibleBackoffMs: 60_000,
+    }), 10_000);
+    console.log('✅ post-EXP no-target help scan backs off to 60s without changing normal cadence PASS');
 
     console.log('\n=== RESULT ===');
     console.log(JSON.stringify({

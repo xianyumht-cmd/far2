@@ -10,7 +10,11 @@ const { checkAndClaimEmails } = require('../services/email');
 const { getEmailDailyState } = require('../services/email');
 const { checkFarm, startFarmCheckLoop, stopFarmCheckLoop, refreshFarmCheckLoop, getLandsDetail, getAvailableSeeds, runFarmOperation, runFertilizerByConfig } = require('../services/farm');
 const { checkFriends, startFriendCheckLoop, stopFriendCheckLoop, refreshFriendCheckLoop, runBadOnceOnStartup, isHelpExpLimitReached, getFriendsList, getFriendLandsDetail, doFriendOperation } = require('../services/friend');
-const { getGuardDogGidSet, shouldRunHelpTickAfterExpLimit } = require('../services/friend-dog-state');
+const {
+    getGuardDogGidSet,
+    shouldRunHelpTickAfterExpLimit,
+    getHelpTickDelayMs,
+} = require('../services/friend-dog-state');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
@@ -250,35 +254,47 @@ async function runHelpTick(auto) {
     if (!auto.friend_help) {
         return;
     }
-    // 经验满后仍允许“已确认且仍有效的护主犬好友”进入 friend.js 的精确过滤。
-    // 没有已知有效护主犬时仍保持原来的跳过行为，避免额外扫描好友。
+
     const stopWhenExpLimit = !!auto.friend_help_exp_limit;
     const expLimitReached = stopWhenExpLimit && isHelpExpLimitReached();
-    const activeGuardDogCount = expLimitReached
-        ? getGuardDogGidSet(process.env.FARM_ACCOUNT_ID || '').size
-        : 0;
-    if (!shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit, expLimitReached, activeGuardDogCount })) {
-        const helpMs = randomIntervalMs(
-            CONFIG.helpCheckIntervalMin || 10000,
-            CONFIG.helpCheckIntervalMax || 10000
-        );
-        nextHelpRunAt = Date.now() + helpMs;
-        return;
-    }
-    helpTaskRunning = true;
     const helpMs = randomIntervalMs(
         CONFIG.helpCheckIntervalMin || 10000,
         CONFIG.helpCheckIntervalMax || 10000
     );
-    //log('系统', `帮助巡查开始执行，下次间隔 ${helpMs}ms`, { module: 'system', event: '帮助巡查', result: 'start', intervalMs: helpMs });
+    const activeGuardDogCount = expLimitReached
+        ? getGuardDogGidSet(process.env.FARM_ACCOUNT_ID || '').size
+        : 0;
+
+    if (!shouldRunHelpTickAfterExpLimit({ stopWhenExpLimit, expLimitReached, activeGuardDogCount })) {
+        const delayMs = getHelpTickDelayMs({
+            baseDelayMs: helpMs,
+            stopWhenExpLimit,
+            expLimitReached,
+            eligibleGuardDogCount: 0,
+            noEligibleBackoffMs: 60_000,
+        });
+        nextHelpRunAt = Date.now() + delayMs;
+        return;
+    }
+
+    helpTaskRunning = true;
+    let nextDelayMs = helpMs;
     try {
-        await checkFriends({ onlyHelp: true });
+        const result = await checkFriends({ onlyHelp: true, returnMeta: true });
+        if (result && typeof result === 'object') {
+            nextDelayMs = getHelpTickDelayMs({
+                baseDelayMs: helpMs,
+                stopWhenExpLimit,
+                expLimitReached: result.expLimitReached === true || expLimitReached,
+                eligibleGuardDogCount: result.eligibleGuardDogHelpCount,
+                noEligibleBackoffMs: 60_000,
+            });
+        }
     } catch (e) {
         log('系统', `帮助巡查执行失败: ${e.message}`, { module: 'system', event: '帮助巡查', result: 'error' });
     } finally {
-        nextHelpRunAt = Date.now() + helpMs;
+        nextHelpRunAt = Date.now() + nextDelayMs;
         helpTaskRunning = false;
-       // log('系统', `帮助巡查执行完成，下次执行时间: ${new Date(nextHelpRunAt).toISOString()}`, { module: 'system', event: '帮助巡查', result: 'done', nextRunAt: nextHelpRunAt });
     }
 }
 
