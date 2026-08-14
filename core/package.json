@@ -32,7 +32,7 @@
     "static-plant-overlay:scan": "node scripts/qq-static-plant-overlay-scan.js",
     "static-plant-overlay:auto-scan": "node scripts/qq-static-plant-overlay-auto-scan.js",
     "static-plant-overlay:selftest": "node scripts/qq-static-plant-overlay-selftest.js && node scripts/qq-static-plant-overlay-auto-selftest.js",
-    "runtime-plant-overlay:capture": "node scripts/qq-runtime-plant-overlay-capture.js",
+    "runtime-plant-overlay:capture": "node scripts/qq-runtime-plant-overlay-launcher.js",
     "runtime-plant-overlay:selftest": "node scripts/qq-runtime-plant-overlay-selftest.js",
     "event-seed:selftest": "node scripts/event-seed-priority-selftest.js && node scripts/qq-seed-config-learner-selftest.js && node scripts/learned-seed-resolver-selftest.js && node scripts/event-seed-shop-guard-selftest.js && node scripts/event-seed-shop-wrapper-selftest.js && node scripts/event-seed-empty-farm-regression-selftest.js",
     "farm:land-analyzer-selftest": "node scripts/farm-land-analyzer-selftest.js",
