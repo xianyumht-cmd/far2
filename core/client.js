@@ -3,7 +3,6 @@ const process = require('node:process');
  * 主程序 - 进程管理器
  * 负责启动 Web 面板，并管理多个 Bot 子进程
  */
-
 const {
     startAdminServer,
     emitRealtimeStatus,
@@ -11,23 +10,28 @@ const {
     emitRealtimeAccountLog,
 } = require('./src/controllers/admin');
 const { installCodeManagerApiHook } = require('./src/controllers/code-manager-api-hook');
+const { installDogFeedApiHook } = require('./src/controllers/dog-feed-api-hook');
 const { createRuntimeEngine } = require('./src/runtime/runtime-engine');
 const { createIsolatedRuntimeCodeProviderFromEnv } = require('./src/services/isolated-runtime-code-provider');
+const { installDogFeedActionHook } = require('./src/services/dog-feed-action-hook');
 const { createModuleLogger } = require('./src/services/logger');
 const mainLogger = createModuleLogger('main');
 
 function startAdminServerWithCodeManagerApi(dataProvider) {
-    const uninstall = installCodeManagerApiHook(dataProvider);
+    const uninstallCodeManager = installCodeManagerApiHook(dataProvider);
+    const uninstallDogFeed = installDogFeedApiHook(dataProvider);
     try {
         return startAdminServer(dataProvider);
     } finally {
-        uninstall();
+        uninstallDogFeed();
+        uninstallCodeManager();
     }
 }
 
 // 打包后 worker 由当前可执行文件以 --worker 模式启动
 const isWorkerProcess = process.env.FARM_WORKER === '1';
 if (isWorkerProcess) {
+    installDogFeedActionHook();
     require('./src/core/worker');
 } else {
     const codeRefreshProvider = createIsolatedRuntimeCodeProviderFromEnv({ processRef: process });
@@ -44,7 +48,6 @@ if (isWorkerProcess) {
             emitRealtimeStatus(accountId, status);
         },
         onLog: (entry, accountId) => {
-            // 确保日志条目包含 accountId
             if (accountId && entry) {
                 entry.accountId = accountId;
             }
