@@ -12,6 +12,12 @@ const {
 const { getAllLandsRaw } = require('./farm-api');
 const { createFarmFertilizerService } = require('./farm-fertilizer');
 const { createPlantingService } = require('./planting-service');
+const { createEventSeedPriorityService } = require('./event-seed-priority');
+const { getPlantBySeedIdWithLearning } = require('./learned-seed-resolver');
+const {
+    createEventSeedLogWarn,
+    createEventSeedShopWrapper,
+} = require('./event-seed-shop-wrapper');
 const { createFarmOrchestrator } = require('./farm-orchestrator');
 const { createFarmSchedulerService } = require('./farm-scheduler');
 const { createFarmQueryService } = require('./farm-query-service');
@@ -40,11 +46,29 @@ const { runFertilizerByConfig } = createFarmFertilizerService({
 });
 
 const {
+    plantSeeds,
     plant2x2Seed,
     plantFromBagSeeds,
-    plantFromShop,
+    plantFromShop: plantFromShopBase,
 } = createPlantingService({
     // 背包 2x2 探测必须继续经过 facade wrapper，保持 operation-limit callback 语义。
+    getAllLands,
+});
+
+const { runBeforeShop: runEventSeedPriorityBeforeShop } = createEventSeedPriorityService({
+    // 活动/特殊种子仍复用已验收的 PlantService 写链，不新增或猜测 RPC。
+    getAllLands,
+    plantSeeds,
+    plant2x2Seed,
+    // Plant.json 未收录的新 seedId 只在本机 QQ 官方缓存给出确定 seed_id + size 证据时升级。
+    getPlantBySeedId: getPlantBySeedIdWithLearning,
+    // unresolved 的真实拦截结果由 wrapper 的置信度安全门决定，避免中间层先打印误导性“已暂停”。
+    logWarn: createEventSeedLogWarn(),
+});
+
+const plantFromShopWithEventSeedPriority = createEventSeedShopWrapper({
+    runEventSeedPriorityBeforeShop,
+    plantFromShopBase,
     getAllLands,
 });
 
@@ -58,7 +82,7 @@ const {
     runFertilizerByConfig,
     plant2x2Seed,
     plantFromBagSeeds,
-    plantFromShop,
+    plantFromShop: plantFromShopWithEventSeedPriority,
 });
 
 const {
