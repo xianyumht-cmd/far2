@@ -37,13 +37,37 @@ function stableUnique(values) {
         .filter(value => value > 0))];
 }
 
+function requireIllustratedItems(value, label) {
+    const items = Array.isArray(value && value.items) ? value.items : [];
+    if (!items.length) throw new Error(`${label} returned no items`);
+    return value;
+}
+
+function requireDeepActivity(value) {
+    const framework = value && value.framework && typeof value.framework === 'object' ? value.framework : {};
+    const groupSummary = value && value.groupSummary && typeof value.groupSummary === 'object'
+        ? value.groupSummary
+        : {};
+    if (!value || !value.discovery || framework.deepDiscovery !== true) {
+        throw new Error(`activity deep discovery incomplete: ${String((value && value.discoveryError) || 'no discovery snapshot')}`);
+    }
+    const requested = Math.max(0, toNum(groupSummary.requested));
+    const loaded = Math.max(0, toNum(groupSummary.loaded));
+    const failed = Math.max(0, toNum(groupSummary.failed));
+    if (failed > 0 || loaded < requested) {
+        throw new Error(`activity groups incomplete: requested=${requested} loaded=${loaded} failed=${failed}`);
+    }
+    return value;
+}
+
 async function readSeedShops() {
     const profiles = await getShopProfilesOverview();
     const seedShops = (Array.isArray(profiles && profiles.shops) ? profiles.shops : [])
         .filter(shop => toNum(shop && shop.shopType) === 2);
+    if (!seedShops.length) throw new Error('server returned no seed shop profile');
+
     const shops = [];
     const seedIds = [];
-
     for (const shop of seedShops) {
         const shopId = toNum(shop && shop.shopId);
         if (!shopId) continue;
@@ -59,7 +83,7 @@ async function readSeedShops() {
             if (itemId) seedIds.push(itemId);
         }
     }
-
+    if (!shops.length) throw new Error('seed shop profile exists but no shop detail loaded');
     return { profiles, shops, seedIds: stableUnique(seedIds) };
 }
 
@@ -189,9 +213,17 @@ async function refreshStartupCropRegistry(options = {}) {
 
     // These are all read-only RPCs. Keep them sequential to avoid competing for
     // the shared websocket pending-request slots during account bootstrap.
-    const cropIllustrated = await readComponent('cropIllustrated', () => getIllustratedOverview({ illustratedType: 1, refresh: false }));
-    const mutationIllustrated = await readComponent('mutationIllustrated', () => getIllustratedOverview({ illustratedType: 2, refresh: false }));
-    const activities = await readComponent('activities', () => listActivityOverview({ force: true, groupLimit: 32 }));
+    const cropIllustrated = await readComponent('cropIllustrated', async () => requireIllustratedItems(
+        await getIllustratedOverview({ illustratedType: 1, refresh: false }),
+        'crop illustrated type=1',
+    ));
+    const mutationIllustrated = await readComponent('mutationIllustrated', async () => requireIllustratedItems(
+        await getIllustratedOverview({ illustratedType: 2, refresh: false }),
+        'mutation illustrated type=2',
+    ));
+    const activities = await readComponent('activities', async () => requireDeepActivity(
+        await listActivityOverview({ force: true, groupLimit: 32 }),
+    ));
     const seedShops = await readComponent('seedShops', () => readSeedShops());
 
     const snapshot = buildCropRegistrySnapshotV2({
@@ -220,6 +252,8 @@ module.exports = {
     SNAPSHOT_VERSION,
     normalizeStaticPlant,
     normalizeStaticPlants,
+    requireIllustratedItems,
+    requireDeepActivity,
     decorateSnapshot,
     buildCropRegistrySnapshotV2,
     refreshStartupCropRegistry,
