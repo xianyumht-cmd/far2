@@ -1,16 +1,17 @@
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
 const {
-    listActivityOverview,
+    listActivityOverview: listActivityOverviewBase,
     normalizeActivityInfo,
     normalizeRandomShop,
     normalizeExchangeShop,
     normalizeDrawInfo,
-} = require('./activity-readonly');
+} = require('./activity-readonly-base');
 const { buildActivityDiscoverySnapshot } = require('./activity-discovery');
 
 const ACTIVITY_SERVICE = 'gamepb.activitypb.ActivityService';
 const DEFAULT_GROUP_LIMIT = 12;
+const DEFAULT_CACHE_TTL_MS = 60 * 1000;
 
 function toPositiveInt(value) {
     const n = Number(value);
@@ -90,13 +91,21 @@ function selectGroupCandidates(listOverview, limit = DEFAULT_GROUP_LIMIT) {
 function createActivityDiscoveryService(options = {}) {
     const readList = typeof options.listActivityOverview === 'function'
         ? options.listActivityOverview
-        : listActivityOverview;
+        : listActivityOverviewBase;
     const readGroup = typeof options.getActivityGroupOverview === 'function'
         ? options.getActivityGroupOverview
         : getActivityGroupOverview;
     const groupLimit = Math.max(1, Math.min(32, Number.parseInt(options.groupLimit, 10) || DEFAULT_GROUP_LIMIT));
+    const cacheTtlMs = Math.max(5_000, Math.min(10 * 60 * 1000, Number(options.cacheTtlMs) || DEFAULT_CACHE_TTL_MS));
+    let cache = { at: 0, value: null };
 
     async function discover(run = {}) {
+        const now = Date.now();
+        const force = run && run.force === true;
+        if (!force && cache.value && now - cache.at < cacheTtlMs) {
+            return cache.value;
+        }
+
         const listOverview = await readList();
         const candidates = selectGroupCandidates(listOverview, run.groupLimit || groupLimit);
         const groups = [];
@@ -121,9 +130,7 @@ function createActivityDiscoveryService(options = {}) {
             groupRequested: candidates.length,
         });
 
-        // Backward compatibility: /api/activities historically returned the List-only
-        // overview. Keep those top-level fields untouched and append deep discovery data.
-        return {
+        const value = {
             ...listOverview,
             discovery,
             groups,
@@ -134,14 +141,21 @@ function createActivityDiscoveryService(options = {}) {
                 listTransport: 'ActivityService.List',
                 groupTransport: 'ActivityService.GetGroup',
                 maxGroupsPerScan: groupLimit,
+                cacheTtlMs,
                 deepDiscovery: true,
                 readOnly: true,
                 autoOperateEnabled: false,
             },
         };
+        cache = { at: now, value };
+        return value;
     }
 
-    return { discover };
+    function clearCache() {
+        cache = { at: 0, value: null };
+    }
+
+    return { discover, clearCache };
 }
 
 const defaultService = createActivityDiscoveryService();
@@ -149,10 +163,12 @@ const defaultService = createActivityDiscoveryService();
 module.exports = {
     ACTIVITY_SERVICE,
     DEFAULT_GROUP_LIMIT,
+    DEFAULT_CACHE_TTL_MS,
     normalizeActivityNode,
     buildActivityGroupOverview,
     getActivityGroupOverview,
     selectGroupCandidates,
     createActivityDiscoveryService,
     discoverActivityOverview: defaultService.discover,
+    clearActivityDiscoveryCache: defaultService.clearCache,
 };
