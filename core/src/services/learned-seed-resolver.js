@@ -2,6 +2,7 @@ const {
     getPlantBySeedId,
     getItemById,
 } = require('../config/gameConfig');
+const { getRegistryPlantBySeedId } = require('./runtime-crop-registry-resolver');
 const { learnSeedConfigFromQqCache } = require('./qq-seed-config-learner');
 
 function normalizePositiveInt(value) {
@@ -65,6 +66,9 @@ function createLearnedSeedResolver(options = {}) {
     const readStaticPlant = typeof options.getPlantBySeedId === 'function'
         ? options.getPlantBySeedId
         : getPlantBySeedId;
+    const readRegistryPlant = typeof options.getRegistryPlantBySeedId === 'function'
+        ? options.getRegistryPlantBySeedId
+        : getRegistryPlantBySeedId;
     const readItem = typeof options.getItemById === 'function'
         ? options.getItemById
         : getItemById;
@@ -78,6 +82,13 @@ function createLearnedSeedResolver(options = {}) {
 
         const staticPlant = readStaticPlant(id);
         if (staticPlant) return staticPlant;
+
+        // Startup Crop Registry is produced before worker automation is released.
+        // Only exact, proven autoPlantReady rows are exposed by this resolver.
+        // This is preferred over QQ cache learning because identity + footprint
+        // have already been calibrated and persisted by the startup Gate.
+        const registryPlant = readRegistryPlant(id);
+        if (registryPlant) return registryPlant;
 
         const itemInfo = readItem(id) || null;
         if (!shouldTryRuntimeLearning(id, itemInfo)) return null;
