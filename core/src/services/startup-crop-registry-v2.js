@@ -9,6 +9,10 @@ const {
 } = require('./catalog');
 const { listActivityOverview } = require('./activity-readonly');
 const { buildCropRegistrySnapshot } = require('./startup-crop-registry');
+const {
+    loadRuntimePlantOverlay,
+    runtimeOverlayPlants,
+} = require('./runtime-plant-overlay-evidence');
 
 const SNAPSHOT_VERSION = 2;
 
@@ -105,10 +109,16 @@ async function readComponent(name, fn, attempts = 2) {
     };
 }
 
-function decorateSnapshot(snapshot, rawPlants) {
+function decorateSnapshot(snapshot, rawPlants, runtimeOverlay = null) {
     const plantSeedIds = new Set((Array.isArray(rawPlants) ? rawPlants : [])
         .map(plant => toNum(plant && plant.seed_id))
         .filter(Boolean));
+    const overlayEntries = runtimeOverlay && runtimeOverlay.calibration && runtimeOverlay.calibration.proven === true
+        ? (Array.isArray(runtimeOverlay.entries) ? runtimeOverlay.entries : [])
+        : [];
+    const overlayByFruit = new Map(overlayEntries
+        .filter(row => row && row.ok && toNum(row.fruitId) > 0 && toNum(row.seedId) > 0)
+        .map(row => [toNum(row.fruitId), row]));
 
     snapshot.version = SNAPSHOT_VERSION;
     snapshot.protocolEvidence = {
@@ -116,26 +126,49 @@ function decorateSnapshot(snapshot, rawPlants) {
         mutationIllustratedType: 2,
         cropTierMeaning: 'server-tier-preserved; tier alone never proves footprint',
         ordinaryStaticSizeRule: 'Plant.size=0 => 1x1',
+        runtimePlantSizeRule: overlayEntries.length
+            ? 'calibrated official runtime: size=null => 1x1; size=2 => 2x2'
+            : 'no proven runtime overlay loaded',
+        runtimePlantOverlay: {
+            loaded: overlayEntries.length > 0,
+            entries: overlayEntries.length,
+            corrections: Array.isArray(runtimeOverlay && runtimeOverlay.corrections) ? runtimeOverlay.corrections : [],
+        },
     };
 
     snapshot.crops = (Array.isArray(snapshot.crops) ? snapshot.crops : []).map((crop) => {
         const seedId = toNum(crop && crop.seedId);
+        const fruitId = toNum(crop && crop.fruitId);
         const tier = toNum(crop && crop.illustratedTier);
         const hasStaticPlant = seedId > 0 && plantSeedIds.has(seedId);
+        const runtimeEntry = overlayByFruit.get(fruitId) || null;
+        const hasRuntimePlant = !!runtimeEntry && toNum(runtimeEntry.seedId) === seedId;
         const derivedLiveIdentity = crop && crop.seedIdSource === 'validated-live-fruit-offset';
         const size = toNum(crop && crop.size);
+        const evidence = Array.isArray(crop && crop.evidence) ? [...crop.evidence] : [];
+        if (hasRuntimePlant && !evidence.includes('runtime-plant-overlay')) evidence.push('runtime-plant-overlay');
+        if (hasRuntimePlant && !hasStaticPlant) {
+            const index = evidence.indexOf('static-plant-config');
+            if (index >= 0) evidence.splice(index, 1);
+        }
 
         return {
             ...crop,
+            seedIdSource: hasRuntimePlant ? 'runtime-plant-fruit-map' : crop.seedIdSource,
             illustratedClass: tier <= 0 ? 'not-in-live-illustrated' : (tier === 1 ? 'tier-1' : `special-tier-${tier}`),
             identityConfidence: seedId <= 0
                 ? 'unknown'
-                : (derivedLiveIdentity ? 'proven-live-illustrated-map' : (hasStaticPlant ? 'proven-static-plant-map' : 'observed')),
-            footprintSource: size > 0 && hasStaticPlant ? 'static-plant-config' : 'unknown',
-            footprintConfidence: size > 0 && hasStaticPlant ? 'proven-config' : 'unknown',
-            // A live illustrated identity is sufficient to call it a crop seed,
-            // but never sufficient by itself to infer 1x1/2x2.
-            autoPlantReady: seedId > 0 && size > 0 && hasStaticPlant,
+                : (hasRuntimePlant
+                    ? 'proven-runtime-plant-map'
+                    : (derivedLiveIdentity ? 'proven-live-illustrated-map' : (hasStaticPlant ? 'proven-static-plant-map' : 'observed'))),
+            footprintSource: size > 0
+                ? (hasRuntimePlant ? 'runtime-plant-overlay' : (hasStaticPlant ? 'static-plant-config' : 'unknown'))
+                : 'unknown',
+            footprintConfidence: size > 0 && (hasRuntimePlant || hasStaticPlant) ? 'proven-config' : 'unknown',
+            evidence,
+            // Runtime overlay is accepted only after known 1x1/2x2 calibration,
+            // so it can safely graduate both identity and footprint together.
+            autoPlantReady: seedId > 0 && size > 0 && (hasRuntimePlant || hasStaticPlant),
         };
     });
 
@@ -172,6 +205,7 @@ function decorateSnapshot(snapshot, rawPlants) {
         total: illustratedCrops.length,
         tierCounts: Object.fromEntries(snapshot.tierStats.map(row => [String(row.tier), row.total])),
         liveDerivedSeedIdentities: illustratedCrops.filter(row => row.seedIdSource === 'validated-live-fruit-offset').length,
+        runtimeOverlaySeedIdentities: illustratedCrops.filter(row => row.seedIdSource === 'runtime-plant-fruit-map').length,
         unresolvedFootprints: illustratedCrops.filter(row => toNum(row.seedId) > 0 && toNum(row.size) <= 0).length,
     };
 
@@ -180,17 +214,25 @@ function decorateSnapshot(snapshot, rawPlants) {
         identityAndFootprintSeparated: true,
         tierNeverPromotesFootprint: true,
         liveIllustratedSeedWithoutFootprintNeverAutoPlants: true,
+        runtimeOverlayRequiresKnownSizeCalibration: true,
+        runtimeOverlayOverridesFruitOffsetGuess: true,
     };
     return snapshot;
 }
 
 function buildCropRegistrySnapshotV2(input = {}) {
     const rawPlants = Array.isArray(input.plants) ? input.plants : [];
+    // Pure fixture/build callers never read local core/data implicitly.
+    // Real startup passes a proven local overlay explicitly from refreshStartupCropRegistry().
+    const runtimeOverlay = input.runtimePlantOverlay && typeof input.runtimePlantOverlay === 'object'
+        ? input.runtimePlantOverlay
+        : null;
+    const runtimePlants = runtimeOverlayPlants(runtimeOverlay);
     const snapshot = buildCropRegistrySnapshot({
         ...input,
-        plants: normalizeStaticPlants(rawPlants),
+        plants: [...normalizeStaticPlants(rawPlants), ...runtimePlants],
     });
-    return decorateSnapshot(snapshot, rawPlants);
+    return decorateSnapshot(snapshot, rawPlants, runtimeOverlay);
 }
 
 function persistSnapshot(snapshot) {
@@ -210,6 +252,7 @@ async function refreshStartupCropRegistry(options = {}) {
     const accountId = String(options.accountId || '').trim();
     const bagItems = Array.isArray(options.bagItems) ? options.bagItems : [];
     const plants = getAllPlants();
+    const runtimePlantOverlay = loadRuntimePlantOverlay();
 
     // These are all read-only RPCs. Keep them sequential to avoid competing for
     // the shared websocket pending-request slots during account bootstrap.
@@ -229,6 +272,7 @@ async function refreshStartupCropRegistry(options = {}) {
     const snapshot = buildCropRegistrySnapshotV2({
         accountId,
         plants,
+        runtimePlantOverlay,
         bagItems,
         cropIllustrated: cropIllustrated.value || undefined,
         mutationIllustrated: mutationIllustrated.value || undefined,
