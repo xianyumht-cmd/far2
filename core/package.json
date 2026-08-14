@@ -11,7 +11,7 @@
     "start": "node client.js",
     "dev": "node client.js",
     "startup:scope-selftest": "node scripts/startup-account-scope-selftest.js",
-    "startup:crop-registry-selftest": "node scripts/startup-crop-registry-selftest.js && node scripts/startup-crop-registry-gate-selftest.js",
+    "startup:crop-registry-selftest": "node scripts/startup-crop-registry-selftest.js && node scripts/startup-crop-registry-gate-selftest.js && node scripts/startup-crop-registry-runtime-overlay-selftest.js",
     "illustrated:proto-selftest": "node scripts/illustrated-proto-selftest.js",
     "catalog:actions-selftest": "node scripts/catalog-actions-selftest.js",
     "land:controls-selftest": "node scripts/land-controls-selftest.js",
@@ -77,7 +77,8 @@
     "pushoo": "^0.1.11",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.3",
-    "winston": "^8.19.0"
+    "winston": "^3.18.3",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^7.4.3",
