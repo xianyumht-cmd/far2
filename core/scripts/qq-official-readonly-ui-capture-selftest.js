@@ -88,7 +88,7 @@ function main() {
         assert.ok(payload.includes("'in',label+'.onMessage'"));
         assert.ok(payload.includes("'in','WebSocket.message'"));
         assert.ok(payload.includes('metadata-only-unknown-method'));
-        assert.ok(payload.includes('sensitive'));
+        assert.ok(payload.includes('SENSITIVE'));
         assert.equal(payload.includes('sendMsgAsync'), false);
         assert.equal(payload.includes('fetch('), false);
         assert.equal(payload.includes('XMLHttpRequest'), false);

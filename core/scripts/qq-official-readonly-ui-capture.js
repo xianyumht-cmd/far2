@@ -319,8 +319,14 @@ async function decodeBody(row) {
 function phaseForTimestamp(timestamp, phases) {
     const ms = Date.parse(timestamp || '');
     if (!Number.isFinite(ms)) return 'unknown';
-    for (const phase of phases) {
-        if (ms >= phase.startMs && ms <= phase.endMs + 1000) return phase.name;
+    const list = Array.isArray(phases) ? phases : [];
+    // Later phase wins if two adjacent user-operation windows share the same millisecond.
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+        const phase = list[i];
+        const startMs = Number(phase && phase.startMs);
+        const endMs = Number(phase && phase.endMs);
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) continue;
+        if (ms >= startMs && ms <= endMs) return phase.name;
     }
     return 'outside-phase';
 }
