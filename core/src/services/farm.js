@@ -13,6 +13,7 @@ const { getAllLandsRaw } = require('./farm-api');
 const { createFarmFertilizerService } = require('./farm-fertilizer');
 const { createPlantingService } = require('./planting-service');
 const { createEventSeedPriorityService } = require('./event-seed-priority');
+const { getPlantBySeedIdWithLearning } = require('./learned-seed-resolver');
 const { createFarmOrchestrator } = require('./farm-orchestrator');
 const { createFarmSchedulerService } = require('./farm-scheduler');
 const { createFarmQueryService } = require('./farm-query-service');
@@ -56,6 +57,8 @@ const { runBeforeShop: runEventSeedPriorityBeforeShop } = createEventSeedPriorit
     getAllLands,
     plantSeeds,
     plant2x2Seed,
+    // Plant.json 未收录的新 seedId 只在本机 QQ 官方缓存给出确定 seed_id + size 证据时升级。
+    getPlantBySeedId: getPlantBySeedIdWithLearning,
 });
 
 async function plantFromShopWithEventSeedPriority(landIds, state, overrideStrategy) {
