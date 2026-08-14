@@ -187,6 +187,48 @@ function shouldRunHelpTickAfterExpLimit(options = {}) {
     return activeGuardDogCount > 0;
 }
 
+function selectHelpTargetsAfterExpLimit(targets, options = {}) {
+    const list = Array.isArray(targets) ? targets : [];
+    const stopWhenExpLimit = options.stopWhenExpLimit === true;
+    const expLimitReached = options.expLimitReached === true;
+    const guardTargets = list.filter(canContinueHelpAfterExpLimit);
+
+    if (!stopWhenExpLimit || !expLimitReached) {
+        return {
+            targets: list,
+            guardDogOnly: false,
+            eligibleGuardDogCount: guardTargets.length,
+            skippedNonGuardDogCount: 0,
+        };
+    }
+
+    return {
+        targets: guardTargets,
+        guardDogOnly: true,
+        eligibleGuardDogCount: guardTargets.length,
+        skippedNonGuardDogCount: Math.max(0, list.length - guardTargets.length),
+    };
+}
+
+function getHelpTickDelayMs(options = {}) {
+    const baseDelayMs = Math.max(1000, Number.parseInt(options.baseDelayMs, 10) || 1000);
+    const stopWhenExpLimit = options.stopWhenExpLimit === true;
+    const expLimitReached = options.expLimitReached === true;
+    const eligibleGuardDogCount = Math.max(
+        0,
+        Number.parseInt(options.eligibleGuardDogCount, 10) || 0,
+    );
+    const noEligibleBackoffMs = Math.max(
+        baseDelayMs,
+        Number.parseInt(options.noEligibleBackoffMs, 10) || 60_000,
+    );
+
+    if (stopWhenExpLimit && expLimitReached && eligibleGuardDogCount <= 0) {
+        return noEligibleBackoffMs;
+    }
+    return baseDelayMs;
+}
+
 function clearFriendDogStateMemoryForTest() {
     memoryCaches.clear();
 }
@@ -201,5 +243,7 @@ module.exports = {
     compareHelpTargets,
     canContinueHelpAfterExpLimit,
     shouldRunHelpTickAfterExpLimit,
+    selectHelpTargetsAfterExpLimit,
+    getHelpTickDelayMs,
     clearFriendDogStateMemoryForTest,
 };

@@ -27,8 +27,13 @@ const {
     getFriendDogInfo,
     getGuardDogGidSet,
     compareHelpTargets,
-    canContinueHelpAfterExpLimit,
+    selectHelpTargetsAfterExpLimit,
 } = require('./friend-dog-state');
+const {
+    DEFAULT_IDLE_LOG_INTERVAL_MS,
+    buildStealPatrolIdleStatus,
+    shouldEmitStealPatrolStatus,
+} = require('./friend-patrol-observability');
 const { getInteractRecords } = require('./interact');
 const { createScheduler } = require('./scheduler');
 const { recordOperation } = require('./stats');
@@ -40,6 +45,8 @@ let friendLoopRunning = false;
 let externalSchedulerMode = false;
 let lastResetDate = '';  // 上次重置日期 (YYYY-MM-DD)
 const friendScheduler = createScheduler('friend');
+let lastStealPatrolLogKey = '';
+let lastStealPatrolLogAt = 0;
 
 // 好友列表缓存
 let friendsListCache = null;
@@ -73,6 +80,40 @@ const OP_NAMES = {
     10007: '浇水',
     10008: '偷菜',
 };
+
+function recordStealPatrolStatus(options = {}) {
+    if (options.enabled !== true) return;
+
+    const nowMs = Math.max(0, Number(options.nowMs) || Date.now());
+    const stolenCount = Math.max(0, Number.parseInt(options.stolenCount, 10) || 0);
+    if (stolenCount > 0) {
+        lastStealPatrolLogKey = 'success';
+        lastStealPatrolLogAt = nowMs;
+        return;
+    }
+
+    const status = buildStealPatrolIdleStatus(options);
+    if (!status) return;
+    if (!shouldEmitStealPatrolStatus({
+        previousKey: lastStealPatrolLogKey,
+        nextKey: status.key,
+        previousAt: lastStealPatrolLogAt,
+        nowMs,
+        intervalMs: DEFAULT_IDLE_LOG_INTERVAL_MS,
+    })) {
+        return;
+    }
+
+    lastStealPatrolLogKey = status.key;
+    lastStealPatrolLogAt = nowMs;
+    log('好友', status.message, {
+        module: 'friend',
+        event: '偷菜巡查状态',
+        result: status.result,
+        targetCount: Math.max(0, Number.parseInt(options.targetCount, 10) || 0),
+        stolenCount,
+    });
+}
 
 function buildFriendLandMutationDetail(plant, currentPhase, occupiedByMaster, resolveEffects = getMutantEffectsByIds) {
     if (occupiedByMaster) {
@@ -1597,6 +1638,7 @@ async function checkFriends(options = {}) {
     const onlySteal = options.onlySteal || false;
     const onlyBad = options.onlyBad || false;
     const ignoreExpLimit = options.ignoreExpLimit || false;
+    const returnMeta = options.returnMeta === true;
     
     const effectiveHelpEnabled = onlyHelp ? true : (onlySteal || onlyBad ? false : helpEnabled);
     const effectiveStealEnabled = onlySteal ? true : (onlyHelp || onlyBad ? false : stealEnabled);
@@ -1654,6 +1696,14 @@ async function checkFriends(options = {}) {
         // 排序：已确认有护主犬的好友优先，其次按帮助需求数量。
         helpFriends.sort(compareHelpTargets);
 
+        const stopWhenExpLimitForRun = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
+        const expLimitReachedAtSelection = stopWhenExpLimitForRun && !canGetHelpExp;
+        const helpSelection = selectHelpTargetsAfterExpLimit(helpFriends, {
+            stopWhenExpLimit: stopWhenExpLimitForRun,
+            expLimitReached: expLimitReachedAtSelection,
+        });
+        const runnableHelpFriends = helpSelection.targets;
+
         const totalActions = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
 
         // 第二阶段：批量偷菜
@@ -1674,6 +1724,14 @@ async function checkFriends(options = {}) {
             }
         }
 
+        const stealLimitReached = effectiveStealEnabled && !canOperate(10008);
+        recordStealPatrolStatus({
+            enabled: effectiveStealEnabled,
+            targetCount: stealFriends.length,
+            stolenCount: totalActions.steal,
+            limitReached: stealLimitReached,
+        });
+
         // 偷菜后自动出售
         if (totalActions.steal > 0) {
             try {
@@ -1684,24 +1742,23 @@ async function checkFriends(options = {}) {
         }
 
         // 第三阶段：批量帮助
-        if (helpFriends.length > 0 && effectiveHelpEnabled) {
-            log('好友', `开始批量帮助，共 ${helpFriends.length} 个好友需要帮助`, {
-                module: 'friend', event: '开始批量帮助', count: helpFriends.length
+        // 经验已经达到上限时，目标列表在进入循环前就裁剪为“当前确实需要帮助的护主犬好友”。
+        // 如果本轮执行过程中刚好触发经验上限，则因护主犬已排在前面，遇到第一个普通好友时静默结束。
+        if (runnableHelpFriends.length > 0 && effectiveHelpEnabled) {
+            log('好友', `开始批量帮助，共 ${runnableHelpFriends.length} 个好友需要帮助`, {
+                module: 'friend', event: '开始批量帮助', count: runnableHelpFriends.length
             });
 
-            for (let i = 0; i < helpFriends.length; i++) {
-                const friend = helpFriends[i];
-                log('好友', `批量帮助第 ${i + 1}/${helpFriends.length} 个好友: ${friend.name}`, { module: 'friend', event: '批量帮助开始', index: i + 1, total: helpFriends.length, friendName: friend.name });
-
-                // 经验达到上限后，仅继续帮助已确认仍有有效护主犬的好友。
-                const stopWhenExpLimit = !!isAutomationOn('friend_help_exp_limit') && !ignoreExpLimit;
-                const expLimitReached = stopWhenExpLimit && !canGetHelpExp;
-                if (expLimitReached && !canContinueHelpAfterExpLimit(friend)) {
-                    log('好友', `批量帮助中断：经验已达上限，护主犬好友已优先处理完毕`, {
-                        module: 'friend', event: '批量帮助中断', reason: 'exp_limit_non_guard_dog'
-                    });
+            for (let i = 0; i < runnableHelpFriends.length; i++) {
+                const friend = runnableHelpFriends[i];
+                const expLimitReachedNow = stopWhenExpLimitForRun && !canGetHelpExp;
+                if (expLimitReachedNow && !friend.hasGuardDog) {
                     break;
                 }
+
+                log('好友', `批量帮助第 ${i + 1}/${runnableHelpFriends.length} 个好友: ${friend.name}`, {
+                    module: 'friend', event: '批量帮助开始', index: i + 1, total: runnableHelpFriends.length, friendName: friend.name
+                });
 
                 try {
                     await visitFriendForHelp(
@@ -1716,7 +1773,9 @@ async function checkFriends(options = {}) {
                         module: 'friend', event: '批量帮助完成', index: i + 1, friendName: friend.name, hasGuardDog: !!friend.hasGuardDog
                     });
                 } catch (e) {
-                    log('好友', `批量帮助第 ${i + 1} 个好友失败: ${friend.name}, 错误: ${e.message}`, { module: 'friend', event: '批量帮助失败', index: i + 1, friendName: friend.name, error: e.message });
+                    log('好友', `批量帮助第 ${i + 1} 个好友失败: ${friend.name}, 错误: ${e.message}`, {
+                        module: 'friend', event: '批量帮助失败', index: i + 1, friendName: friend.name, error: e.message
+                    });
                 }
                 await randomDelay(500, 800);
             }
@@ -1791,13 +1850,27 @@ async function checkFriends(options = {}) {
         if (totalActions.putBug > 0) summary.push(`放虫${totalActions.putBug}`);
         if (totalActions.putWeed > 0) summary.push(`放草${totalActions.putWeed}`);
 
-        const totalVisited = stealFriends.length + helpFriends.length;
+        const totalVisited = stealFriends.length + runnableHelpFriends.length;
         if (summary.length > 0) {
             log('好友', `巡查完成 → ${summary.join('/')}`, {
                 module: 'friend', event: '好友巡查循环', result: 'ok', visited: totalVisited, summary
             });
         }
-        return summary.length > 0;
+
+        const acted = summary.length > 0;
+        if (returnMeta) {
+            return {
+                acted,
+                expLimitReached: stopWhenExpLimitForRun && !canGetHelpExp,
+                helpCandidateCount: helpFriends.length,
+                eligibleGuardDogHelpCount: helpSelection.eligibleGuardDogCount,
+                skippedNonGuardDogHelpCount: helpSelection.skippedNonGuardDogCount,
+                stealCandidateCount: stealFriends.length,
+                stealActionCount: totalActions.steal,
+                stealLimitReached,
+            };
+        }
+        return acted;
 
     } catch (err) {
         logWarn('好友', `巡查异常: ${err.message}`);
