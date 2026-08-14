@@ -16,8 +16,6 @@
 - PR #47 merged to `main` as merge commit `0ae4b2dea489fc61adb08ed14c241ef6fb7adca9`.
 - User confirmed stealing itself works and accepted the logging/backoff behavior.
 - Stealing core logic was not redesigned.
-- Post-EXP help targets are narrowed to current help-needed guard-dog friends; no eligible target backs off help scans.
-- Steal idle/status logs are low-noise and rate-limited.
 
 ## Active priority — event/activity seeds in bag
 
@@ -31,13 +29,13 @@ Goal:
 - support both 1x1 and 2x2 event crops;
 - work under normal account planting strategies, not only `bag_priority`;
 - automatically learn new seed mappings from official local evidence when possible;
-- fail closed for unknown mappings: preserve the item and never trial-plant an unknown footprint.
+- fail closed for genuinely unknown mappings: never trial-plant an unknown footprint.
 
-### A-stage — discovery + pre-shop priority layer
+### A-stage — discovery + pre-shop priority
 
 Implemented on the feature branch.
 
-The new event-seed pre-shop layer combines evidence from:
+Evidence sources:
 
 - Bag items;
 - existing Plant config / proven static fallbacks;
@@ -48,15 +46,15 @@ The new event-seed pre-shop layer combines evidence from:
 Behavior:
 
 - known special/event 1x1 seed -> plant from bag before ordinary shop fallback;
-- known special/event 2x2 seed -> use existing four-land planting path before ordinary shop fallback;
-- unresolved high-confidence seed -> do not trial-plant; protect the seed opportunity and record evidence;
-- unresolved namespace-only medium candidate -> record/learn, but do not permanently stall a healthy farm when stronger evidence is absent.
+- known special/event 2x2 seed -> existing four-land PlantService path before ordinary shop fallback;
+- unresolved high-confidence seed -> zero trial writes, preserve the opportunity and record evidence;
+- namespace-only medium candidate -> record/learn, but do not permanently stall a healthy farm without stronger evidence.
 
-Runtime discovery evidence is stored under:
+Runtime discovery state:
 
 `core/data/seed_discovery/<account>.json`
 
-### B-stage — local QQ-cache automatic learning
+### B-stage — official QQ-cache automatic learning
 
 Implemented on the feature branch.
 
@@ -64,13 +62,13 @@ For an unresolved seed-like item, FAR2 can inspect local official QQ Farm miniap
 
 `%APPDATA%\QQEX\miniapp\temps\miniapp_src\1112386029_3_*`
 
-Readonly proof rule:
+Strict readonly proof rule:
 
-- the same containing official-cache object must contain exact `seed_id=<target>` / `seedId=<target>`;
-- exactly one non-conflicting `size` must be present;
-- `size=0/1` -> 1x1;
-- `size=2` -> 2x2;
-- conflicting/unsupported size -> reject learning;
+- `seed_id=<target>` / `seedId=<target>` and `size` must be **direct fields at the same object level**;
+- nested parent/child fields cannot be combined;
+- raw `size=0/1` -> 1x1;
+- raw `size=2` -> 2x2;
+- conflicting/unsupported values -> reject;
 - a numeric ID coincidence alone is never enough.
 
 Positive deterministic mappings are persisted to:
@@ -79,43 +77,34 @@ Positive deterministic mappings are persisted to:
 
 Negative scans are memory-cached for 10 minutes to avoid repeatedly scanning QQ cache every farm tick.
 
-The learned mapping is injected only into the bag/event-seed priority layer. It does not automatically add a new seed to ordinary shop-buy candidates.
+Learned mappings are injected only into the bag/event-seed priority layer. They do not automatically become ordinary shop-buy candidates.
 
-### Safety/resource boundaries
+### 2x2 reservation safety
 
-- no new Farm/Shop RPC schema is invented;
-- actual planting reuses the already-validated `PlantService.Plant` chain;
-- unknown footprint -> zero Plant write;
-- max QQ-cache file size: 32 MiB;
-- max files per learning scan: 300;
-- max bytes per learning scan: 192 MiB;
-- newest three farm cache folders only;
-- static known seeds do not trigger cache scanning;
-- obvious non-seed items do not trigger cache scanning.
+A pending learned/special 2x2 seed does not lock every empty land.
 
-### Offline verification on the feature branch
+The shop wrapper reuses the existing 2x2 reservation planner:
+
+- reserve only the needed 2x2 footprint;
+- let unrelated empty land continue the original planting strategy;
+- if the unlocked layout cannot form a reservable 2x2 group, do not permanently stall normal planting;
+- real 1x1 special-seed partial/write failures remain fail-closed for that cycle.
+
+### Offline verification
 
 Unified command:
 
 `pnpm -C core event-seed:selftest`
 
-It covers:
+It covers discovery, shop classification, activity evidence, persistence, zero-write unknowns, known 1x1/2x2 priority planting, QQ-cache direct-field proof/rejection, learned mapping integration, confidence guard, and 2x2 reservation behavior.
 
-- unknown 20xxx item is retained rather than silently discarded;
-- known / unresolved seed separation;
-- normal seed-shop membership classification;
-- readonly activity references as discovery evidence;
-- discovery-state persistence;
-- unresolved seed causes zero plant writes;
-- known non-shop 1x1 seed is consumed before ordinary shop strategy;
-- known non-shop 2x2 seed uses the four-land path;
-- locked special seed is not consumed;
-- QQ cache same-object `seed_id + size` learning for 1x1 and 2x2;
-- numeric coincidence / conflicting size rejection;
-- learned mapping enters the event-seed priority path;
-- high-confidence unknown vs namespace-only medium shop-block safety gate.
+Before merging this feature branch:
 
-Before merging this feature branch, run existing planting/farm regression tests as well and perform one natural Windows runtime observation.
+1. run the unified event-seed selftest;
+2. run existing 2x2 / planting-service / farm-orchestrator regressions;
+3. run syntax/diff checks;
+4. perform one natural Windows FAR2 runtime observation on the feature branch;
+5. inspect any generated `core/data/seed_discovery/*.json` and logs before deciding merge.
 
 ## Next priority — automatic activity participation / claiming
 

@@ -49,14 +49,21 @@ Safety/resource limits:
 - max total bytes per scan: 192 MiB
 - likely plant/config/item files are examined first
 
-## Proof rule
+## Strict proof rule
 
 A numeric match is not enough.
 
-FAR2 only learns a footprint when the same containing object has:
+FAR2 only learns a footprint when **the same direct object level** has both:
 
-- exact `seed_id: <target>` or `seedId: <target>`; and
-- exactly one non-conflicting `size` value.
+- exact direct field `seed_id: <target>` or `seedId: <target>`; and
+- exactly one non-conflicting direct field `size`.
+
+Nested fields are masked before proof extraction. Therefore these are rejected:
+
+- parent `size` + child `seed_id`;
+- parent `seed_id` + child `size`;
+- `item_id=<target>` with an unrelated `size`;
+- two conflicting direct `size` values.
 
 Accepted footprint mapping:
 
@@ -66,9 +73,9 @@ Accepted footprint mapping:
 
 Other values are rejected.
 
-If multiple cache hits disagree on the footprint, learning fails closed.
+If multiple official-cache hits disagree on the footprint, learning fails closed.
 
-The learner may also collect `name` and `land_level_need` when they are unambiguous, but these are not required to prove the footprint.
+The learner may also collect direct `name` and `land_level_need` when they are unambiguous, but these are not required to prove the footprint.
 
 ## Runtime use
 
@@ -99,26 +106,29 @@ High-confidence unresolved candidates remain protected:
 
 The outer shop guard honors the protective block for high-confidence unknowns and for known-seed write/probe failures.
 
+## 2x2 waiting behavior
+
+A learned/special 2x2 seed must not make every empty land stay empty indefinitely.
+
+`event-seed-shop-wrapper.js` reuses the existing `select2x2Reservations` planner:
+
+- reserve only the land footprint needed by the pending 2x2 seed;
+- allow unrelated empty land to continue through the user's original shop strategy;
+- if the currently unlocked farm layout cannot form any reservable 2x2 group, allow normal planting instead of permanently stalling the farm;
+- a real 1x1 special-seed partial/write failure remains fail-closed for that cycle.
+
 ## Tests
 
-Offline tests:
+Unified offline command:
 
-- `core/scripts/qq-seed-config-learner-selftest.js`
-  - 1x1 parse
-  - 2x2 parse
-  - conflicting-size rejection
-  - numeric-coincidence rejection
-  - minified-bundle object extraction
-  - inconsistent-hit rejection
+`pnpm -C core event-seed:selftest`
 
-- `core/scripts/learned-seed-resolver-selftest.js`
-  - known static seeds do not scan
-  - non-seed items do not scan
-  - unknown seed upgrades only with deterministic evidence
-  - learned mapping enters the existing event-seed priority planting path
+It includes:
 
-- `core/scripts/event-seed-shop-guard-selftest.js`
-  - known-seed failures remain fail-closed
-  - high-confidence unknowns block shop
-  - namespace-only medium candidates do not permanently block
-  - activity references preserve the protective block
+- `event-seed-priority-selftest.js`
+- `qq-seed-config-learner-selftest.js`
+- `learned-seed-resolver-selftest.js`
+- `event-seed-shop-guard-selftest.js`
+- `event-seed-shop-wrapper-selftest.js`
+
+The QQ-cache parser tests explicitly cover parent/child field-crossing rejection in addition to 1x1/2x2 positive fixtures and conflicting-hit rejection.
