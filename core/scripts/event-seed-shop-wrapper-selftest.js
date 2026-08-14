@@ -30,7 +30,7 @@ async function main() {
     assert.deepEqual(calls, [['shop', [1, 2], 113, 'max_exp']]);
     console.log('✅ no block passes remaining lands to original shop strategy PASS');
 
-    let unknownShopCalls = 0;
+    const unknownCalls = [];
     const unknownProtected = createEventSeedShopWrapper({
         runEventSeedPriorityBeforeShop: async ({ landIds }) => ({
             remainingLandIds: [...landIds],
@@ -45,17 +45,29 @@ async function main() {
                 },
             },
         }),
-        plantFromShopBase: async () => {
-            unknownShopCalls++;
-            return { plantedLands: [] };
+        plantFromShopBase: async (landIds) => {
+            unknownCalls.push(['shop', [...landIds]]);
+            return { plantedLands: [...landIds] };
         },
-        getAllLands: async () => ({ lands: [] }),
+        getAllLands: async () => ({
+            lands: [1, 2, 3, 4, 5, 6].map(id => ({ id, unlocked: true, plant: null })),
+        }),
+        select2x2Reservations: (_lands, empty, desired) => {
+            unknownCalls.push(['reserve', [...empty], desired]);
+            return { reservedLandIds: [1, 2, 3, 4] };
+        },
         log: () => {},
         logWarn: () => {},
     });
-    assert.deepEqual(await unknownProtected([1, 2], { level: 113 }), { plantedLands: [] });
-    assert.equal(unknownShopCalls, 0);
-    console.log('✅ high-confidence unresolved seed protects lands from shop planting PASS');
+    assert.deepEqual(
+        await unknownProtected([1, 2, 3, 4, 5, 6], { level: 113 }),
+        { plantedLands: [5, 6] },
+    );
+    assert.deepEqual(unknownCalls, [
+        ['reserve', [1, 2, 3, 4, 5, 6], 1],
+        ['shop', [5, 6]],
+    ]);
+    console.log('✅ high-confidence unresolved seed reserves one possible 2x2 footprint instead of stalling the whole farm PASS');
 
     const reservationCalls = [];
     const reserved2x2 = createEventSeedShopWrapper({
