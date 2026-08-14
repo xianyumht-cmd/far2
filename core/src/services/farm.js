@@ -14,11 +14,13 @@ const { createFarmFertilizerService } = require('./farm-fertilizer');
 const { createPlantingService } = require('./planting-service');
 const { createEventSeedPriorityService } = require('./event-seed-priority');
 const { getPlantBySeedIdWithLearning } = require('./learned-seed-resolver');
-const { shouldBlockShopFallback } = require('./event-seed-shop-guard');
+const {
+    createEventSeedLogWarn,
+    createEventSeedShopWrapper,
+} = require('./event-seed-shop-wrapper');
 const { createFarmOrchestrator } = require('./farm-orchestrator');
 const { createFarmSchedulerService } = require('./farm-scheduler');
 const { createFarmQueryService } = require('./farm-query-service');
-const { log, logWarn } = require('../utils/utils');
 
 // ============ 农场 API ============
 
@@ -53,21 +55,6 @@ const {
     getAllLands,
 });
 
-function eventSeedLogWarn(tag, message, meta = {}) {
-    if (meta && meta.result === 'unresolved_seed_block_shop') {
-        const adjusted = String(message || '').replace(
-            '；为避免误买普通种子，本轮暂停商店补种并记录学习证据',
-            '；已记录学习证据，外层安全门将按置信度决定是否暂停商店补种',
-        );
-        log(tag, adjusted, {
-            ...meta,
-            result: 'unresolved_seed_guarded',
-        });
-        return;
-    }
-    logWarn(tag, message, meta);
-}
-
 const { runBeforeShop: runEventSeedPriorityBeforeShop } = createEventSeedPriorityService({
     // 活动/特殊种子仍复用已验收的 PlantService 写链，不新增或猜测 RPC。
     getAllLands,
@@ -75,44 +62,15 @@ const { runBeforeShop: runEventSeedPriorityBeforeShop } = createEventSeedPriorit
     plant2x2Seed,
     // Plant.json 未收录的新 seedId 只在本机 QQ 官方缓存给出确定 seed_id + size 证据时升级。
     getPlantBySeedId: getPlantBySeedIdWithLearning,
-    logWarn: eventSeedLogWarn,
+    // unresolved 的真实拦截结果由 wrapper 的置信度安全门决定，避免中间层先打印误导性“已暂停”。
+    logWarn: createEventSeedLogWarn(),
 });
 
-async function plantFromShopWithEventSeedPriority(landIds, state, overrideStrategy) {
-    let prepass;
-    try {
-        prepass = await runEventSeedPriorityBeforeShop({
-            landIds,
-            state,
-        });
-    } catch (error) {
-        // 背包/活动识别链异常时 fail-closed：宁可本轮留空，也不在证据不完整时买普通种子覆盖活动种子机会。
-        logWarn('种植', `活动种子优先链异常，本轮暂停商店补种: ${error.message}`, {
-            module: 'farm',
-            event: '活动种子发现',
-            result: 'priority_prepass_error',
-        });
-        return { plantedLands: [] };
-    }
-
-    const plantedLands = Array.isArray(prepass && prepass.plantedLandIds)
-        ? [...prepass.plantedLandIds]
-        : [];
-    const remainingLandIds = Array.isArray(prepass && prepass.remainingLandIds)
-        ? prepass.remainingLandIds
-        : [];
-
-    if (shouldBlockShopFallback(prepass)) {
-        return { plantedLands: [...new Set(plantedLands)] };
-    }
-    if (remainingLandIds.length === 0) {
-        return { plantedLands: [...new Set(plantedLands)] };
-    }
-
-    const shopResult = await plantFromShopBase(remainingLandIds, state, overrideStrategy);
-    plantedLands.push(...(Array.isArray(shopResult && shopResult.plantedLands) ? shopResult.plantedLands : []));
-    return { plantedLands: [...new Set(plantedLands)] };
-}
+const plantFromShopWithEventSeedPriority = createEventSeedShopWrapper({
+    runEventSeedPriorityBeforeShop,
+    plantFromShopBase,
+    getAllLands,
+});
 
 const {
     checkFarm,
