@@ -109,6 +109,16 @@ function staticItemEvidence(itemInfo) {
     };
 }
 
+function isExplicitNonSeedEvidence(evidence) {
+    if (!evidence || typeof evidence !== 'object') return false;
+    const names = Array.isArray(evidence.names) ? evidence.names : [];
+    const types = Array.isArray(evidence.types) ? evidence.types : [];
+    const interactions = Array.isArray(evidence.interactions) ? evidence.interactions : [];
+    const signals = evidence.signals || seedSignalsFromFields({ names, types, interactions });
+    const hasTypedIdentity = names.length > 0 && types.length > 0 && interactions.length > 0;
+    return hasTypedIdentity && Number(signals.score || 0) === 0;
+}
+
 function classifyIdentity(itemInfo, directClues = []) {
     const staticEvidence = staticItemEvidence(itemInfo);
     if (staticEvidence && staticEvidence.signals.score >= 2) {
@@ -116,6 +126,16 @@ function classifyIdentity(itemInfo, directClues = []) {
             classification: 'known-seed',
             confidence: 'high',
             reason: 'static-item-seed-signals',
+            name: staticEvidence.names.length === 1 ? staticEvidence.names[0] : '',
+            evidence: staticEvidence,
+        };
+    }
+
+    if (isExplicitNonSeedEvidence(staticEvidence)) {
+        return {
+            classification: 'non-seed',
+            confidence: 'high',
+            reason: 'static-item-explicit-non-seed-signals',
             name: staticEvidence.names.length === 1 ? staticEvidence.names[0] : '',
             evidence: staticEvidence,
         };
@@ -149,14 +169,7 @@ function classifyIdentity(itemInfo, directClues = []) {
         };
     }
 
-    const explicitNonPlant = cacheEvidence.filter(clue => {
-        const hasTypedIdentity = clue.names.length > 0 && clue.types.length > 0 && clue.interactions.length > 0;
-        if (!hasTypedIdentity) return false;
-        const interactionPlant = clue.interactions.some(value => String(value || '').trim().toLowerCase() === 'plant');
-        const typeSeed = clue.types.some(type => Number(type) === 5);
-        const nameSeed = clue.names.some(name => /种子/u.test(String(name || '')));
-        return !interactionPlant && !typeSeed && !nameSeed;
-    });
+    const explicitNonPlant = cacheEvidence.filter(isExplicitNonSeedEvidence);
     if (explicitNonPlant.length > 0) {
         const names = unique(explicitNonPlant.flatMap(clue => clue.names));
         return {
@@ -289,6 +302,8 @@ module.exports = {
     directNumericValues,
     collectDirectItemClues,
     seedSignalsFromFields,
+    staticItemEvidence,
+    isExplicitNonSeedEvidence,
     classifyIdentity,
     scanItemIdentityBatch,
 };
