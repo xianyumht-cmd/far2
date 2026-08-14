@@ -109,6 +109,57 @@ async function main() {
     ]);
     console.log('✅ waiting 2x2 reserves only its footprint while unrelated empty lands keep farming PASS');
 
+    const mixed2x2Calls = [];
+    const mixed2x2 = createEventSeedShopWrapper({
+        runEventSeedPriorityBeforeShop: async ({ landIds }) => ({
+            remainingLandIds: [...landIds],
+            plantedLandIds: [],
+            blockShopFallback: true,
+            knownSeedBlock: true,
+            knownSeedBlockReasons: ['2x2-waiting'],
+            unresolvedSeedIds: [20999],
+            prioritySeedIds: [20902],
+            inspection: {
+                inventory: {
+                    knownSeeds: [{
+                        seedId: 20902,
+                        count: 2,
+                        requiredLevel: 1,
+                        plantSize: 2,
+                        specialCandidate: true,
+                    }],
+                    unresolvedCandidates: [{
+                        seedId: 20999,
+                        confidence: 'high',
+                        activityReferenced: false,
+                    }],
+                },
+            },
+        }),
+        plantFromShopBase: async (landIds) => {
+            mixed2x2Calls.push(['shop', [...landIds]]);
+            return { plantedLands: [...landIds] };
+        },
+        getAllLands: async () => ({
+            lands: [1, 2, 3, 4, 5, 6, 7, 8].map(id => ({ id, unlocked: true, plant: null })),
+        }),
+        select2x2Reservations: (_lands, empty, desired) => {
+            mixed2x2Calls.push(['reserve', [...empty], desired]);
+            return { reservedLandIds: [1, 2, 3, 4] };
+        },
+        log: () => {},
+        logWarn: () => {},
+    });
+    assert.deepEqual(
+        await mixed2x2([1, 2, 3, 4, 5, 6, 7, 8], { level: 113 }),
+        { plantedLands: [5, 6, 7, 8] },
+    );
+    assert.deepEqual(mixed2x2Calls, [
+        ['reserve', [1, 2, 3, 4, 5, 6, 7, 8], 2],
+        ['shop', [5, 6, 7, 8]],
+    ]);
+    console.log('✅ known 2x2 reservation takes precedence over unknown speculative reservation PASS');
+
     const noGroupCalls = [];
     const noReservableGroup = createEventSeedShopWrapper({
         runEventSeedPriorityBeforeShop: async ({ landIds }) => ({

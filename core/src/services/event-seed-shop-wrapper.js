@@ -66,7 +66,8 @@ function createEventSeedShopWrapper(options = {}) {
         if (!shouldBlock(prepass)) return remaining;
 
         const unresolved = normalizeIds(prepass && prepass.unresolvedSeedIds);
-        if (unresolved.length > 0) {
+        const knownSeedBlock = prepass && prepass.knownSeedBlock === true;
+        if (unresolved.length > 0 && !knownSeedBlock) {
             // A high-confidence unresolved seed may be 1x1 or 2x2. Preserve one possible
             // 2x2 footprint, but never leave the entire farm empty while learning.
             if (typeof readAllLands !== 'function') {
