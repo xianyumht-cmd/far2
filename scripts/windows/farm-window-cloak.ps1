@@ -7,9 +7,18 @@ param(
 
 $ErrorActionPreference = 'SilentlyContinue'
 
-if ([string]::IsNullOrWhiteSpace($ControlFile)) {
-    $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-    $ControlFile = Join-Path $projectRoot 'core\data\farm-window-control.json'
+$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$controlCandidates = @()
+foreach ($candidate in @(
+    $ControlFile,
+    $env:FAR2_FARM_WINDOW_CONTROL_FILE,
+    (Join-Path $projectRoot 'core\data\farm-window-control.json'),
+    (Join-Path $projectRoot 'core\dist\data\farm-window-control.json')
+)) {
+    $text = [string]$candidate
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $full = [System.IO.Path]::GetFullPath($text)
+    if ($controlCandidates -notcontains $full) { $controlCandidates += $full }
 }
 
 $mutex = New-Object System.Threading.Mutex($false, 'Local\FAR2FarmWindowCloak')
@@ -53,14 +62,22 @@ public static class Far2WindowApi {
         if (($now - $script:lastControlCheck).TotalMilliseconds -lt 250) { return }
         $script:lastControlCheck = $now
 
-        if ([string]::IsNullOrWhiteSpace($ControlFile) -or -not (Test-Path -LiteralPath $ControlFile)) {
-            # Historical/default behavior: hide farm windows when no control file exists.
-            $script:hideFarmWindows = $true
-            return
-        }
-
         try {
-            $state = Get-Content -LiteralPath $ControlFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $existing = @(
+                $controlCandidates |
+                    Where-Object { Test-Path -LiteralPath $_ } |
+                    ForEach-Object { Get-Item -LiteralPath $_ } |
+                    Sort-Object LastWriteTimeUtc -Descending
+            )
+
+            if (-not $existing.Count) {
+                # Historical/default behavior: hide farm windows when no control file exists.
+                $script:hideFarmWindows = $true
+                return
+            }
+
+            $selected = [string]$existing[0].FullName
+            $state = Get-Content -LiteralPath $selected -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($null -ne $state -and $state.hidden -is [bool]) {
                 $script:hideFarmWindows = [bool]$state.hidden
             }
@@ -91,7 +108,7 @@ public static class Far2WindowApi {
         $handle = [IntPtr]$Proc.MainWindowHandle
         if ($handle -eq [IntPtr]::Zero) { return }
 
-        $key = [string]$handle.ToInt64()
+        $key = $handle.ToInt64().ToString()
         if (-not $originalRects.ContainsKey($key)) {
             $rect = Get-WindowRectSnapshot -Handle $handle
             if ($rect -and $rect.Left -gt -10000 -and $rect.Top -gt -10000) {
@@ -116,7 +133,7 @@ public static class Far2WindowApi {
         $handle = [IntPtr]$Proc.MainWindowHandle
         if ($handle -eq [IntPtr]::Zero) { return }
 
-        $key = [string]$handle.ToInt64()
+        $key = $handle.ToInt64().ToString()
         $rect = Get-WindowRectSnapshot -Handle $handle
         $offscreen = $rect -and ($rect.Left -le -10000 -or $rect.Top -le -10000)
 
