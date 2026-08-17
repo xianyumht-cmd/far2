@@ -1,5 +1,10 @@
 const { buildRuntimeHealth } = require('../services/runtime-health');
-const { readFarmWindowControl, writeFarmWindowControl } = require('../services/farm-window-control');
+const {
+    readFarmWindowControl,
+    writeFarmWindowControl,
+    readFarmWindowControllerStatus,
+    restartFarmWindowControllers,
+} = require('../services/farm-window-control');
 const { registerCatalogApi } = require('./catalog-api');
 
 function registerCodeManagerApi(app, options = {}) {
@@ -46,6 +51,15 @@ function registerCodeManagerApi(app, options = {}) {
         return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err || 'unknown') });
     }
 
+    function getFarmWindowPayload() {
+        const data = readFarmWindowControl();
+        return {
+            ...data,
+            visible: !data.hidden,
+            controller: readFarmWindowControllerStatus(),
+        };
+    }
+
     function filterStatusForRequest(req, status) {
         const raw = status && typeof status === 'object' ? status : { accounts: [] };
         const allowed = typeof getAccessibleAccountIds === 'function'
@@ -76,14 +90,7 @@ function registerCodeManagerApi(app, options = {}) {
     app.get('/api/code-manager/farm-window', (req, res) => {
         try {
             if (!requireAdmin(req, res)) return;
-            const data = readFarmWindowControl();
-            return res.json({
-                ok: true,
-                data: {
-                    ...data,
-                    visible: !data.hidden,
-                },
-            });
+            return res.json({ ok: true, data: getFarmWindowPayload() });
         } catch (err) {
             return fail(res, err);
         }
@@ -99,14 +106,24 @@ function registerCodeManagerApi(app, options = {}) {
                 return res.status(400).json({ ok: false, error: 'hidden 必须是 boolean' });
             }
 
-            const data = writeFarmWindowControl(body.hidden, {
+            writeFarmWindowControl(body.hidden, {
                 updatedBy: String(user.username || 'admin'),
             });
+            return res.json({ ok: true, data: getFarmWindowPayload() });
+        } catch (err) {
+            return fail(res, err);
+        }
+    });
+
+    app.post('/api/code-manager/farm-window/reload', (req, res) => {
+        try {
+            if (!requireAdmin(req, res)) return;
+            const reload = restartFarmWindowControllers();
             return res.json({
                 ok: true,
                 data: {
-                    ...data,
-                    visible: !data.hidden,
+                    ...reload,
+                    controller: readFarmWindowControllerStatus(),
                 },
             });
         } catch (err) {
