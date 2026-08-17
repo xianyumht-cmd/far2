@@ -116,8 +116,8 @@ onMounted(load)
           @click="setHidden(!hidden)"
         >
           <span
-            class="absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform"
-            :class="hidden ? 'translate-x-3' : '-translate-x-6'"
+            class="absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow transition-transform"
+            :class="hidden ? 'translate-x-6' : 'translate-x-0'"
           />
         </button>
       </div>
