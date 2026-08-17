@@ -13,6 +13,7 @@ $coreDir = Join-Path $project 'core'
 $agentScript = Join-Path $coreDir 'scripts\qq-isolated-code-agent.js'
 $cloakScript = Join-Path $project 'scripts\windows\farm-window-cloak.ps1'
 $dataDir = Join-Path $coreDir 'data'
+$controlFile = Join-Path $dataDir 'farm-window-control.json'
 $logFile = Join-Path $dataDir ("code-agent-{0}.log" -f $Port)
 
 if (-not (Test-Path -LiteralPath $NodePath)) { throw "Node not found: $NodePath" }
@@ -30,12 +31,13 @@ $env:FAR2_CODE_AGENT_TOKEN = $token
 $env:FAR2_CODE_AGENT_HOST = '127.0.0.1'
 $env:FAR2_CODE_AGENT_PORT = [string]$Port
 $env:FAR2_CODE_AGENT_HIDE_FARM_WINDOW = '1'
+$env:FAR2_FARM_WINDOW_CONTROL_FILE = $controlFile
 
 Set-Location -LiteralPath $coreDir
 
 $cloak = $null
 try {
-    $cloakArgs = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$cloakScript`""
+    $cloakArgs = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$cloakScript`" -ControlFile `"$controlFile`""
     $cloak = Start-Process -FilePath 'powershell.exe' -ArgumentList $cloakArgs -WindowStyle Hidden -PassThru
 
     & $NodePath $agentScript >> $logFile 2>&1
