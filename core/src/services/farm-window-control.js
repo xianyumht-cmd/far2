@@ -1,9 +1,17 @@
 const fs = require('node:fs');
+const path = require('node:path');
 const { ensureDataDir, getDataFile } = require('../config/runtime-paths');
 
 const CONTROL_FILE_NAME = 'farm-window-control.json';
 
 function getControlFile() {
+    const override = String(process.env.FAR2_FARM_WINDOW_CONTROL_FILE || '').trim();
+    if (override) {
+        const file = path.resolve(override);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        return file;
+    }
+
     ensureDataDir();
     return getDataFile(CONTROL_FILE_NAME);
 }
@@ -45,6 +53,7 @@ function writeFarmWindowControl(hidden, options = {}) {
 
 module.exports = {
     CONTROL_FILE_NAME,
+    getControlFile,
     readFarmWindowControl,
     writeFarmWindowControl,
 };
