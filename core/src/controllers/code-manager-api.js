@@ -1,4 +1,5 @@
 const { buildRuntimeHealth } = require('../services/runtime-health');
+const { readFarmWindowControl, writeFarmWindowControl } = require('../services/farm-window-control');
 const { registerCatalogApi } = require('./catalog-api');
 
 function registerCodeManagerApi(app, options = {}) {
@@ -27,6 +28,19 @@ function registerCodeManagerApi(app, options = {}) {
         return accountId;
     }
 
+    function requireAdmin(req, res) {
+        const user = req && req.currentUser;
+        if (!user) {
+            res.status(401).json({ ok: false, error: '未登录' });
+            return null;
+        }
+        if (String(user.role || '') !== 'admin') {
+            res.status(403).json({ ok: false, error: '仅管理员可控制农场窗口显示状态' });
+            return null;
+        }
+        return user;
+    }
+
     function fail(res, err) {
         if (typeof handleApiError === 'function') return handleApiError(res, err);
         return res.status(500).json({ ok: false, error: err && err.message ? err.message : String(err || 'unknown') });
@@ -53,6 +67,47 @@ function registerCodeManagerApi(app, options = {}) {
                     req,
                     getAccessibleAccountIds,
                 }),
+            });
+        } catch (err) {
+            return fail(res, err);
+        }
+    });
+
+    app.get('/api/code-manager/farm-window', (req, res) => {
+        try {
+            if (!requireAdmin(req, res)) return;
+            const data = readFarmWindowControl();
+            return res.json({
+                ok: true,
+                data: {
+                    ...data,
+                    visible: !data.hidden,
+                },
+            });
+        } catch (err) {
+            return fail(res, err);
+        }
+    });
+
+    app.post('/api/code-manager/farm-window', (req, res) => {
+        try {
+            const user = requireAdmin(req, res);
+            if (!user) return;
+
+            const body = req.body && typeof req.body === 'object' ? req.body : {};
+            if (typeof body.hidden !== 'boolean') {
+                return res.status(400).json({ ok: false, error: 'hidden 必须是 boolean' });
+            }
+
+            const data = writeFarmWindowControl(body.hidden, {
+                updatedBy: String(user.username || 'admin'),
+            });
+            return res.json({
+                ok: true,
+                data: {
+                    ...data,
+                    visible: !data.hidden,
+                },
             });
         } catch (err) {
             return fail(res, err);
