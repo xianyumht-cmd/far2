@@ -3,29 +3,59 @@ import { computed, onMounted, ref } from 'vue'
 import api from '@/api'
 import { useToastStore } from '@/stores/toast'
 
+interface FarmWindowControllerStatus {
+  online: boolean
+  onlineCount: number
+  totalCount: number
+  allApplied: boolean
+  controllers: Array<{
+    version: number
+    sessionId: number
+    hidden: boolean
+    updatedAt: number
+    online: boolean
+  }>
+}
+
 interface FarmWindowControlState {
   version: number
   hidden: boolean
   visible: boolean
   updatedAt: number
   updatedBy: string
+  controller: FarmWindowControllerStatus
 }
 
 const toast = useToastStore()
 const loading = ref(false)
 const saving = ref(false)
+const reloading = ref(false)
 const state = ref<FarmWindowControlState | null>(null)
 
 const hidden = computed(() => state.value?.hidden !== false)
+const controllerOnline = computed(() => state.value?.controller?.online === true)
+const controllerApplied = computed(() => state.value?.controller?.allApplied === true)
 const statusText = computed(() => hidden.value ? '已隐藏' : '已显示')
 const statusDetail = computed(() => hidden.value
   ? '农场仍在后台运行，只把 QQ 农场窗口移到屏幕外。'
   : '农场窗口保持在桌面可见，后台挂机与自动化不会停止。')
+const controllerText = computed(() => {
+  const controller = state.value?.controller
+  if (!controller?.online)
+    return '未检测到新版窗口控制器'
+  if (!controller.allApplied)
+    return `在线 ${controller.onlineCount} 个会话 · 正在同步`
+  return `在线 ${controller.onlineCount} 个会话 · 已应用`
+})
 
 function formatTime(value: number) {
   if (!value)
     return '沿用默认隐藏状态'
   return new Date(value).toLocaleString()
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
 }
 
 async function load() {
@@ -51,6 +81,8 @@ async function setHidden(nextHidden: boolean) {
     const res = await api.post('/api/code-manager/farm-window', { hidden: nextHidden })
     state.value = res.data?.data || state.value
     toast.success(nextHidden ? '农场窗口已切换为隐藏' : '农场窗口已切换为显示')
+    await sleep(1200)
+    await load()
   }
   catch (error: any) {
     toast.error(error?.response?.data?.error || '切换农场窗口状态失败')
@@ -58,6 +90,38 @@ async function setHidden(nextHidden: boolean) {
   }
   finally {
     saving.value = false
+  }
+}
+
+async function reloadControllers() {
+  if (reloading.value || saving.value)
+    return
+
+  reloading.value = true
+  try {
+    const res = await api.post('/api/code-manager/farm-window/reload')
+    const result = res.data?.data || {}
+    if (result.supported === false) {
+      toast.warning('当前服务端不是 Windows，无法重载计划任务')
+    }
+    else if (!result.found) {
+      toast.warning('没有找到 FAR2CodeAgent-* 计划任务')
+    }
+    else if (result.failed) {
+      toast.warning(`已重载 ${result.restarted || 0} 个，失败 ${result.failed} 个`)
+    }
+    else {
+      toast.success(`已重载 ${result.restarted || 0} 个 FAR2CodeAgent 计划任务`)
+    }
+
+    await sleep(1800)
+    await load()
+  }
+  catch (error: any) {
+    toast.error(error?.response?.data?.error || '重载窗口控制器失败')
+  }
+  finally {
+    reloading.value = false
   }
 }
 
@@ -78,7 +142,7 @@ onMounted(load)
       </div>
       <button
         class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
-        :disabled="loading || saving"
+        :disabled="loading || saving || reloading"
         @click="load"
       >
         <div class="i-carbon-restart" :class="loading ? 'animate-spin' : ''" />
@@ -112,7 +176,7 @@ onMounted(load)
           :aria-label="hidden ? '显示农场窗口' : '隐藏农场窗口'"
           class="relative h-8 w-14 shrink-0 rounded-full transition disabled:cursor-not-allowed disabled:opacity-50"
           :class="hidden ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-600'"
-          :disabled="loading || saving || !state"
+          :disabled="loading || saving || reloading || !state"
           @click="setHidden(!hidden)"
         >
           <span
@@ -144,6 +208,35 @@ onMounted(load)
       </div>
     </section>
 
+    <section
+      class="rounded-xl border p-5"
+      :class="controllerOnline && controllerApplied
+        ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/20'
+        : 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-900/20'"
+    >
+      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div class="flex items-center gap-2 font-semibold" :class="controllerOnline && controllerApplied ? 'text-emerald-800 dark:text-emerald-200' : 'text-amber-800 dark:text-amber-200'">
+            <div :class="controllerOnline ? 'i-carbon-checkmark-filled' : 'i-carbon-warning-alt-filled'" />
+            {{ controllerText }}
+          </div>
+          <p class="mt-1 text-sm leading-6" :class="controllerOnline && controllerApplied ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'">
+            {{ controllerOnline
+              ? '窗口控制脚本正在当前 Windows 用户会话中运行。'
+              : '通常发生在刚升级后，旧 farm-window-cloak 仍在运行。重载计划任务即可切换到新版控制器。' }}
+          </p>
+        </div>
+        <button
+          class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-800 dark:bg-gray-900 dark:text-amber-200 dark:hover:bg-amber-900/30"
+          :disabled="reloading || saving || loading"
+          @click="reloadControllers"
+        >
+          <div class="i-carbon-restart" :class="reloading ? 'animate-spin' : ''" />
+          {{ reloading ? '重载中…' : '重载窗口控制器' }}
+        </button>
+      </div>
+    </section>
+
     <section class="rounded-xl border border-blue-200 bg-blue-50 p-5 text-sm leading-6 text-blue-800 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-200">
       <div class="flex gap-3">
         <div class="i-carbon-information mt-1 shrink-0 text-lg" />
@@ -152,7 +245,7 @@ onMounted(load)
             这不是“关闭农场”
           </div>
           <p class="mt-1">
-            FAR2CodeAgent 的计划任务会在当前 Windows 用户会话里启动窗口控制脚本。开启隐藏时只把识别到的 QQ 农场窗口移出屏幕；切回显示后会恢复窗口，农场进程和自动化始终继续运行。
+            真正负责隐藏的是 `FAR2CodeAgent-&lt;QQ&gt;` 计划任务启动的窗口控制脚本。开启隐藏时只把识别到的 QQ 农场窗口移出屏幕；切回显示后会恢复窗口。重载控制器只会短暂重启 Code Agent 任务，不会关闭 QQ 或农场。
           </p>
         </div>
       </div>
