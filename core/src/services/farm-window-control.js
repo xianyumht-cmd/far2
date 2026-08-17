@@ -63,6 +63,7 @@ function writeFarmWindowControl(hidden, options = {}) {
 function readFarmWindowControllerStatus() {
     const dir = path.dirname(getControlFile());
     const now = Date.now();
+    const desiredHidden = readFarmWindowControl().hidden;
     const controllers = [];
 
     let names = [];
@@ -94,7 +95,7 @@ function readFarmWindowControllerStatus() {
         onlineCount: onlineControllers.length,
         totalCount: controllers.length,
         allApplied: onlineControllers.length > 0
-            && onlineControllers.every(item => item.hidden === readFarmWindowControl().hidden),
+            && onlineControllers.every(item => item.hidden === desiredHidden),
         controllers,
     };
 }
@@ -118,7 +119,11 @@ function restartFarmWindowControllers() {
         'foreach ($task in $tasks) {',
         '  try {',
         '    Stop-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction SilentlyContinue',
-        '    Start-Sleep -Milliseconds 300',
+        '    for ($i = 0; $i -lt 25; $i++) {',
+        '      Start-Sleep -Milliseconds 200',
+        '      $current = Get-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction SilentlyContinue',
+        "      if (-not $current -or [string]$current.State -ne 'Running') { break }",
+        '    }',
         '    Start-ScheduledTask -TaskName $task.TaskName -TaskPath $task.TaskPath -ErrorAction Stop',
         '    $restarted++',
         '  } catch { $failed++ }',
@@ -135,7 +140,7 @@ function restartFarmWindowControllers() {
     ], {
         encoding: 'utf8',
         windowsHide: true,
-        timeout: 20000,
+        timeout: 30000,
     });
 
     const parsed = JSON.parse(String(output || '').replace(/^\uFEFF/, '').trim() || '{}');
