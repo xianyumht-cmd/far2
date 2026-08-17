@@ -56,6 +56,14 @@ public static class Far2WindowApi {
     $farmTitleToken = ([string][char]0x519C) + ([string][char]0x573A)
     $script:hideFarmWindows = $true
     $script:lastControlCheck = [DateTime]::MinValue
+    $script:lastStatusWrite = [DateTime]::MinValue
+    $script:utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+    $statusFiles = @()
+    foreach ($candidate in $controlCandidates) {
+        $statusFile = Join-Path (Split-Path -Parent $candidate) ("farm-window-cloak-status-{0}.json" -f $selfSession)
+        if ($statusFiles -notcontains $statusFile) { $statusFiles += $statusFile }
+    }
 
     function Update-ControlState {
         $now = Get-Date
@@ -85,6 +93,36 @@ public static class Far2WindowApi {
         catch {
             # Keep the previous state on a transient/partial read.
         }
+    }
+
+    function Write-ControllerStatus {
+        $now = Get-Date
+        if (($now - $script:lastStatusWrite).TotalMilliseconds -lt 1000) { return }
+        $script:lastStatusWrite = $now
+
+        try {
+            $updatedAt = [long](([DateTime]::UtcNow - [DateTime]'1970-01-01T00:00:00Z').TotalMilliseconds)
+            $payload = [ordered]@{
+                version = 2
+                processId = [int]$PID
+                sessionId = [int]$selfSession
+                hidden = [bool]$script:hideFarmWindows
+                updatedAt = $updatedAt
+            }
+            $json = $payload | ConvertTo-Json -Compress
+
+            foreach ($file in $statusFiles) {
+                try {
+                    $dir = Split-Path -Parent $file
+                    if (-not (Test-Path -LiteralPath $dir)) {
+                        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                    }
+                    [System.IO.File]::WriteAllText($file, $json, $script:utf8NoBom)
+                }
+                catch {}
+            }
+        }
+        catch {}
     }
 
     function Get-WindowRectSnapshot {
@@ -246,6 +284,7 @@ public static class Far2WindowApi {
             Apply-FarmWindowState -Proc $proc
         }
 
+        Write-ControllerStatus
         Start-Sleep -Milliseconds ([Math]::Max(30, $IntervalMs))
     }
 }
