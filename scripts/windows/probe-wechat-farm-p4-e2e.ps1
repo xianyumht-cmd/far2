@@ -7,6 +7,7 @@ $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $coreRoot = Join-Path $projectRoot 'core'
 $probeScript = Join-Path $coreRoot 'scripts\wechat-p4-e2e-login.js'
 $raceFixScript = Join-Path $coreRoot 'scripts\wechat-p4-gateway-racefix.js'
+$profileScript = Join-Path $coreRoot 'scripts\wechat-p4-official-handshake-profile.js'
 $tempRoot = Join-Path $env:TEMP 'FAR2-WeChat-CDP'
 $p4DepsRoot = Join-Path $tempRoot 'p4-node-deps'
 
@@ -137,6 +138,9 @@ if (-not (Test-Path -LiteralPath $probeScript)) {
 if (-not (Test-Path -LiteralPath $raceFixScript)) {
     throw "P4 gateway race-fix preload not found: $raceFixScript"
 }
+if (-not (Test-Path -LiteralPath $profileScript)) {
+    throw "P4 official handshake profile preload not found: $profileScript"
+}
 
 $nodePath = Get-Node22Path
 Write-Host ''
@@ -145,11 +149,16 @@ Write-Host ("Node: {0}" -f $nodePath)
 
 Ensure-P4NodeDependencies -NodePath $nodePath
 Write-Host 'P4 gateway listener race fix: enabled' -ForegroundColor DarkGray
+Write-Host 'P4 official Windows WeChat handshake profile: enabled' -ForegroundColor Green
+Write-Host '  os=Windows' -ForegroundColor DarkGray
+Write-Host '  ver=1.13.2.7_20260723' -ForegroundColor DarkGray
+Write-Host '  openID query omitted' -ForegroundColor DarkGray
+Write-Host '  UA=official WMPF 25297 profile' -ForegroundColor DarkGray
 Write-Host ''
 
 Push-Location -LiteralPath $coreRoot
 try {
-    & $nodePath -r $raceFixScript $probeScript
+    & $nodePath -r $raceFixScript -r $profileScript $probeScript
     $exitCode = $LASTEXITCODE
 }
 finally {
