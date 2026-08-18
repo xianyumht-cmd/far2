@@ -1,160 +1,302 @@
-# QQ 农场多账号挂机 + Web 面板
-## 作者QQ：1503938233--付费版请咨询
-- 基于 Node.js 的 QQ 农场自动化工具，支持多账号管理、Web 控制面板、实时日志与数据分析。
-- 更新优化日志详见update.log 感谢支持，喜欢的点一个star⭐吧！
-- 默认账号密码都是admin，端口3007，请部署登录后尽快修改密码！
-- 重构版V2.5.1完整更新日志详见：[更新日志](https://gitee.com/xlzcandy/qq-classic-farm-update-log/blob/master/README.md)
-### 请不要贩卖开源版本，免费项目，禁止倒卖！所有功能都是正常使用的，只需要更新一下core/src/config/config.js里面的版本号然后重启后端即可，一定要重启后端，docker部署的需要删除容器重新构建才生效。
-### 目前官方已经把三分钟风控给关了，所以开源版也正常偷菜了，八月会对开源版进行一次小更新，更新资源包到最新版本同时务农接口也更新到最新接口。内置一个yyb_go的开源应用宝协议，供微信玩家使用~
+# FAR2 — QQ 农场自动化与 Web 管理面板
+
+FAR2 是基于 Node.js + Vue 的 QQ 农场自动化项目，当前重点是 **Windows 本机长期无人值守、稳定挂机、自动恢复和可观测性**。
+
+> README 只描述 `main` 已合并并作为当前正式基线使用的能力。实验分支、Draft PR 和尚未完成实机验收的功能不计入正式能力。
+
+## 当前状态
+
+截至 2026-08，FAR2 的核心 QQ 农场挂机链已经基本稳定：
+
+- Windows 后台服务运行 WebUI、CodeManager 和 Farm Worker；
+- QQ Code 由对应 Windows 交互式 Session 中的 `FAR2CodeAgent-<UIN>` 维护；
+- WS400 / kickout 后可按 exact-UIN 自动刷新 Code 并恢复 Worker；
+- QQ 好友关系可自动采集并进入帮助、巡查、偷菜链；
+- 浏览器无需保持打开；
+- 当前维护策略以“稳定使用”为第一优先级，不再为了追上游版本号机械补功能。
+
+当前协议基线可在 `core/src/config/config.js` 查看；当前 `main` 默认客户端版本为 `1.13.0.5_20260729`。
+
+详细状态见：
+
+- [PROJECT_STATE.md](./PROJECT_STATE.md)
+- [Windows 后台自启说明](./docs/WINDOWS_AUTOSTART.md)
+- [与上游更新日志对照结论](./docs/UPSTREAM_COMPARISON_DECISION_2026-08-18.md)
+
 ---
+
+## 已有主要能力
+
+### 农场自动化
+
+- 自动收获、种植、浇水、除草、除虫；
+- 普通肥 / 有机肥与施肥策略；
+- 自动购买化肥；
+- 自动出售与背包策略；
+- 作物黑名单、种植延迟、偷菜延迟等账号级配置；
+- 单土地铲除、普通肥、有机肥；
+- 一键铲除；
+- Lv5 紫土地分类；
+- 2x2 作物 master/slave 占地识别、预留、种植与施肥；
+- 土地倒计时、季节数等状态展示；
+- 作物变异只读展示。
+
+### 好友 / 偷菜 / 帮助
+
+- QQ 完整好友关系自动采集；
+- 好友巡查、偷菜、帮助、浇水、除草、除虫、捣乱；
+- 好友黑名单与静默时段；
+- 护主犬好友状态识别；
+- 护主犬好友优先帮助；
+- 经验满后的帮助目标收窄与空目标退避；
+- 偷菜空闲状态低噪音日志。
+
+### Code 自动恢复 / Windows 无人值守
+
+当前 Windows 生产结构：
+
+```text
+Windows 开机
+  └─ NSSM 服务：FAR2Farm
+       ├─ WebUI
+       ├─ CodeManager
+       └─ Farm Workers
+
+交互式 Windows Session
+  └─ FAR2CodeAgent-<UIN>
+       ├─ QQ 好友关系采集
+       └─ exact-UIN Code Provider
+```
+
+主要行为：
+
+- `FAR2Farm` 作为 Windows 后台服务运行；
+- `FAR2CodeAgent-<UIN>` 作为隐藏计划任务运行；
+- Code Agent 与目标 QQ 保持同一 Windows Session；
+- WS400 / kickout 事件驱动刷新 Code；
+- 新 Code 成功后再替换旧 Worker；
+- Farm 自动恢复登录；
+- Provider target 可限制仅自动启动指定 QQ；
+- 多 Session / 多 target 架构已具备，但当前正式生产验收仍以单目标 QQ 为主。
+
+详细安装与诊断见 [docs/WINDOWS_AUTOSTART.md](./docs/WINDOWS_AUTOSTART.md)。
+
+### 图鉴 / 商店
+
+- 作物图鉴读取；
+- 种子商店读取；
+- 当前背包与商店状态联动；
+- 图鉴缺失种子的受控购买；
+- Catalog 请求按账号串行，避免页面查询挤满 Farm WS 队列；
+- 未确认语义的领奖字段保持 fail-closed，不盲发领奖 RPC。
+
+### 狗狗 / 宠物
+
+- 自身护主犬状态读取；
+- 好友护主犬识别；
+- 护主犬优先帮助；
+- 宠物商店安全购买；
+- 狗粮信息读取；
+- 狗粮单次喂食写链已经完成真实 E2E 验证；
+- 当前不开放未经证明的自动喂食/礼包领取等写操作。
+
+### 个人与展示
+
+- 个人生涯只读；
+- 头像框库存只读；
+- 农场 / Worker / Code 恢复 / 好友池等运行健康信息；
+- 多账号日志和状态隔离；
+- Web 管理面板统一管理账号、策略、日志和运行状态。
+
+### 活动发现
+
+- `ActivityService.List` 通用活动读取；
+- `GetGroup` 深度只读发现；
+- 可识别 random shop、exchange shop、draw pool、seed-like IDs 等结构；
+- 未证明写协议的活动默认只读，不猜参数、不盲操作。
+
+---
+
+## 当前明确不追的方向
+
+FAR2 当前不是为了完整复刻上游私有版功能清单，而是优先保证实际挂机价值。
+
+暂不主动开发：
+
+- 秒偷；
+- 指定好友蹲守；
+- 自动刷变异；
+- 为了对齐版本而增加复杂代理 / 节点 / 私有云体系；
+- 没有真实使用需求的微信完整好友管理；
+- 未经协议取证的活动自动领取、兑换、抽奖；
+- 仅为了“功能数量”增加但会降低稳定性的写操作。
+
+完整差异与后续触发条件见 [docs/UPSTREAM_COMPARISON_DECISION_2026-08-18.md](./docs/UPSTREAM_COMPARISON_DECISION_2026-08-18.md)。
+
+---
+
 ## 技术栈
 
-**后端**
-
-[<img src="https://skillicons.dev/icons?i=nodejs" height="48" title="Node.js 20+" />](https://nodejs.org/)
-[<img src="https://skillicons.dev/icons?i=express" height="48" title="Express 4" />](https://expressjs.com/)
-[<img src="https://skillicons.dev/icons?i=socketio" height="48" title="Socket.io 4" />](https://socket.io/)
-
-**前端**
-
-[<img src="https://skillicons.dev/icons?i=vue" height="48" title="Vue 3" />](https://vuejs.org/)
-[<img src="https://skillicons.dev/icons?i=vite" height="48" title="Vite 7" />](https://vitejs.dev/)
-[<img src="https://skillicons.dev/icons?i=ts" height="48" title="TypeScript 5" />](https://www.typescriptlang.org/)
-[<img src="https://cdn.simpleicons.org/pinia/FFD859" height="48" title="Pinia 3" />](https://pinia.vuejs.org/)
-[<img src="https://skillicons.dev/icons?i=unocss" height="48" title="UnoCSS" />](https://unocss.dev/)
-
-**部署**
-
-[<img src="https://skillicons.dev/icons?i=pnpm" height="48" title="pnpm 10" />](https://pnpm.io/)
-[<img src="https://skillicons.dev/icons?i=githubactions" height="48" title="GitHub Actions" />](https://github.com/features/actions)
+- 后端：Node.js 20+、Express、Socket.IO
+- 前端：Vue 3、Vite、TypeScript、Pinia、UnoCSS
+- 包管理：pnpm 10
+- Windows 后台：NSSM + Task Scheduler
+- 游戏协议：WebSocket + Protobuf
 
 ---
+
 ## 环境要求
 
-- 源码运行：Node.js 20+，pnpm（推荐通过 `corepack enable` 启用）
-- 二进制发布版：无需安装 Node.js
+### 源码运行
 
-## 安装与启动（源码方式）
+- Node.js 20+
+- pnpm（仓库当前声明 `pnpm@10.30.2`）
+- Windows / Linux / macOS 可运行通用 Node.js 部分
 
-### Windows
+### Windows 完整无人值守能力
+
+如需自动 Code 刷新、QQEX 好友采集和交互式 Session 能力，当前正式方案为 Windows：
+
+- QQ 桌面客户端；
+- 目标 QQ 所属交互式 Windows Session；
+- Node.js；
+- NSSM；
+- Windows Task Scheduler。
+
+Linux / Docker 不具备 Windows Session、QQ 桌面客户端和 QQEX 本机缓存，因此不能等价替代当前 Windows Code Agent 生产链。
+
+---
+
+## 快速开始（源码方式）
 
 ```powershell
-# 1. 安装 Node.js 20+（https://nodejs.org/）并启用 pnpm
-node -v
-corepack enable
-pnpm -v
+# 克隆
+ git clone https://github.com/xianyumht-cmd/far2.git
+ cd far2
 
-# 2. 安装依赖并构建前端
-cd D:\Projects\qq-farm-bot-ui
+# 安装依赖
+ corepack enable
+ pnpm install
+
+# 构建 WebUI
+ pnpm build:web
+
+# 启动 Core + WebUI
+ pnpm dev:core
+```
+
+默认 WebUI 通常通过 `ADMIN_PORT` 配置；现有 Windows 部署通常使用 `3007`。
+
+如需临时指定端口：
+
+```powershell
+$env:ADMIN_PORT="3007"
+pnpm dev:core
+```
+
+---
+
+## Windows 后台安装
+
+当前推荐的生产方式不是长期保留 PowerShell / CMD 黑框，而是使用现有安装器：
+
+```text
+右键管理员运行：install-windows-service.cmd
+```
+
+安装器会负责：
+
+- 安装 / 更新 `FAR2Farm` NSSM 服务；
+- 为当前 QQ 创建或更新 `FAR2CodeAgent-<UIN>` 隐藏计划任务；
+- 配置 Provider target；
+- 使用当前 Windows Session 作为 QQ / QQEX / Code Agent 的隔离边界。
+
+查看状态：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows\status-far2-autostart.ps1
+```
+
+卸载后台自启：
+
+```text
+右键管理员运行：uninstall-windows-service.cmd
+```
+
+> 卸载后台自启不会主动删除 FAR2 账号运行数据。
+
+---
+
+## 更新本地源码
+
+如果本地没有自建提交，可直接：
+
+```powershell
+cd D:\project2\far2-test
+git pull --ff-only origin main
 pnpm install
 pnpm build:web
-
-# 3. 启动
-pnpm dev:core
-
-# （可选）设置其他端口后启动
-$env:ADMIN_PORT="你的新端口"
-pnpm dev:core
+Restart-Service FAR2Farm -Force
 ```
 
-### Linux（Ubuntu/Debian）
-建议使用宝塔最为便捷，在网站其他项目选项中按照如图所示去部署即可
-
-<img src="https://free.picui.cn/free/2026/03/27/69c6398dd326c.png"  alt="图片失效"/>
-
-启动后访问面板：
-- 本机：`http://localhost:3007`
-- 局域网：`http://<你的IP>:3007`
+如果提示 `Diverging branches`、`unstaged changes` 或 `CONFLICT`，不要直接 `reset --hard`。先确认本地分支和未提交文件，再决定 rebase / stash / merge，避免覆盖 `core/data` 等运行数据。
 
 ---
 
-## Docker 部署（拉取不了镜像直接下载压缩包解压即可）
-```
-# 拉取仓库
-git clone https://github.com/XyhTender/qq-farm-automation-bot.git
+## 重要运行数据
 
-# 进入目录
-cd /qq-farm-automation-bot-main
+以下内容属于本机运行数据或构建产物，不应当为了“更新代码”直接删除：
 
-# 构建并后台启动
-docker compose -f docker-compose.yml up -d --build
-
-# 查看日志
-docker compose logs -f
-
-# 停止并移除容器
-docker compose down
-
-# 浏览器访问http://你的IP:3007
+```text
+core/data/
+node_modules/
+core/node_modules/
+web/node_modules/
+web/dist/
 ```
 
-## 二进制发布版（无需 Node.js）
-
-### 构建
-
-```bash
-pnpm install
-pnpm package:release
-```
-
-产物输出在 `dist/` 目录：
-- `产物在Releases中也可以下载，无需自己构建`
-
-| 平台 | 文件名 |
-|------|--------|
-| Windows x64 | `qq-farm-bot.exe` |
-| Linux x64 | `qq-farm-bot` |
-| macOS Intel | `qq-farm-bot-x64` |
-| macOS Apple Silicon | `qq-farm-bot-arm64` |
-
-### 运行
-
-```bash
-# Windows：双击 exe 或在终端执行
-.\qq-farm-bot-win-x64.exe
-
-# Linux / macOS
-chmod +x ./qq-farm-bot && ./qq-farm-bot
-```
-
-程序会在可执行文件同级目录自动创建 `data/` 并写入 `store.json`、`accounts.json`。
-
----
-
-## 登录与安全
-
-- 面板首次访问需要登录
-- 默认管理账号：`admin/admin`
-- **建议部署后立即修改为强密码**
+尤其 `core/data/` 可能包含账号、运行状态、CodeManager、好友采集和其他本机数据。
 
 ---
 
 ## 项目结构
 
+```text
+far2/
+├─ core/
+│  ├─ src/
+│  │  ├─ config/          # 运行配置
+│  │  ├─ controllers/     # HTTP API
+│  │  ├─ gameConfig/      # 游戏静态数据
+│  │  ├─ models/          # 数据模型 / 持久化
+│  │  ├─ proto/           # Protobuf
+│  │  ├─ runtime/         # Worker / Runtime
+│  │  └─ services/        # Farm / Friend / Code / Catalog 等服务
+│  ├─ scripts/            # 自检、诊断、取证工具
+│  └─ data/               # 本机运行数据（不要随意删除）
+├─ web/
+│  ├─ src/                # Vue WebUI
+│  └─ dist/               # Web 构建产物
+├─ scripts/windows/       # Windows 服务、Agent、诊断脚本
+├─ docs/                  # 当前基线、验收、差异审计与交接文档
+├─ PROJECT_STATE.md       # 当前项目状态
+├─ install-windows-service.cmd
+└─ package.json
 ```
-qq-farm-bot-ui/
-├── core/                  # 后端（Node.js 机器人引擎）
-│   ├── src/
-│   │   ├── config/        # 配置管理
-│   │   ├── controllers/   # HTTP API
-│   │   ├── gameConfig/    # 游戏静态数据
-│   │   ├── models/        # 数据模型与持久化
-│   │   ├── proto/         # Protobuf 协议定义
-│   │   ├── runtime/       # 运行时引擎与 Worker 管理
-│   │   └── services/      # 业务逻辑（农场、好友、任务等）
-│   ├── data/              # 运行时数据（accounts.json、store.json）
-│   └── client.js          # 主进程入口
-├── web/                   # 前端（Vue 3 + Vite）
-│   ├── src/
-│   │   ├── api/           # API 客户端
-│   │   ├── components/    # Vue 组件
-│   │   ├── stores/        # Pinia 状态管理
-│   │   └── views/         # 页面视图
-│   └── dist/              # 构建产物
-├── pnpm-workspace.yaml
-└── package.json
-```
+
+---
+
+## 维护原则
+
+1. 稳定挂机优先于功能数量；
+2. 已验收的偷菜、好友、Code 恢复等核心链不轻易重写；
+3. 写操作优先采用“写前读取 → 条件校验 → 单次写入 → 写后验证”；
+4. 未证明字段语义或协议时 fail-closed；
+5. 不为了追上游版本号机械增加功能；
+6. 出现真实协议变化、核心链回归或明确使用需求时再继续扩展。
+
+---
 
 ## 免责声明
 
-本项目仅供学习与研究用途。使用本工具可能违反游戏服务条款，由此产生的一切后果由使用者自行承担。
+本项目仅供学习、研究和个人技术实验使用。自动化操作可能受到游戏服务条款、协议变更或风控策略影响。使用者应自行评估并承担相关风险。
