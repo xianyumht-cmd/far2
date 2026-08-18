@@ -52,6 +52,19 @@ function Test-P4NodeDependencies {
     }
 }
 
+function Add-P4NodePath {
+    param([string]$NodeModulesPath)
+
+    if ([string]::IsNullOrWhiteSpace($env:NODE_PATH)) {
+        $env:NODE_PATH = $NodeModulesPath
+        return
+    }
+    $parts = @($env:NODE_PATH -split [regex]::Escape([string][IO.Path]::PathSeparator))
+    if ($parts -notcontains $NodeModulesPath) {
+        $env:NODE_PATH = $NodeModulesPath + [IO.Path]::PathSeparator + $env:NODE_PATH
+    }
+}
+
 function Invoke-P4NpmInstall {
     param([string]$NodePath)
 
@@ -95,21 +108,10 @@ function Ensure-P4NodeDependencies {
 
     $depsNodeModules = Join-Path $p4DepsRoot 'node_modules'
     if (Test-Path -LiteralPath $depsNodeModules) {
-        $oldNodePath = $env:NODE_PATH
-        try {
-            $env:NODE_PATH = if ([string]::IsNullOrWhiteSpace($oldNodePath)) {
-                $depsNodeModules
-            }
-            else {
-                $depsNodeModules + [IO.Path]::PathSeparator + $oldNodePath
-            }
-            if (Test-P4NodeDependencies -NodePath $NodePath) {
-                Write-Host 'P4 Node dependencies: isolated cache ready' -ForegroundColor DarkGray
-                return
-            }
-        }
-        finally {
-            $env:NODE_PATH = $oldNodePath
+        Add-P4NodePath -NodeModulesPath $depsNodeModules
+        if (Test-P4NodeDependencies -NodePath $NodePath) {
+            Write-Host 'P4 Node dependencies: isolated cache ready' -ForegroundColor DarkGray
+            return
         }
     }
 
@@ -121,14 +123,7 @@ function Ensure-P4NodeDependencies {
         throw 'P4 dependency node_modules directory was not created.'
     }
 
-    $oldNodePath = $env:NODE_PATH
-    $env:NODE_PATH = if ([string]::IsNullOrWhiteSpace($oldNodePath)) {
-        $depsNodeModules
-    }
-    else {
-        $depsNodeModules + [IO.Path]::PathSeparator + $oldNodePath
-    }
-
+    Add-P4NodePath -NodeModulesPath $depsNodeModules
     if (-not (Test-P4NodeDependencies -NodePath $NodePath)) {
         throw 'P4 Node dependencies are still unavailable after isolated install.'
     }
