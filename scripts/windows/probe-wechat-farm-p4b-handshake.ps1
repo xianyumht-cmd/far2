@@ -6,6 +6,7 @@ Set-StrictMode -Version 2.0
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $coreRoot = Join-Path $projectRoot 'core'
 $probeScript = Join-Path $coreRoot 'scripts\wechat-p4b-handshake-metadata.js'
+$armScript = Join-Path $coreRoot 'scripts\wechat-p4b-network-arm.js'
 $tempRoot = Join-Path $env:TEMP 'FAR2-WeChat-CDP'
 $p4DepsRoot = Join-Path $tempRoot 'p4-node-deps'
 
@@ -38,6 +39,7 @@ function Add-NodePath {
 }
 
 if (-not (Test-Path -LiteralPath $probeScript)) { throw "P4B probe script not found: $probeScript" }
+if (-not (Test-Path -LiteralPath $armScript)) { throw "P4B Network arm script not found: $armScript" }
 
 $nodePath = Get-NodePath
 Add-NodePath -NodeModulesPath (Join-Path $p4DepsRoot 'node_modules')
@@ -51,9 +53,10 @@ try {
     Write-Host 'FAR2 WeChat P4B official handshake metadata runner' -ForegroundColor Cyan
     Write-Host ("Node: {0}" -f $nodePath)
     Write-Host 'Payload capture: disabled' -ForegroundColor DarkGray
+    Write-Host 'Network arm: enabled before miniapp connect' -ForegroundColor DarkGray
     Write-Host ''
 
-    & $nodePath $probeScript
+    & $nodePath --require $armScript $probeScript
     $exitCode = $LASTEXITCODE
 }
 finally {
