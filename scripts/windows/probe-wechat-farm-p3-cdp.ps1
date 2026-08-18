@@ -182,9 +182,6 @@ function Receive-CdpMessage {
     catch [OperationCanceledException] {
         return $null
     }
-    catch [Threading.Tasks.TaskCanceledException] {
-        return $null
-    }
     finally {
         $cts.Dispose()
         $stream.Dispose()
