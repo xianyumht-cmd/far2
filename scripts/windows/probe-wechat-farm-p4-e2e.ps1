@@ -6,6 +6,7 @@ Set-StrictMode -Version 2.0
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $coreRoot = Join-Path $projectRoot 'core'
 $probeScript = Join-Path $coreRoot 'scripts\wechat-p4-e2e-login.js'
+$raceFixScript = Join-Path $coreRoot 'scripts\wechat-p4-gateway-racefix.js'
 $tempRoot = Join-Path $env:TEMP 'FAR2-WeChat-CDP'
 $p4DepsRoot = Join-Path $tempRoot 'p4-node-deps'
 
@@ -133,6 +134,9 @@ function Ensure-P4NodeDependencies {
 if (-not (Test-Path -LiteralPath $probeScript)) {
     throw "P4 probe script not found: $probeScript"
 }
+if (-not (Test-Path -LiteralPath $raceFixScript)) {
+    throw "P4 gateway race-fix preload not found: $raceFixScript"
+}
 
 $nodePath = Get-Node22Path
 Write-Host ''
@@ -140,11 +144,12 @@ Write-Host 'FAR2 WeChat P4 E2E runner' -ForegroundColor Cyan
 Write-Host ("Node: {0}" -f $nodePath)
 
 Ensure-P4NodeDependencies -NodePath $nodePath
+Write-Host 'P4 gateway listener race fix: enabled' -ForegroundColor DarkGray
 Write-Host ''
 
 Push-Location -LiteralPath $coreRoot
 try {
-    & $nodePath $probeScript
+    & $nodePath -r $raceFixScript $probeScript
     $exitCode = $LASTEXITCODE
 }
 finally {
