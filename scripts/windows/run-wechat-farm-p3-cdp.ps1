@@ -17,6 +17,14 @@ $replacements = [ordered]@{
     '    & $git.Source -C $debuggerDir fetch origin $DebuggerCommit --depth 1' = '    & $git.Source -C $debuggerDir fetch origin $DebuggerCommit --depth 1 | Out-Host'
     '    & $git.Source -C $debuggerDir checkout --detach --force $DebuggerCommit' = '    & $git.Source -C $debuggerDir checkout --detach --force $DebuggerCommit | Out-Host'
     '            & $npmCmd install --no-audit --no-fund' = '            & $npmCmd install --no-audit --no-fund | Out-Host'
+    '    $Socket.SendAsync($segment, [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()' = '    [void]$Socket.SendAsync($segment, [Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()'
+    '    $socket.ConnectAsync($uri, [Threading.CancellationToken]::None).GetAwaiter().GetResult()' = '    [void]$socket.ConnectAsync($uri, [Threading.CancellationToken]::None).GetAwaiter().GetResult()'
+    '                $socket.CloseAsync([Net.WebSockets.WebSocketCloseStatus]::NormalClosure, ''done'', [Threading.CancellationToken]::None).GetAwaiter().GetResult()' = '                [void]$socket.CloseAsync([Net.WebSockets.WebSocketCloseStatus]::NormalClosure, ''done'', [Threading.CancellationToken]::None).GetAwaiter().GetResult()'
+    '        if ([string]$msg.method -eq ''Runtime.executionContextCreated'' -and $msg.params -and $msg.params.context) {' = '        if ($msg.PSObject.Properties[''method''] -and [string]$msg.method -eq ''Runtime.executionContextCreated'' -and $msg.PSObject.Properties[''params''] -and $msg.params -and $msg.params.PSObject.Properties[''context''] -and $msg.params.context) {'
+    '                name = [string]$ctx.name' = '                name = if ($ctx.PSObject.Properties[''name'']) { [string]$ctx.name } else { '''' }'
+    '                origin = [string]$ctx.origin' = '                origin = if ($ctx.PSObject.Properties[''origin'']) { [string]$ctx.origin } else { '''' }'
+    '        if ($null -eq $msg.id) { continue }' = '        if (-not $msg.PSObject.Properties[''id'']) { continue }'
+    '        if ($msg.result -and $msg.result.result -and $msg.result.result.value) {' = '        if ($msg.PSObject.Properties[''result''] -and $msg.result -and $msg.result.PSObject.Properties[''result''] -and $msg.result.result -and $msg.result.result.PSObject.Properties[''value''] -and $null -ne $msg.result.result.value) {'
 }
 
 foreach ($entry in $replacements.GetEnumerator()) {
