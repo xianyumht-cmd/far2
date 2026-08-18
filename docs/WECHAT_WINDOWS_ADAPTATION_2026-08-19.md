@@ -1,6 +1,6 @@
 # FAR2 Windows 微信端适配（2026-08-19）
 
-状态：**P0 只读环境取证进行中**
+状态：**P0 已完成实机取证，进入 P1 差分定位**
 
 ## 目标
 
@@ -34,22 +34,20 @@ FAR2 已有：
 - `probe-wechat-farm.cmd`
 - `scripts/windows/probe-wechat-farm.ps1`
 
-使用前：
+首份实机报告（2026-08-19）已经确认：
 
-1. Windows 微信保持登录；
-2. 在微信里手动打开一次 QQ经典农场并保持小程序窗口打开；
-3. 双击 `probe-wechat-farm.cmd`；
-4. 将生成的 `%TEMP%\FAR2-WeChat-Probe\wechat-probe-*.json` 用于后续分析。
+- Windows 微信主程序为 `Weixin.exe`；
+- 微信小程序运行时为 `WeChatAppEx.exe`；
+- `WeChatAppEx.exe` 来自 `%APPDATA%\Tencent\xwechat\XPlugin\Plugins\RadiumWMPF\...\runtime\WeChatAppEx.exe`；
+- 微信与小程序运行在同一交互式 Windows Session（实机为 Session 1）；
+- FAR2 旧微信 AppId `wx5306c5978fdb76e4` 确实出现在当前桌面微信农场运行目录，而不是历史误配置；
+- 已确认实际 App 根目录形态：`%APPDATA%\Tencent\xwechat\radium\users\<profile>\applet\local\wx5306c5978fdb76e4`；
+- 打开农场时该目录下的 `launch.config`、`temp`、`usr` 文件会发生实时变化；
+- 同一微信主进程下面会存在多个 `WeChatAppEx.exe`，因此不能仅凭进程名选择农场实例，必须做打开农场前后的差分定位。
 
-探针仅收集：
+P0 还发现 Windows PowerShell 5.1 下 `OrderedDictionary | Select-Object -ExpandProperty sessionId` 会导致汇总 SessionId 丢失，现已改为显式索引读取。
 
-- WeChat / Weixin / WMPF / MiniProgram 相关进程名称、PID、父 PID、SessionId、可执行文件路径；
-- 若干微信候选运行目录是否存在；
-- 小程序/插件/运行时相关目录名；
-- 最近一段时间内相关运行时文件的路径、大小和更新时间；
-- 当前 FAR2 旧配置 AppId `wx5306c5978fdb76e4` 是否直接出现在运行时路径中。
-
-明确不读取：
+P0 明确不读取：
 
 - 聊天数据库；
 - 聊天内容；
@@ -58,16 +56,37 @@ FAR2 已有：
 - Cookie / Token / refresh token / Code；
 - 微信数据库正文。
 
-## 后续 Gate
+## P1 — 打开农场前后差分定位
 
-P0 报告出来后才能决定 P1，不提前假设微信桌面端内部结构。
+新增：
 
-P1 候选方向按证据选择：
+- `probe-wechat-farm-p1.cmd`
+- `scripts/windows/probe-wechat-farm-p1.ps1`
 
-1. 若农场小程序存在独立 WMPF/WeChatAppEx 进程和稳定 AppId 标识：建立 Windows Session scoped 微信 Agent；
-2. 若 Code/小程序身份可通过官方运行时只读观察得到：做本地 Provider；
-3. 若只能发现运行时但不能证明 Code 来源：增加一次官方客户端行为取证工具，仍不让 FAR2 主动发送未知写协议；
-4. 若当前 Windows 微信根本不暴露可安全复用的本地登录能力，再评估是否保留扫码方案，但不默认回退到第三方 8059 API。
+流程：
+
+1. 保持微信电脑版登录；
+2. 先关闭农场小程序窗口，但不要退出微信；
+3. 运行 `probe-wechat-farm-p1.cmd` 并记录基线；
+4. 按提示从微信电脑版重新打开 QQ经典农场；
+5. 等主页完全加载后按 Enter；
+6. 上传生成的 `%TEMP%\FAR2-WeChat-Probe\wechat-farm-p1-*.json`。
+
+P1 只针对已确认的农场 AppId 做：
+
+- 打开前/打开后的 `Weixin.exe` / `WeChatAppEx.exe` PID 差分；
+- SessionId、父子进程关系；
+- 只保存命令行里的开关名称、AppId 是否出现、32 位 profile 标识，不保存原始命令行；
+- 枚举微信相关顶层窗口的 PID、标题、窗口类和矩形，定位农场窗口所有者；
+- 对农场 App 专属目录做文件元数据差分；
+- 只读取农场目录自己的 `launch.config`，JSON 内容会对 token/ticket/cookie/session/auth/key/code/openid/unionid 等敏感字段自动脱敏；
+- 不读取聊天目录和微信消息数据库。
+
+P1 的 Gate：
+
+- 如果能唯一识别承载农场的 `WeChatAppEx.exe`，下一步建立 Windows Session scoped 微信 Farm Agent；
+- 如果 `launch.config`/进程参数能证明运行入口但不能得到登录 Code，下一步只在该农场进程/该 AppId 范围内做运行时只读观察；
+- 在 Code 来源被证明前，FAR2 不主动伪造微信登录请求，也不接第三方 8059 API 作为正式方案。
 
 ## 完成标准
 
