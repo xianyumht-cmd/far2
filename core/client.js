@@ -1,3 +1,4 @@
+const path = require('node:path');
 const process = require('node:process');
 /**
  * 主程序 - 进程管理器
@@ -31,6 +32,8 @@ function startAdminServerWithCodeManagerApi(dataProvider) {
 // 打包后 worker 由当前可执行文件以 --worker 模式启动
 const isWorkerProcess = process.env.FARM_WORKER === '1';
 if (isWorkerProcess) {
+    // Fork/pkg worker 也必须在 worker.js 导入 network.js 之前安装微信网关 profile。
+    require('./src/services/wechat-gateway-profile');
     installDogFeedActionHook();
     require('./src/core/worker');
 } else {
@@ -42,6 +45,7 @@ if (isWorkerProcess) {
     const runtimeEngine = createRuntimeEngine({
         processRef: process,
         mainEntryPath: __filename,
+        workerScriptPath: path.join(__dirname, 'src/core/worker-bootstrap.js'),
         startAdminServer: startAdminServerWithCodeManagerApi,
         codeRefreshProvider,
         onStatusSync: (accountId, status) => {
