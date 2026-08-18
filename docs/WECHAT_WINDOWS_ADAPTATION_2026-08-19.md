@@ -1,6 +1,6 @@
 # FAR2 Windows 微信端适配（2026-08-19）
 
-状态：**P0 已完成实机取证，进入 P1 差分定位**
+状态：**P0/P1 已完成实机取证，进入 P2 运行时入口定位**
 
 ## 目标
 
@@ -34,27 +34,18 @@ FAR2 已有：
 - `probe-wechat-farm.cmd`
 - `scripts/windows/probe-wechat-farm.ps1`
 
-首份实机报告（2026-08-19）已经确认：
+首份实机报告已经确认：
 
 - Windows 微信主程序为 `Weixin.exe`；
 - 微信小程序运行时为 `WeChatAppEx.exe`；
-- `WeChatAppEx.exe` 来自 `%APPDATA%\Tencent\xwechat\XPlugin\Plugins\RadiumWMPF\...\runtime\WeChatAppEx.exe`；
+- Runtime 位于 `%APPDATA%\Tencent\xwechat\XPlugin\Plugins\RadiumWMPF\...\runtime\WeChatAppEx.exe`；
 - 微信与小程序运行在同一交互式 Windows Session（实机为 Session 1）；
-- FAR2 旧微信 AppId `wx5306c5978fdb76e4` 确实出现在当前桌面微信农场运行目录，而不是历史误配置；
-- 已确认实际 App 根目录形态：`%APPDATA%\Tencent\xwechat\radium\users\<profile>\applet\local\wx5306c5978fdb76e4`；
-- 打开农场时该目录下的 `launch.config`、`temp`、`usr` 文件会发生实时变化；
-- 同一微信主进程下面会存在多个 `WeChatAppEx.exe`，因此不能仅凭进程名选择农场实例，必须做打开农场前后的差分定位。
+- 农场 AppId 为 `wx5306c5978fdb76e4`；
+- 实际 App 根目录为 `%APPDATA%\Tencent\xwechat\radium\users\<profile>\applet\local\wx5306c5978fdb76e4`；
+- 打开农场时 `launch.config`、`temp`、`usr` 会实时变化；
+- 同一微信主进程下会存在多个 `WeChatAppEx.exe`，不能仅凭进程名绑定农场实例。
 
-P0 还发现 Windows PowerShell 5.1 下 `OrderedDictionary | Select-Object -ExpandProperty sessionId` 会导致汇总 SessionId 丢失，现已改为显式索引读取。
-
-P0 明确不读取：
-
-- 聊天数据库；
-- 聊天内容；
-- 联系人内容；
-- 用户文件/附件内容；
-- Cookie / Token / refresh token / Code；
-- 微信数据库正文。
+P0 还修复了 Windows PowerShell 5.1 下 SessionId 汇总丢失问题。
 
 ## P1 — 打开农场前后差分定位
 
@@ -63,30 +54,89 @@ P0 明确不读取：
 - `probe-wechat-farm-p1.cmd`
 - `scripts/windows/probe-wechat-farm-p1.ps1`
 
-流程：
+P1 实机报告（2026-08-19 04:40 +08:00）已经通过 Gate：
 
-1. 保持微信电脑版登录；
-2. 先关闭农场小程序窗口，但不要退出微信；
-3. 运行 `probe-wechat-farm-p1.cmd` 并记录基线；
-4. 按提示从微信电脑版重新打开 QQ经典农场；
-5. 等主页完全加载后按 Enter；
-6. 上传生成的 `%TEMP%\FAR2-WeChat-Probe\wechat-farm-p1-*.json`。
+- profile 唯一命中 `713e2713509fdcbc61cfa2ee52bcbeb8`；
+- 农场顶层可见窗口唯一命中：标题 `QQ经典农场`、Class `Chrome_WidgetWin_0`；
+- 农场顶层窗口由 `WeChatAppEx.exe` PID `11544` 持有；
+- 打开农场后新增两个 `WeChatAppEx.exe`：PID `29176`、`29960`；
+- 两者父 PID 都是 `11544`，SessionId 都是 `1`；
+- PID `29960` 的启动参数中明确出现 `--wmpf-appid`，PID `29176` 没有；
+- `launch.config` 在打开农场后实时修改，格式为 JSON，内容仅是窗口尺寸/状态配置，没有 Code/Token；
+- P1 采集窗口内农场目录只有两个文件变化：`launch.config` 修改、`temp` 下 JPEG 新建。
 
-P1 只针对已确认的农场 AppId 做：
+当前最强进程关系证据：
 
-- 打开前/打开后的 `Weixin.exe` / `WeChatAppEx.exe` PID 差分；
-- SessionId、父子进程关系；
-- 只保存命令行里的开关名称、AppId 是否出现、32 位 profile 标识，不保存原始命令行；
-- 枚举微信相关顶层窗口的 PID、标题、窗口类和矩形，定位农场窗口所有者；
-- 对农场 App 专属目录做文件元数据差分；
-- 只读取农场目录自己的 `launch.config`，JSON 内容会对 token/ticket/cookie/session/auth/key/code/openid/unionid 等敏感字段自动脱敏；
-- 不读取聊天目录和微信消息数据库。
+```text
+Weixin.exe
+  -> WeChatAppEx.exe 11544        # WMPF 主宿主 / 农场顶层窗口
+       -> WeChatAppEx.exe 29960   # 带 --wmpf-appid 的 renderer 候选
+       -> WeChatAppEx.exe 29176   # 另一 renderer/辅助候选
+```
 
-P1 的 Gate：
+因此 P1 不再重复执行。
 
-- 如果能唯一识别承载农场的 `WeChatAppEx.exe`，下一步建立 Windows Session scoped 微信 Farm Agent；
-- 如果 `launch.config`/进程参数能证明运行入口但不能得到登录 Code，下一步只在该农场进程/该 AppId 范围内做运行时只读观察；
-- 在 Code 来源被证明前，FAR2 不主动伪造微信登录请求，也不接第三方 8059 API 作为正式方案。
+P1 过程中发现并修复：
+
+- PowerShell 自动变量 `$PID` 只读，窗口枚举变量改为 `$windowProcessId`；
+- `.cmd` 现在优先调用 `pwsh.exe`，没有 PowerShell 7 才回退 `powershell.exe`；
+- 探针不再自动启动 Explorer。
+
+## P2 — 农场 renderer / 本地运行时入口定位
+
+新增：
+
+- `probe-wechat-farm-p2.cmd`
+- `scripts/windows/probe-wechat-farm-p2.ps1`
+
+P2 不再需要关闭/重新打开农场。使用时保持：
+
+1. Windows 微信已登录；
+2. `QQ经典农场` 小程序窗口保持打开；
+3. 运行 `probe-wechat-farm-p2.cmd`；
+4. 上传 `%TEMP%\FAR2-WeChat-Probe\wechat-farm-p2-*.json`。
+
+P2 只做以下只读取证：
+
+- 通过 `QQ经典农场` 顶层窗口锁定 WMPF 主宿主 PID；
+- 建立该宿主的 `WeChatAppEx.exe` 子进程树；
+- 从原始命令行本地解析，但报告中只保存白名单参数值：
+  - `wmpf-appid`
+  - `type`
+  - `wmpf-render-type`
+  - `instance-index`
+  - `client_version`
+  - `product-id`
+  - `service-sandbox-type`
+  - `utility-sub-type`
+- 尝试唯一确认 `wmpf-appid=wx5306c5978fdb76e4` 的 renderer；
+- 只记录这些候选 PID 的 `127.0.0.1` / `::1` 本地 TCP/UDP 端点，不记录公网远端连接；
+- 只枚举名称中含 `WMPF/WeChat/Weixin/Applet/MiniProgram` 的 named pipe 名称，不读取 pipe 内容；
+- 只在农场 App 专属目录及最近 30 分钟 `applet\codecache` 中统计以下关键词是否命中：
+  - `wx5306c5978fdb76e4`
+  - `wx.login`
+  - `JSLogin`
+  - `LoginGetQRCar`
+  - `LoginCheckQR`
+- 关键词扫描只保存文件路径、大小、时间和命中次数，不保存文件正文或上下文片段。
+
+P2 Gate：
+
+- 若 `wmpf-appid` 能唯一落到某个 renderer，并存在可用 loopback/pipe 入口，下一阶段优先验证官方 WMPF 本地 IPC；
+- 若没有本地端口/可识别 pipe，但 codecache 明确命中 `wx.login`，下一阶段只围绕该农场 renderer 的 `wx.login` 调用链做最小化运行时观察；
+- 若两者都没有证据，不直接注入/伪造登录请求，继续补充只读证据。
+
+## 安全边界
+
+所有 P0/P1/P2 探针均明确不做：
+
+- 读取聊天数据库；
+- 读取聊天内容/联系人/聊天附件正文；
+- 捕获 Cookie / Token / refresh token / 登录 Code；
+- 保存原始进程命令行；
+- 保存公网远端连接；
+- 修改微信文件；
+- 主动发送未知微信/农场登录请求。
 
 ## 完成标准
 
