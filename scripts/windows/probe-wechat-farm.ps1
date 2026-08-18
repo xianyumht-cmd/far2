@@ -176,7 +176,8 @@ $roots = Get-RootCandidates
 $interestingDirs = Get-InterestingDirectories -RootCandidates $roots
 $recentFiles = Get-RecentRuntimeFiles -InterestingDirectories $interestingDirs -Minutes $RecentMinutes
 
-$sessionIds = @($processes | Select-Object -ExpandProperty sessionId -Unique)
+# OrderedDictionary rows do not reliably work with Select-Object -ExpandProperty on Windows PowerShell 5.1.
+$sessionIds = @($processes | ForEach-Object { [int]$_['sessionId'] } | Sort-Object -Unique)
 $report = [ordered]@{
     version = 1
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
