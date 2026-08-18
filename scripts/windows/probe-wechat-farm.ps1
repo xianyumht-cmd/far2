@@ -12,9 +12,9 @@ function Convert-ToSafePath {
 
     $safe = $Value
     $replacements = @(
-        @($env:USERPROFILE, '%USERPROFILE%'),
         @($env:APPDATA, '%APPDATA%'),
-        @($env:LOCALAPPDATA, '%LOCALAPPDATA%')
+        @($env:LOCALAPPDATA, '%LOCALAPPDATA%'),
+        @($env:USERPROFILE, '%USERPROFILE%')
     )
 
     foreach ($pair in $replacements) {
@@ -27,10 +27,21 @@ function Convert-ToSafePath {
     return $safe
 }
 
+function Convert-FromSafePath {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+
+    $real = $Value
+    $real = $real.Replace('%APPDATA%', $env:APPDATA)
+    $real = $real.Replace('%LOCALAPPDATA%', $env:LOCALAPPDATA)
+    $real = $real.Replace('%USERPROFILE%', $env:USERPROFILE)
+    return $real
+}
+
 function Test-ExcludedPath {
     param([string]$Path)
     $text = [string]$Path
-    return ($text -match '(?i)(\\|/)(Msg|Message|MsgAttach|FileStorage|ChatMsg|Contact|History|Backup)(\\|/)')
+    return ($text -match '(?i)(\\|/)(Msg|Message|MsgAttach|FileStorage|ChatMsg|Contact|History|Backup)(\\|/|$)')
 }
 
 function Get-ProcessSnapshot {
@@ -88,31 +99,24 @@ function Get-InterestingDirectories {
 
     $namePattern = '(?i)(wmpf|mini|appstore|applet|plugin|xplugin|runtime|cache)'
     $rows = @()
+    $visited = 0
+    $maxVisited = 4000
 
     foreach ($rootInfo in $RootCandidates) {
-        if (-not $rootInfo.exists) { continue }
+        if (-not $rootInfo.exists -or $visited -ge $maxVisited) { continue }
+        $realRoot = Convert-FromSafePath ([string]$rootInfo.path)
 
-        $realRoot = [string]$rootInfo.path
-        $realRoot = $realRoot.Replace('%USERPROFILE%', $env:USERPROFILE)
-        $realRoot = $realRoot.Replace('%APPDATA%', $env:APPDATA)
-        $realRoot = $realRoot.Replace('%LOCALAPPDATA%', $env:LOCALAPPDATA)
+        Get-ChildItem -LiteralPath $realRoot -Directory -Recurse -Depth 4 -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($visited -ge $maxVisited) { return }
+            $visited++
+            if (Test-ExcludedPath $_.FullName) { return }
 
-        Get-ChildItem -LiteralPath $realRoot -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
-            $level1 = $_
-            if (-not (Test-ExcludedPath $level1.FullName) -and $level1.Name -match $namePattern) {
+            $safePath = Convert-ToSafePath $_.FullName
+            if ($_.Name -match $namePattern -or $safePath -match [regex]::Escape($AppId)) {
                 $rows += [ordered]@{
-                    path = Convert-ToSafePath $level1.FullName
-                    lastWriteUtc = $level1.LastWriteTimeUtc.ToString('o')
-                }
-            }
-
-            Get-ChildItem -LiteralPath $level1.FullName -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
-                $level2 = $_
-                if (-not (Test-ExcludedPath $level2.FullName) -and $level2.Name -match $namePattern) {
-                    $rows += [ordered]@{
-                        path = Convert-ToSafePath $level2.FullName
-                        lastWriteUtc = $level2.LastWriteTimeUtc.ToString('o')
-                    }
+                    path = $safePath
+                    lastWriteUtc = $_.LastWriteTimeUtc.ToString('o')
+                    appIdInPath = [bool]($safePath -match [regex]::Escape($AppId))
                 }
             }
         }
@@ -126,45 +130,40 @@ function Get-InterestingDirectories {
             $seen[$key] = $true
             $deduped += $row
         }
-        if ($deduped.Count -ge 80) { break }
+        if ($deduped.Count -ge 120) { break }
     }
     return @($deduped)
 }
 
 function Get-RecentRuntimeFiles {
-    param([array]$RootCandidates, [int]$Minutes)
+    param([array]$InterestingDirectories, [int]$Minutes)
 
     $cutoff = (Get-Date).ToUniversalTime().AddMinutes(-1 * [Math]::Abs($Minutes))
     $rows = @()
-    $fileBudget = 0
-    $maxVisited = 12000
+    $seen = @{}
+    $dirBudget = 0
 
-    foreach ($rootInfo in $RootCandidates) {
-        if (-not $rootInfo.exists -or $fileBudget -ge $maxVisited) { continue }
+    foreach ($dirInfo in $InterestingDirectories) {
+        if ($dirBudget -ge 80) { break }
+        $dirBudget++
 
-        $realRoot = [string]$rootInfo.path
-        $realRoot = $realRoot.Replace('%USERPROFILE%', $env:USERPROFILE)
-        $realRoot = $realRoot.Replace('%APPDATA%', $env:APPDATA)
-        $realRoot = $realRoot.Replace('%LOCALAPPDATA%', $env:LOCALAPPDATA)
+        $realDir = Convert-FromSafePath ([string]$dirInfo.path)
+        if (-not (Test-Path -LiteralPath $realDir) -or (Test-ExcludedPath $realDir)) { continue }
 
-        Get-ChildItem -LiteralPath $realRoot -File -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($fileBudget -ge $maxVisited) { return }
-            $fileBudget++
-
+        Get-ChildItem -LiteralPath $realDir -File -Recurse -Depth 3 -Force -ErrorAction SilentlyContinue | ForEach-Object {
             if (Test-ExcludedPath $_.FullName) { return }
             if ($_.LastWriteTimeUtc -lt $cutoff) { return }
 
             $safePath = Convert-ToSafePath $_.FullName
-            $lower = $safePath.ToLowerInvariant()
-            if ($lower -notmatch '(wmpf|mini|applet|appstore|xplugin|runtime|cache)' -and $lower -notmatch [regex]::Escape($AppId.ToLowerInvariant())) {
-                return
-            }
+            $key = $safePath.ToLowerInvariant()
+            if ($seen.ContainsKey($key)) { return }
+            $seen[$key] = $true
 
             $rows += [ordered]@{
                 path = $safePath
                 length = [int64]$_.Length
                 lastWriteUtc = $_.LastWriteTimeUtc.ToString('o')
-                appIdInPath = [bool]($lower -match [regex]::Escape($AppId.ToLowerInvariant()))
+                appIdInPath = [bool]($safePath -match [regex]::Escape($AppId))
             }
         }
     }
@@ -175,7 +174,7 @@ function Get-RecentRuntimeFiles {
 $processes = Get-ProcessSnapshot
 $roots = Get-RootCandidates
 $interestingDirs = Get-InterestingDirectories -RootCandidates $roots
-$recentFiles = Get-RecentRuntimeFiles -RootCandidates $roots -Minutes $RecentMinutes
+$recentFiles = Get-RecentRuntimeFiles -InterestingDirectories $interestingDirs -Minutes $RecentMinutes
 
 $sessionIds = @($processes | Select-Object -ExpandProperty sessionId -Unique)
 $report = [ordered]@{
@@ -188,6 +187,7 @@ $report = [ordered]@{
         chatDatabaseRead = $false
         messageContentRead = $false
         cookieOrTokenCapture = $false
+        fileContentsRead = $false
         excludedPathClasses = @('Msg', 'Message', 'MsgAttach', 'FileStorage', 'ChatMsg', 'Contact', 'History', 'Backup')
     }
     summary = [ordered]@{
@@ -196,7 +196,7 @@ $report = [ordered]@{
         existingRootCount = @($roots | Where-Object { $_.exists }).Count
         interestingDirectoryCount = @($interestingDirs).Count
         recentRuntimeFileCount = @($recentFiles).Count
-        appIdPathHitCount = @($recentFiles | Where-Object { $_.appIdInPath }).Count
+        appIdPathHitCount = @($recentFiles | Where-Object { $_.appIdInPath }).Count + @($interestingDirs | Where-Object { $_.appIdInPath }).Count
     }
     processes = $processes
     roots = $roots
@@ -231,7 +231,7 @@ Write-Host ''
 Write-Host '报告已生成:' -ForegroundColor Green
 Write-Host $OutputPath
 Write-Host ''
-Write-Host '报告不读取聊天数据库/聊天内容，也不抓取 Cookie、Token 或登录凭证。'
+Write-Host '报告只读取进程/目录/文件元数据；不读取任何文件正文、聊天数据库或登录凭证。'
 
 try {
     Start-Process explorer.exe -ArgumentList "/select,`"$OutputPath`""
