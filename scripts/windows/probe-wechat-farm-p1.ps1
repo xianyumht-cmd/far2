@@ -130,9 +130,9 @@ function Get-WeChatWindows {
     $callback = [Far2WechatWindowProbe+EnumWindowsProc]{
         param([IntPtr]$hWnd, [IntPtr]$lParam)
 
-        [uint32]$pid = 0
-        [void][Far2WechatWindowProbe]::GetWindowThreadProcessId($hWnd, [ref]$pid)
-        if (-not $pidSet.Contains($pid)) { return $true }
+        [uint32]$windowProcessId = 0
+        [void][Far2WechatWindowProbe]::GetWindowThreadProcessId($hWnd, [ref]$windowProcessId)
+        if (-not $pidSet.Contains($windowProcessId)) { return $true }
 
         $titleBuffer = New-Object System.Text.StringBuilder 1024
         $classBuffer = New-Object System.Text.StringBuilder 256
@@ -144,7 +144,7 @@ function Get-WeChatWindows {
 
         [void]$rows.Add([pscustomobject][ordered]@{
             hwnd = ('0x{0:X}' -f $hWnd.ToInt64())
-            pid = [int]$pid
+            pid = [int]$windowProcessId
             visible = [bool][Far2WechatWindowProbe]::IsWindowVisible($hWnd)
             title = $titleBuffer.ToString()
             className = $classBuffer.ToString()
