@@ -22,7 +22,7 @@ if %ERRORLEVEL%==0 (
 
 echo PowerShell runner: %FAR2_PS%
 echo.
-"%FAR2_PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\probe-wechat-farm-p3-cdp.ps1"
+"%FAR2_PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\run-wechat-farm-p3-cdp.ps1"
 
 set "RC=%ERRORLEVEL%"
 echo.
