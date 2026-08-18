@@ -1,5 +1,6 @@
 'use strict';
 
+const process = require('node:process');
 const { CONFIG } = require('../config/config');
 
 const wsPath = require.resolve('ws');
