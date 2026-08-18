@@ -9,15 +9,17 @@ echo.
 echo Keep desktop WeChat logged in.
 echo Close ONLY the farm mini-program window before starting.
 echo The script will ask you to open the farm once during capture.
+echo It will NOT open Explorer automatically.
 echo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\probe-wechat-farm-p1.ps1"
 
+set "RC=%ERRORLEVEL%"
 echo.
-if errorlevel 1 (
-  echo Probe failed. Please screenshot this window and send it back.
+if not "%RC%"=="0" (
+  echo Probe failed. Please send a screenshot of this window.
 ) else (
   echo Done. Send the generated wechat-farm-p1-*.json report back.
 )
 echo.
 pause
-endlocal
+exit /b %RC%
