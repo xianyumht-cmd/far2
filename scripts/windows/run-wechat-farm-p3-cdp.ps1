@@ -35,6 +35,78 @@ foreach ($entry in $replacements.GetEnumerator()) {
     $source = $source.Replace([string]$entry.Key, [string]$entry.Value)
 }
 
+# ClientWebSocket cancellation is destructive: cancelling ReceiveAsync changes the
+# whole socket to Aborted. Keep a single pending ReceiveAsync across poll timeouts
+# and wait on it without ever cancelling the operation.
+$receivePattern = '(?s)function Receive-CdpMessage \{.*?\r?\n\}\r?\n\r?\n(?=\$debuggerProcess = \$null)'
+$receiveReplacement = @'
+function Receive-CdpMessage {
+    param(
+        [System.Net.WebSockets.ClientWebSocket]$Socket,
+        [int]$TimeoutMs = 1200
+    )
+
+    if ($Socket.State -ne [Net.WebSockets.WebSocketState]::Open) {
+        throw ("CDP WebSocket is not open (state={0})." -f $Socket.State)
+    }
+
+    if (-not (Get-Variable -Name Far2CdpReceiveStream -Scope Script -ErrorAction SilentlyContinue)) {
+        $script:Far2CdpReceiveStream = [IO.MemoryStream]::new()
+        $script:Far2CdpPendingReceive = $null
+        $script:Far2CdpReceiveBuffer = $null
+    }
+
+    $deadline = [Environment]::TickCount64 + [int64]$TimeoutMs
+    while ([Environment]::TickCount64 -lt $deadline) {
+        if ($null -eq $script:Far2CdpPendingReceive) {
+            $script:Far2CdpReceiveBuffer = New-Object byte[] 262144
+            $segment = [ArraySegment[byte]]::new($script:Far2CdpReceiveBuffer)
+            $script:Far2CdpPendingReceive = $Socket.ReceiveAsync(
+                $segment,
+                [Threading.CancellationToken]::None
+            )
+        }
+
+        $remaining64 = $deadline - [Environment]::TickCount64
+        if ($remaining64 -le 0) { return $null }
+        $remaining = [int][Math]::Min([int64][int]::MaxValue, $remaining64)
+
+        # Task.Wait(timeout) does not cancel ReceiveAsync. If it times out, keep
+        # the same task alive and continue waiting for it on the next poll.
+        if (-not $script:Far2CdpPendingReceive.Wait($remaining)) {
+            return $null
+        }
+
+        $result = $script:Far2CdpPendingReceive.GetAwaiter().GetResult()
+        $script:Far2CdpPendingReceive = $null
+
+        if ($result.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) {
+            $script:Far2CdpReceiveStream.SetLength(0)
+            return $null
+        }
+
+        if ($result.Count -gt 0) {
+            $script:Far2CdpReceiveStream.Write($script:Far2CdpReceiveBuffer, 0, $result.Count)
+        }
+
+        if ($result.EndOfMessage) {
+            $payload = [Text.Encoding]::UTF8.GetString($script:Far2CdpReceiveStream.ToArray())
+            $script:Far2CdpReceiveStream.SetLength(0)
+            return $payload
+        }
+    }
+
+    return $null
+}
+
+'@
+$patchedSource = [regex]::Replace($source, $receivePattern, $receiveReplacement, 1)
+if ($patchedSource -eq $source) {
+    Write-Host 'P3 runner compatibility patch could not replace Receive-CdpMessage.' -ForegroundColor Red
+    exit 1
+}
+$source = $patchedSource
+
 $tempRoot = Join-Path $env:TEMP 'FAR2-WeChat-CDP'
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 $runtimeScript = Join-Path $tempRoot 'probe-wechat-farm-p3-cdp-runtime.ps1'
