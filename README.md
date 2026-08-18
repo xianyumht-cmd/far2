@@ -171,18 +171,18 @@ Linux / Docker 不具备 Windows Session、QQ 桌面客户端和 QQEX 本机缓�
 
 ```powershell
 # 克隆
- git clone https://github.com/xianyumht-cmd/far2.git
- cd far2
+git clone https://github.com/xianyumht-cmd/far2.git
+cd far2
 
 # 安装依赖
- corepack enable
- pnpm install
+corepack enable
+pnpm install
 
 # 构建 WebUI
- pnpm build:web
+pnpm build:web
 
 # 启动 Core + WebUI
- pnpm dev:core
+pnpm dev:core
 ```
 
 默认 WebUI 通常通过 `ADMIN_PORT` 配置；现有 Windows 部署通常使用 `3007`。
