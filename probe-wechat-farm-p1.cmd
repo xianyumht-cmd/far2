@@ -11,7 +11,17 @@ echo Close ONLY the farm mini-program window before starting.
 echo The script will ask you to open the farm once during capture.
 echo It will NOT open Explorer automatically.
 echo.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\probe-wechat-farm-p1.ps1"
+
+where pwsh.exe >nul 2>&1
+if %ERRORLEVEL%==0 (
+  set "FAR2_PS=pwsh.exe"
+) else (
+  set "FAR2_PS=powershell.exe"
+)
+
+echo PowerShell runner: %FAR2_PS%
+echo.
+"%FAR2_PS%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\probe-wechat-farm-p1.ps1"
 
 set "RC=%ERRORLEVEL%"
 echo.
