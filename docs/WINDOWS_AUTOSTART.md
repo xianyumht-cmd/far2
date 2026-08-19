@@ -9,6 +9,8 @@
 - 同一台机器可按 `UIN -> 独立 loopback 端口 -> 独立 Windows Session` 注册多个 Agent；
 - 用户平时只需要访问 `http://127.0.0.1:3007`。
 
+这里的“隐藏计划任务”只表示 **Code Agent 自己不弹 PowerShell/Node 控制台窗口**。FAR2 不再隐藏、移动或持续扫描 QQ 农场窗口，农场窗口保持系统原本的可见状态。
+
 ## 为什么 Code Agent 不能放进 NSSM / Session 0
 
 主 FAR2 可以运行在 LocalSystem / Session 0。
@@ -30,11 +32,11 @@ Code Agent 必须与 QQ/QQEX 处于同一个交互式 Windows Session，因为�
             └─ UIN B -> 127.0.0.1:43102
 
 Windows user/session A
-  └─ FAR2CodeAgent-<UIN A> (Hidden)
+  └─ FAR2CodeAgent-<UIN A> (Hidden console only)
        └─ one QQ A
 
 Windows user/session B
-  └─ FAR2CodeAgent-<UIN B> (Hidden)
+  └─ FAR2CodeAgent-<UIN B> (Hidden console only)
        └─ one QQ B
 ```
 
@@ -71,7 +73,7 @@ install-windows-service.cmd
 
 - 第一个可用 Agent 端口为 `43101`；
 - 第一个 token 环境变量为 `FAR2_CODE_PROVIDER_TOKEN_A`；
-- 建立 `FAR2CodeAgent-<UIN>` 隐藏计划任务；
+- 建立 `FAR2CodeAgent-<UIN>` 隐藏计划任务（只隐藏 Agent 控制台，不隐藏农场窗口）；
 - 安装/更新 `FAR2Farm` NSSM 服务；
 - 将 Provider targets 以 Base64 JSON 写入 NSSM `AppEnvironmentExtra`；
 - 启用事件驱动 Code 刷新：`WS400` / kickout / 手动刷新立即处理，健康账号不做固定小时重登。
@@ -109,16 +111,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows\install-
 
 `-AgentPort` 也可以显式指定；省略或为 `0` 时自动分配/复用。
 
-## 临时 QQ 农场窗口隐藏
+## Code 刷新与窗口行为
 
-`scripts/windows/farm-window-cloak.ps1` 跟随每个 Agent 在自己的 Windows Session 内运行：
+Code Agent 保持原有 Session/UIN 隔离和事件驱动刷新逻辑。生产配置使用 `FARM_CODE_SCHEDULED_REFRESH=0` 时，健康账号不会按固定周期主动刷新；检测到 `WS400`、有效 kickout 或人工触发时才进入刷新链路。
 
-- 只扫描当前 Session 的 QQ 进程；
-- 识别 QQ经典农场对应 QQEX mini-app 进程树；
-- 将临时农场窗口移到可见桌面之外并避免抢焦点；
-- 不改变 `qq.login()`、Code 捕获或 UIN 校验逻辑。
+窗口隐藏功能已经移除：
 
-`Local\FAR2FarmWindowCloak` mutex 也是 Session 本地边界，因此不同 Windows 用户 Session 可各自运行自己的 cloak。
+- 不再启动 `farm-window-cloak.ps1`；
+- 不再高频枚举 QQ 进程或移动农场窗口到屏幕外；
+- 不再提供 WebUI“窗口控制”页面/API；
+- Code Agent 的隐藏计划任务只用于避免弹出命令行窗口，与 QQ 农场窗口无关。
 
 ## 查看状态
 
@@ -150,9 +152,10 @@ uninstall-windows-service.cmd
 
 ## 当前验收边界
 
-截至 2026-08-13：
+截至 2026-08-19：
 
 - **单账号 Windows Session / 单 Agent Code 自动刷新：已验收。**
+- **Code 刷新采用事件驱动模式；窗口隐藏功能已移除。**
 - **多 target Provider 核心路由与防串号：代码已具备，自测覆盖 A/B 独立路由。**
 - **增量多 Windows Session 安装/诊断：已实现，等待真实第二 QQ 环境验收。**
 - 第二 QQ 尚未完成受控 E2E 与多周期无人值守 soak，因此不要把“安装器已支持”写成“第二账号已生产验收”。
