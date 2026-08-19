@@ -1,11 +1,9 @@
 <script setup lang="ts">
-import { useIntervalFn } from '@vueuse/core'
 import { computed, reactive, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseTextarea from '@/components/ui/BaseTextarea.vue'
-import { useWxLoginStore } from '@/stores/wx-login'
 
 const props = defineProps<{
   show: boolean
@@ -14,92 +12,49 @@ const props = defineProps<{
 
 const emit = defineEmits(['close', 'saved'])
 
-const wxLoginStore = useWxLoginStore()
-
-// 标签页：wx-微信扫码, manual-手动填码
 const activeTab = ref<'wx' | 'manual'>('manual')
 const loading = ref(false)
 const errorMessage = ref('')
+const residentAccountName = ref('微信农场')
 
-// 微信扫码相关
-const wxAccountName = ref('')
-
-// 表单数据
 const form = reactive({
   name: '',
   code: '',
   platform: 'qq' as 'qq' | 'wx',
 })
 
-// 微信扫码轮询
-const { pause: stopWxCheck, resume: startWxCheck } = useIntervalFn(async () => {
-  if (wxLoginStore.status !== 'qr_ready' && wxLoginStore.status !== 'confirming') {
-    return
-  }
-  const result = await wxLoginStore.checkLogin()
-  if (result.success && result.wxid) {
-    stopWxCheck()
-    // 获取Code并添加账号
-    const codeResult = await wxLoginStore.getFarmCode()
-    if (codeResult.success && codeResult.code) {
-      const name = wxAccountName.value.trim() || result.nickname || `微信账号${Date.now()}`
-      // 检查是否启用自动添加账号
-      if (wxLoginStore.config.autoAddAccount) {
-        await addAccount({
-          id: props.editData?.id,
-          name: props.editData ? (props.editData.name || name) : name,
-          code: codeResult.code,
-          platform: 'wx',
-          loginType: 'wx_qr',
-          wxid: result.wxid,
-        })
-      }
-      else {
-        // 不自动添加，只显示 code 让用户手动复制
-        form.code = codeResult.code
-        form.platform = 'wx'
-        activeTab.value = 'manual'
-      }
-    }
-  }
-}, 2000, { immediate: false })
+const editingWx = computed(() => String(props.editData?.platform || '').toLowerCase() === 'wx')
 
-// 获取微信二维码
-async function loadWxQRCode() {
-  if (activeTab.value !== 'wx')
-    return
-  wxLoginStore.resetState()
-  const success = await wxLoginStore.getQRCode()
-  if (success) {
-    startWxCheck()
-  }
+async function addAccount(data: any) {
+  const res = await api.post('/api/accounts', data)
+  if (!res.data.ok)
+    throw new Error(res.data.error || '保存失败')
+  return res.data.data
 }
 
-// 添加账号
-async function addAccount(data: any) {
-  loading.value = true
+async function submitManual() {
   errorMessage.value = ''
-  try {
-    const res = await api.post('/api/accounts', data)
-    if (res.data.ok) {
+
+  if (editingWx.value) {
+    if (!form.name.trim()) {
+      errorMessage.value = '请输入账号备注'
+      return
+    }
+    loading.value = true
+    try {
+      await addAccount({ id: props.editData.id, name: form.name.trim() })
       emit('saved')
       close()
     }
-    else {
-      errorMessage.value = `保存失败: ${res.data.error}`
+    catch (e: any) {
+      errorMessage.value = `保存失败: ${e.response?.data?.error || e.message}`
     }
+    finally {
+      loading.value = false
+    }
+    return
   }
-  catch (e: any) {
-    errorMessage.value = `保存失败: ${e.response?.data?.error || e.message}`
-  }
-  finally {
-    loading.value = false
-  }
-}
 
-// 手动提交
-async function submitManual() {
-  errorMessage.value = ''
   if (!form.code) {
     errorMessage.value = '请输入Code'
     return
@@ -112,81 +67,104 @@ async function submitManual() {
     form.code = code
   }
 
-  let payload: any = {}
-  if (props.editData) {
-    const onlyNameChanged = form.name !== props.editData.name
-      && form.code === (props.editData.code || '')
-      && form.platform === (props.editData.platform || 'qq')
-
-    if (onlyNameChanged) {
-      payload = { id: props.editData.id, name: form.name }
-    }
-    else {
-      payload = {
+  const payload = props.editData
+    ? {
         id: props.editData.id,
         name: form.name,
         code,
-        platform: form.platform,
+        platform: 'qq',
         loginType: 'manual',
       }
-    }
-  }
-  else {
-    payload = {
-      name: form.name,
-      code,
-      platform: form.platform,
-      loginType: 'manual',
-    }
-  }
+    : {
+        name: form.name,
+        code,
+        platform: 'qq',
+        loginType: 'manual',
+      }
 
-  await addAccount(payload)
+  loading.value = true
+  try {
+    await addAccount(payload)
+    emit('saved')
+    close()
+  }
+  catch (e: any) {
+    errorMessage.value = `保存失败: ${e.response?.data?.error || e.message}`
+  }
+  finally {
+    loading.value = false
+  }
 }
 
-// 微信二维码图片
-const wxQrImageSrc = computed(() => {
-  if (!wxLoginStore.qrCode)
-    return ''
-  if (wxLoginStore.qrCode.startsWith('data:'))
-    return wxLoginStore.qrCode
-  if (wxLoginStore.qrCode.startsWith('http'))
-    return wxLoginStore.qrCode
-  return `data:image/png;base64,${wxLoginStore.qrCode}`
-})
+async function enrollResidentWechat() {
+  if (props.editData)
+    return
+
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    const name = residentAccountName.value.trim() || '微信农场'
+    const data = await addAccount({
+      name,
+      platform: 'wx',
+      loginType: 'windows_wechat',
+      codeRefreshEnabled: true,
+      codeRefreshMode: 'windows_wechat',
+      wechatAppId: 'wx5306c5978fdb76e4',
+    })
+
+    const accounts = Array.isArray(data?.accounts) ? data.accounts : []
+    const newAccount = accounts[accounts.length - 1]
+    const accountId = String(newAccount?.id || '')
+    if (!accountId)
+      throw new Error('微信账号已保存，但无法确定账号 ID')
+
+    const headers = { 'x-account-id': accountId }
+    await api.post('/api/code-manager/config', {
+      enabled: true,
+      mode: 'windows_wechat',
+    }, { headers })
+
+    const refresh = await api.post('/api/code-manager/refresh', {
+      reason: 'web_enroll',
+    }, { headers })
+
+    if (refresh.data?.data?.accepted !== true)
+      throw new Error('Resident Agent 尚未就绪，账号已保存为等待 Provider 状态')
+
+    emit('saved')
+    close()
+  }
+  catch (e: any) {
+    errorMessage.value = `微信接入失败: ${e.response?.data?.error || e.message}`
+  }
+  finally {
+    loading.value = false
+  }
+}
 
 function close() {
-  stopWxCheck()
-  wxLoginStore.resetState()
   emit('close')
 }
 
 watch(() => props.show, (newVal) => {
-  if (newVal) {
-    errorMessage.value = ''
-    if (props.editData) {
-      activeTab.value = 'manual'
-      form.name = props.editData.name || ''
-      form.code = props.editData.code || ''
-      form.platform = props.editData.platform || 'qq'
-      wxAccountName.value = props.editData.name || ''
-    }
-    else {
-      activeTab.value = 'manual'
-      form.name = ''
-      form.code = ''
-      form.platform = 'qq'
-      wxAccountName.value = ''
-    }
+  if (!newVal)
+    return
+
+  errorMessage.value = ''
+  if (props.editData) {
+    activeTab.value = 'manual'
+    form.name = props.editData.name || ''
+    form.code = editingWx.value ? '' : (props.editData.code || '')
+    form.platform = props.editData.platform || 'qq'
+    residentAccountName.value = props.editData.name || '微信农场'
   }
   else {
-    stopWxCheck()
-    wxLoginStore.resetState()
-  }
-})
-
-watch(activeTab, (tab) => {
-  if (tab === 'wx') {
-    loadWxQRCode()
+    activeTab.value = 'manual'
+    form.name = ''
+    form.code = ''
+    form.platform = 'qq'
+    residentAccountName.value = '微信农场'
   }
 })
 </script>
@@ -194,7 +172,6 @@ watch(activeTab, (tab) => {
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
     <div class="max-h-[90vh] max-w-md w-full overflow-hidden rounded-lg shadow-xl" :style="{ background: 'var(--theme-bg)' }">
-      <!-- Header -->
       <div class="flex items-center justify-between border-b p-4" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 10%, transparent)' }">
         <h3 class="text-lg font-semibold" :style="{ color: 'var(--theme-text)' }">
           {{ editData ? '编辑账号' : '添加账号' }}
@@ -205,13 +182,11 @@ watch(activeTab, (tab) => {
       </div>
 
       <div class="max-h-[calc(90vh-80px)] overflow-y-auto p-4">
-        <!-- 错误信息 -->
         <div v-if="errorMessage" class="mb-4 rounded p-3 text-sm" :style="{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }">
           {{ errorMessage }}
         </div>
 
-        <!-- Tabs -->
-        <div class="mb-4 flex border-b" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 10%, transparent)' }">
+        <div v-if="!editData" class="mb-4 flex border-b" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 10%, transparent)' }">
           <button
             class="flex-1 py-2 text-center text-sm font-medium transition-colors"
             :class="activeTab === 'manual' ? 'border-b-2' : 'opacity-60'"
@@ -221,10 +196,9 @@ watch(activeTab, (tab) => {
             }"
             @click="activeTab = 'manual'"
           >
-            手动填码
+            QQ / 手动 Code
           </button>
           <button
-            v-if="wxLoginStore.config.enabled"
             class="flex-1 py-2 text-center text-sm font-medium transition-colors"
             :class="activeTab === 'wx' ? 'border-b-2' : 'opacity-60'"
             :style="{
@@ -233,97 +207,75 @@ watch(activeTab, (tab) => {
             }"
             @click="activeTab = 'wx'"
           >
-            微信扫码
+            使用当前已登录微信
           </button>
         </div>
 
-        <!-- 微信扫码 Tab -->
-        <div v-if="activeTab === 'wx'" class="space-y-4">
-          <BaseInput
-            v-model="wxAccountName"
-            label="账号备注（可选）"
-            placeholder="留空使用微信昵称"
-          />
-
-          <div class="flex flex-col items-center justify-center py-4 space-y-4">
-            <div
-              v-if="wxQrImageSrc"
-              class="border rounded-lg p-2"
-              :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 20%, transparent)', background: '#fff' }"
-            >
-              <img :src="wxQrImageSrc" class="h-48 w-48">
+        <div v-if="activeTab === 'wx' && !editData" class="space-y-4">
+          <div class="rounded-lg border p-4 text-sm leading-6" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
+            <div class="font-semibold">
+              Windows 桌面微信 Resident Agent
             </div>
-            <div
-              v-else
-              class="h-48 w-48 flex items-center justify-center rounded-lg"
-              :style="{ background: 'color-mix(in srgb, var(--theme-bg) 90%, var(--theme-text))' }"
-            >
-              <div v-if="wxLoginStore.isLoading" i-svg-spinners-90-ring-with-bg class="text-3xl" :style="{ color: 'var(--theme-primary)' }" />
-              <span v-else class="text-sm" :style="{ color: 'var(--theme-text)' }">点击获取二维码</span>
+            <div class="mt-2 opacity-75">
+              使用当前电脑已经登录的微信接入 QQ经典农场。无需扫码、无需粘贴 Code，也不再使用旧 8059 登录接口。
             </div>
-
-            <p class="text-center text-sm" :style="{ color: 'var(--theme-text)' }">
-              {{ wxLoginStore.statusMessage }}
-            </p>
-
-            <p v-if="wxLoginStore.errorMessage" class="text-center text-sm text-red-600">
-              {{ wxLoginStore.errorMessage }}
-            </p>
-
-            <BaseButton variant="secondary" size="sm" :loading="wxLoginStore.isLoading" @click="loadWxQRCode">
-              刷新二维码
-            </BaseButton>
+            <div class="mt-2 opacity-75">
+              请先确保 FAR2WeChatAgent 正在运行，并已打开过一次 QQ经典农场。
+            </div>
           </div>
 
-          <div class="text-center text-xs opacity-60" :style="{ color: 'var(--theme-text)' }">
-            使用微信扫描二维码登录，登录成功后将自动添加账号
+          <BaseInput
+            v-model="residentAccountName"
+            label="账号备注"
+            placeholder="微信农场"
+          />
+
+          <BaseButton variant="primary" block :loading="loading" @click="enrollResidentWechat">
+            使用当前已登录微信
+          </BaseButton>
+
+          <div class="text-xs leading-5 opacity-60" :style="{ color: 'var(--theme-text)' }">
+            FAR2 会通过 Resident Agent 获取 fresh Code，并启用 windows_wechat 自动恢复。若 Agent 暂时未就绪，会保持等待 Provider，不会回退到旧扫码/8059 路径。
           </div>
         </div>
 
-        <!-- 手动填码 Tab -->
         <div v-if="activeTab === 'manual'" class="space-y-4">
-          <BaseInput
-            v-model="form.name"
-            label="账号备注（可选）"
-            placeholder="留空默认账号"
-          />
+          <template v-if="editingWx">
+            <div class="rounded-lg border p-4 text-sm leading-6" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
+              当前为 Windows 微信 Resident 账号。这里只修改备注，不显示或手工修改生产 Code。
+            </div>
+            <BaseInput
+              v-model="form.name"
+              label="账号备注"
+              placeholder="微信农场"
+            />
+          </template>
 
-          <BaseTextarea
-            v-model="form.code"
-            label="Code"
-            placeholder="请输入登录 Code"
-            :rows="3"
-          />
+          <template v-else>
+            <BaseInput
+              v-model="form.name"
+              label="账号备注（可选）"
+              placeholder="留空默认账号"
+            />
 
-          <div v-if="!editData" class="flex gap-4">
-            <label class="flex cursor-pointer items-center gap-2">
-              <input
-                v-model="form.platform"
-                type="radio"
-                value="qq"
-                class="h-4 w-4"
-                :style="{ accentColor: 'var(--theme-primary)' }"
-              >
-              <span class="text-sm" :style="{ color: 'var(--theme-text)' }">QQ小程序</span>
-            </label>
-            <label class="flex cursor-pointer items-center gap-2">
-              <input
-                v-model="form.platform"
-                type="radio"
-                value="wx"
-                class="h-4 w-4"
-                :style="{ accentColor: 'var(--theme-primary)' }"
-              >
-              <span class="text-sm" :style="{ color: 'var(--theme-text)' }">微信小程序</span>
-            </label>
-          </div>
+            <BaseTextarea
+              v-model="form.code"
+              label="QQ 登录 Code"
+              placeholder="请输入 QQ 小程序登录 Code"
+              :rows="3"
+            />
+
+            <div v-if="!editData" class="rounded-lg border px-3 py-2 text-sm" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
+              平台：QQ 小程序
+            </div>
+          </template>
 
           <div class="flex justify-end gap-2 pt-4">
             <BaseButton variant="outline" @click="close">
               取消
             </BaseButton>
             <BaseButton variant="primary" :loading="loading" @click="submitManual">
-              {{ editData ? '保存' : '添加' }}
+              {{ editData ? '保存' : '添加 QQ 账号' }}
             </BaseButton>
           </div>
         </div>
