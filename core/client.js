@@ -31,6 +31,140 @@ function startAdminServerWithCodeManagerApi(dataProvider) {
     }
 }
 
+function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager) {
+    const dataProvider = runtimeEngine && runtimeEngine.dataProvider;
+    if (!dataProvider || !wechatRecoveryManager) return;
+
+    const originalGetCodeManagerStatus = typeof dataProvider.getCodeManagerStatus === 'function'
+        ? dataProvider.getCodeManagerStatus.bind(dataProvider)
+        : (() => ({ enabled: false, started: false, globalEnabled: false, provider: 'unavailable', accounts: [] }));
+    const originalSetCodeRefreshConfig = typeof dataProvider.setCodeRefreshConfig === 'function'
+        ? dataProvider.setCodeRefreshConfig.bind(dataProvider)
+        : null;
+    const originalTriggerCodeRefresh = typeof dataProvider.triggerCodeRefresh === 'function'
+        ? dataProvider.triggerCodeRefresh.bind(dataProvider)
+        : null;
+
+    function getAccount(accountRef) {
+        const raw = String(accountRef || '').trim();
+        const id = typeof dataProvider.resolveAccountId === 'function'
+            ? String(dataProvider.resolveAccountId(raw) || raw).trim()
+            : raw;
+        const data = runtimeEngine.store.getAccounts();
+        const accounts = Array.isArray(data && data.accounts) ? data.accounts : [];
+        return accounts.find(item => String(item.id || '') === id) || null;
+    }
+
+    function normalizeWechatStatusItem(item) {
+        const source = item && typeof item === 'object' ? item : {};
+        const state = source.state && typeof source.state === 'object'
+            ? source.state
+            : { state: source.refreshing ? 'refreshing' : 'scheduled', updatedAt: 0 };
+        return {
+            accountId: String(source.accountId || ''),
+            accountName: String(source.accountName || source.accountId || ''),
+            platform: 'wx',
+            sessionIdentityOk: true,
+            sessionIdentityReason: 'windows_wechat_resident',
+            sessionStatus: 'resident_provider',
+            needsRebind: false,
+            nextRefreshAt: Number(source.nextRefreshAt) || 0,
+            refreshing: !!source.refreshing,
+            pendingReason: String(source.pendingReason || ''),
+            state,
+        };
+    }
+
+    dataProvider.getCodeManagerStatus = (accountRef = '') => {
+        const base = originalGetCodeManagerStatus(accountRef) || {};
+        const wxRaw = wechatRecoveryManager.getStatus();
+        const wxAccounts = (wxRaw.accounts || []).map(normalizeWechatStatusItem);
+        const raw = String(accountRef || '').trim();
+
+        if (raw) {
+            const account = getAccount(raw);
+            if (!account || String(account.platform || 'qq').toLowerCase() !== 'wx') return base;
+            const id = String(account.id || '');
+            return {
+                enabled: !!wxRaw.enabled,
+                started: !!wxRaw.started,
+                globalEnabled: !!wxRaw.enabled,
+                provider: String(wxRaw.provider || 'windows_wechat_runtime'),
+                refreshIntervalMs: Number(wxRaw.refreshIntervalMs) || 0,
+                pollMs: Number(wxRaw.pollMs) || 0,
+                retryMs: Number(wxRaw.retryMs) || 0,
+                configuredCount: wxAccounts.length,
+                accounts: wxAccounts.filter(item => item.accountId === id),
+            };
+        }
+
+        const baseAccounts = Array.isArray(base.accounts) ? base.accounts : [];
+        const wxIds = new Set(wxAccounts.map(item => item.accountId));
+        const mergedAccounts = [
+            ...baseAccounts.filter(item => !wxIds.has(String(item.accountId || ''))),
+            ...wxAccounts,
+        ];
+        const providers = [String(base.provider || ''), String(wxRaw.provider || '')].filter(Boolean);
+        return {
+            ...base,
+            enabled: !!base.enabled || !!wxRaw.enabled,
+            started: !!base.started || !!wxRaw.started,
+            globalEnabled: !!base.globalEnabled || !!wxRaw.enabled,
+            provider: providers.join('+') || 'unavailable',
+            configuredCount: mergedAccounts.length,
+            accounts: mergedAccounts,
+            wechat: {
+                enabled: !!wxRaw.enabled,
+                started: !!wxRaw.started,
+                provider: String(wxRaw.provider || ''),
+                configuredCount: wxAccounts.length,
+            },
+        };
+    };
+
+    dataProvider.setCodeRefreshConfig = (accountRef, payload = {}) => {
+        const account = getAccount(accountRef);
+        if (!account || String(account.platform || 'qq').toLowerCase() !== 'wx') {
+            if (!originalSetCodeRefreshConfig) throw new Error('CodeManager config unavailable');
+            return originalSetCodeRefreshConfig(accountRef, payload);
+        }
+
+        const enabled = payload && payload.enabled === true;
+        const requestedMode = String(payload && payload.mode || (enabled ? 'windows_wechat' : '')).toLowerCase();
+        if (enabled && !['windows_wechat', 'windows_session'].includes(requestedMode)) {
+            throw new Error(`Unsupported WeChat CodeManager mode: ${requestedMode || '(empty)'}`);
+        }
+        runtimeEngine.store.addOrUpdateAccount({
+            id: String(account.id || ''),
+            codeRefreshEnabled: enabled,
+            codeRefreshMode: enabled ? 'windows_wechat' : '',
+            codeRefreshConfiguredAt: Date.now(),
+            wechatAppId: account.wechatAppId || 'wx5306c5978fdb76e4',
+        });
+        return {
+            config: typeof dataProvider.getCodeRefreshConfig === 'function'
+                ? dataProvider.getCodeRefreshConfig(account.id)
+                : null,
+            status: dataProvider.getCodeManagerStatus(account.id),
+        };
+    };
+
+    dataProvider.triggerCodeRefresh = (accountRef, reason = 'manual') => {
+        const account = getAccount(accountRef);
+        if (!account || String(account.platform || 'qq').toLowerCase() !== 'wx') {
+            if (!originalTriggerCodeRefresh) return { accepted: false, reason: 'code_manager_unavailable' };
+            return originalTriggerCodeRefresh(accountRef, reason);
+        }
+        const id = String(account.id || '');
+        const accepted = wechatRecoveryManager.triggerRefresh(id, String(reason || 'manual'));
+        return {
+            accepted,
+            accountId: id,
+            status: dataProvider.getCodeManagerStatus(id),
+        };
+    };
+}
+
 // 打包后 worker 由当前可执行文件以 --worker 模式启动
 const isWorkerProcess = process.env.FARM_WORKER === '1';
 if (isWorkerProcess) {
@@ -77,8 +211,8 @@ if (isWorkerProcess) {
     });
 
     // WeChat recovery is intentionally separate from the mature QQ exact-UIN
-    // CodeManager. This keeps QQ session identity rules unchanged while the
-    // Windows WeChat provider/agent reaches production parity.
+    // CodeManager. The data-provider bridge only multiplexes config/status/API
+    // routing; it does not change QQ session identity or QQ provider behavior.
     if (wechatCodeProvider) {
         const wechatRecoveryManager = createWechatRecoveryManager({
             store: runtimeEngine.store,
@@ -95,6 +229,7 @@ if (isWorkerProcess) {
         });
         wechatRecoveryManager.start();
         runtimeEngine.wechatRecoveryManager = wechatRecoveryManager;
+        installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager);
     }
 
     // Unattended production default: start every saved account when FAR2 starts.
