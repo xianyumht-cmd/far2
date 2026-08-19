@@ -11,10 +11,10 @@ echo.
 where pwsh.exe >nul 2>nul
 if %errorlevel%==0 (
   echo PowerShell runner: pwsh.exe
-  pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\plan-wechat-p8-production-migration.ps1"
+  pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\plan-wechat-p8-production-migration-v2.ps1"
 ) else (
   echo PowerShell runner: powershell.exe
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\plan-wechat-p8-production-migration.ps1"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\plan-wechat-p8-production-migration-v2.ps1"
 )
 set code=%errorlevel%
 echo.
