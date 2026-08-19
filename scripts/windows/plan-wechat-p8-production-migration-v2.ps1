@@ -52,9 +52,11 @@ foreach ($pair in @(
     $text = $text.Replace([string]$pair[0], [string]$pair[1])
 }
 
-$tempRoot = Join-Path $env:TEMP 'FAR2-WeChat-Probe'
-New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
-$tempScript = Join-Path $tempRoot ("plan-wechat-p8-production-migration-fixed-{0}-{1}.ps1" -f $PID, (Get-Date).ToString('yyyyMMddHHmmssfff'))
+# Keep the temporary script beside the real implementation so $PSScriptRoot
+# still resolves to <repo>\scripts\windows. Writing it under %TEMP% changes
+# $PSScriptRoot and incorrectly makes projectRoot point at %LOCALAPPDATA%.
+$tempRoot = $PSScriptRoot
+$tempScript = Join-Path $tempRoot (".plan-wechat-p8-production-migration-fixed-{0}-{1}.ps1" -f $PID, (Get-Date).ToString('yyyyMMddHHmmssfff'))
 Set-Content -LiteralPath $tempScript -Value $text -Encoding UTF8
 
 $hostExe = (Get-Process -Id $PID -ErrorAction Stop).Path
