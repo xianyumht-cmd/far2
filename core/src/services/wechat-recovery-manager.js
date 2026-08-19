@@ -294,20 +294,23 @@ function createWechatRecoveryManager(options = {}) {
             const id = String(account.id || '');
             pendingReason.delete(id);
             nextRefreshAt.delete(id);
-            const hasCode = !!String(account.code || '').trim();
-            if (enabled() && !hasCode) {
-                pendingReason.set(id, 'startup_missing_code');
+
+            if (enabled()) {
+                // wx.login Code is single-use. A FAR2Farm process restart has no live
+                // WeChat worker session to preserve, so acquire one fresh Code once at
+                // startup. This is a restart/bootstrap recovery, not a time-based refresh.
+                pendingReason.set(id, 'startup_recover');
                 nextRefreshAt.set(id, now);
-                setState(id, 'scheduled', { reason: 'startup_missing_code', nextRefreshAt: now });
+                setState(id, 'scheduled', { reason: 'startup_recover', nextRefreshAt: now });
             } else {
-                setState(id, enabled() ? 'ready' : 'configured', {
-                    reason: enabled() ? 'monitoring_invalid_session' : 'disabled',
+                setState(id, 'configured', {
+                    reason: 'disabled',
                     nextRefreshAt: 0,
                 });
             }
         }
         if (accounts.length) {
-            log('系统', `Windows 微信恢复管理已启用：${accounts.length} 个账号，策略=仅失效时刷新，Provider=${provider.name || 'windows_wechat_runtime'}`);
+            log('系统', `Windows 微信恢复管理已启用：${accounts.length} 个账号，策略=失效/重启恢复时刷新，Provider=${provider.name || 'windows_wechat_runtime'}`);
         }
         timer = setInterval(tick, pollMs);
         if (timer && typeof timer.unref === 'function') timer.unref();
