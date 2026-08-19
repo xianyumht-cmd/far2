@@ -38,7 +38,23 @@ function safeText(value, max = 180) {
         .slice(0, max);
 }
 
+let cachedWindowsSessionId = null;
+let lastWindowsSessionLookupAt = 0;
+
 function getWindowsSessionId() {
+    // A Windows process cannot move between sessions during its lifetime. Cache a
+    // successful lookup so status polling never spawns PowerShell repeatedly.
+    if (Number.isFinite(cachedWindowsSessionId) && cachedWindowsSessionId >= 0) {
+        return cachedWindowsSessionId;
+    }
+
+    // If the one-off lookup fails, retry slowly rather than on every getStatus().
+    const now = Date.now();
+    if (lastWindowsSessionLookupAt > 0 && now - lastWindowsSessionLookupAt < 60000) {
+        return -1;
+    }
+    lastWindowsSessionLookupAt = now;
+
     try {
         const result = spawnSync('powershell.exe', [
             '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command',
@@ -46,7 +62,9 @@ function getWindowsSessionId() {
         ], { encoding: 'utf8', windowsHide: true, timeout: 5000 });
         if (result.status !== 0) return -1;
         const value = Number(String(result.stdout || '').trim());
-        return Number.isFinite(value) ? value : -1;
+        if (!Number.isFinite(value) || value < 0) return -1;
+        cachedWindowsSessionId = value;
+        return value;
     } catch {
         return -1;
     }
