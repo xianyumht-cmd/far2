@@ -55,7 +55,7 @@ function Get-AccountById {
 
 function Get-WxAccounts {
     param([object]$Data)
-    return @(Get-Accounts $Data | Where-Object { [string](Get-Prop $_ 'platform' 'qq').ToLowerInvariant() -eq 'wx' })
+    return @(Get-Accounts $Data | Where-Object { ([string](Get-Prop $_ 'platform' 'qq')).ToLowerInvariant() -eq 'wx' })
 }
 
 function Get-QqIdentitySnapshot {
@@ -403,9 +403,9 @@ try {
     if ($wxNow.Count -ne 1) { throw "Expected exactly one production WeChat account after enrollment; found $($wxNow.Count)." }
     $account = Get-AccountById -Data $postEnrollData -AccountId $accountId
     if ($null -eq $account) { throw 'Enrolled WeChat account is missing after write.' }
-    $configured = [string](Get-Prop $account 'platform' '').ToLowerInvariant() -eq 'wx' `
+    $configured = ([string](Get-Prop $account 'platform' '')).ToLowerInvariant() -eq 'wx' `
         -and (Get-Prop $account 'codeRefreshEnabled' $false) -eq $true `
-        -and [string](Get-Prop $account 'codeRefreshMode' '').ToLowerInvariant() -eq 'windows_wechat' `
+        -and ([string](Get-Prop $account 'codeRefreshMode' '')).ToLowerInvariant() -eq 'windows_wechat' `
         -and [string](Get-Prop $account 'wechatAppId' '') -eq $expectedAppId
     if (-not $configured) { throw 'Enrolled account is not configured for FAR2 Windows WeChat resident recovery.' }
     $report.enrollment.configuredForResidentRecovery = $true
