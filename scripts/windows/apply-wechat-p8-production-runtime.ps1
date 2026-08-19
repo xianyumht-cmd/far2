@@ -234,7 +234,7 @@ foreach ($rel in $runtimeFiles | Where-Object { $_ -ne 'core/client.js' }) {
 $accountsPath = Join-Path $productionCore 'data\accounts.json'
 if (-not (Test-Path -LiteralPath $accountsPath -PathType Leaf)) { throw 'Production accounts.json is missing.' }
 $accountsHashBefore = Get-FileSha256 -Path $accountsPath
-$trackedStatusBefore = Get-TrackedStatus -Git $git -Root $productionRoot
+$trackedStatusBefore = @(Get-TrackedStatus -Git $git -Root $productionRoot)
 
 $machineUrl = [string][Environment]::GetEnvironmentVariable('FARM_WECHAT_CODE_PROVIDER_URL', 'Machine')
 $machineToken = [string][Environment]::GetEnvironmentVariable('FARM_WECHAT_CODE_PROVIDER_TOKEN', 'Machine')
