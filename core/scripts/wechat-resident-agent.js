@@ -56,9 +56,14 @@ async function main() {
     });
 
     let stopping = false;
+    let bootstrapRetryTimer = null;
+    let bootstrapRetryBusy = false;
+
     async function shutdown(reason) {
         if (stopping) return;
         stopping = true;
+        if (bootstrapRetryTimer) clearInterval(bootstrapRetryTimer);
+        bootstrapRetryTimer = null;
         console.log(`[agent] stopping (${safeText(reason, 48)})`);
         try { await agent.stop(); } catch {}
         try { await capture.stop(); } catch {}
@@ -70,6 +75,25 @@ async function main() {
     await capture.start();
     await agent.start();
 
+    // WMPF may create and replace several short-lived remote-debug sockets while
+    // a mini-game is loading. An onConnect-only bootstrap can therefore lose the
+    // final stable farm socket when a previous selection attempt is still in flight.
+    // Keep retrying only while a runtime socket is connected; once the exact farm
+    // AppId context is selected this loop becomes idle and wx.login remains demand-only.
+    bootstrapRetryTimer = setInterval(async () => {
+        if (stopping || bootstrapRetryBusy) return;
+        const status = capture.getStatus();
+        if (!status || status.state === 'resident_connected' || !status.connected) return;
+        bootstrapRetryBusy = true;
+        try {
+            await capture.bootstrapConnectedRuntime();
+        } catch {
+            // State/reason is already reported by the capture backend.
+        } finally {
+            bootstrapRetryBusy = false;
+        }
+    }, 2500);
+
     console.log('');
     console.log('FAR2WeChatAgent resident backend is running.');
     console.log(`Loopback endpoint: http://${host}:${port}/`);
@@ -79,6 +103,7 @@ async function main() {
     console.log('Bootstrap requirement:');
     console.log('  Open QQ Classic Farm once AFTER this agent is armed.');
     console.log('  If the farm was already open before the agent started, close only the farm window and reopen it once.');
+    console.log('  Leave the farm open; resident bootstrap now retries automatically across WMPF reconnects.');
     console.log('  After [resident] exact farm runtime connected and ready appears, ws_400 refresh can run unattended.');
     console.log('');
 
