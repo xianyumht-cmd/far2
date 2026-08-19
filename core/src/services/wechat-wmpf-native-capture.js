@@ -223,7 +223,13 @@ function resolveScenePtr(container) {
 Interceptor.attach(base.add(cfg.loadStartOffset), {
   onEnter(args) {
     try {
-      this.context.rdx = ptr('0x1');
+      // WMPF uses only the low byte as the load/debug flag. Preserve every
+      // other bit in RDX instead of replacing the whole register with 1.
+      const rawRdx = this.context.rdx;
+      const lowByte = rawRdx.and(ptr('0xff')).toInt32();
+      if (lowByte !== 1) {
+        this.context.rdx = rawRdx.and(ptr('0xffffffffffffff00')).or(ptr('0x1'));
+      }
       const scenePtr = resolveScenePtr(this.context.rcx);
       if (!scenePtr) return;
       const scene = scenePtr.readS32();
