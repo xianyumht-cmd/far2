@@ -65,14 +65,6 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/CodeManager.vue'),
   },
   {
-    path: 'farm-window',
-    name: 'farm-window',
-    label: '窗口控制',
-    icon: 'i-carbon-view',
-    component: () => import('@/views/FarmWindowControl.vue'),
-    adminOnly: true,
-  },
-  {
     path: 'settings',
     name: 'Settings',
     label: '设置',
