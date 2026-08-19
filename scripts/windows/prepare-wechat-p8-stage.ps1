@@ -138,7 +138,7 @@ foreach ($file in $required) {
 
 $stageAccounts = Read-AccountSummary -File (Join-Path $stageData 'accounts.json')
 $manifest = [ordered]@{
-    version = 1
+    version = 2
     phase = 'wechat-p8-isolated-stage'
     createdAt = (Get-Date).ToUniversalTime().ToString('o')
     source = [ordered]@{
@@ -150,6 +150,8 @@ $manifest = [ordered]@{
         serviceName = $ServiceName
         serviceStatus = $service.status
         appDirectory = $service.appDirectory
+        application = $service.application
+        appParameters = $service.appParameters
         worktreeHead = $prodGit.head
         worktreeBranch = $prodGit.branch
         trackedDirty = $prodGit.trackedDirty
