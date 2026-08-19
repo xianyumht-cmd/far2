@@ -41,13 +41,13 @@ The earlier deployment restart is not counted as QQ-isolation evidence. During t
 
 ## Known cosmetic issue
 
-The production account display name was persisted as mojibake (`寰俊鍐滃満`) by the gate launcher path. This does not affect authentication or recovery. The production finalization step repairs only that account display name to `微信农场` without restarting FAR2Farm.
+The production account display name was persisted as mojibake (`寰俊鍐滃満`) by the gate launcher path. This does not affect authentication or recovery. Do not rewrite `accounts.json` from an external process while the live RecoveryManager can also persist refresh state; repair the display name later through the running FAR2 account-management path or during a controlled maintenance window.
 
 ## Remaining production closeout
 
 1. Install the Resident Agent as an interactive-user logon task (never Session 0).
 2. Keep a self-contained Agent runtime copy under `%LOCALAPPDATA%\FAR2\wechat-agent\runtime` so autostart does not depend on the probe worktree remaining checked out.
-3. Repair the one WeChat account display name.
+3. Repair the one WeChat account display name through a live-process-safe path.
 4. Update WebUI wording/status to use the Resident Provider path.
 5. Retire or fail-close the old 8059 / Scheme unattended fallback from the primary path.
 6. Cold-start limitation remains: after Windows/WeChat restart, the user must open QQ Classic Farm once after the Agent is armed so the exact farm runtime can be selected.
