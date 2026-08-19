@@ -84,18 +84,25 @@ function Install-Dependencies {
 
 function Get-OrCreateAgentToken {
     $token = [string][Environment]::GetEnvironmentVariable('FARM_WECHAT_CODE_PROVIDER_TOKEN', 'Machine')
-    if (-not [string]::IsNullOrWhiteSpace($token) -and $token.Length -ge 24) { return $token }
-
-    $bytes = New-Object byte[] 32
-    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    $created = $false
+    if ([string]::IsNullOrWhiteSpace($token) -or $token.Length -lt 24) {
+        $bytes = New-Object byte[] 32
+        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        $token = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+        $created = $true
+    }
 
     try {
         [Environment]::SetEnvironmentVariable('FARM_WECHAT_CODE_PROVIDER_TOKEN', $token, 'Machine')
         [Environment]::SetEnvironmentVariable('FARM_WECHAT_CODE_PROVIDER_URL', $providerUrl, 'Machine')
         [Environment]::SetEnvironmentVariable('FAR2_WECHAT_AGENT_TOKEN', $token, 'Machine')
         [Environment]::SetEnvironmentVariable('FAR2_WECHAT_AGENT_PORT', '43201', 'Machine')
-        Write-Host 'Created persistent FAR2 WeChat Agent/Provider authentication configuration.' -ForegroundColor Green
+        if ($created) {
+            Write-Host 'Created persistent FAR2 WeChat Agent/Provider authentication configuration.' -ForegroundColor Green
+        }
+        else {
+            Write-Host 'Reused existing FAR2 WeChat Agent token and refreshed provider settings.' -ForegroundColor Green
+        }
     }
     catch {
         Write-Warning 'Could not persist machine-level provider configuration. The agent can still run in this console, but FAR2Farm will not inherit it until configured as Administrator.'
