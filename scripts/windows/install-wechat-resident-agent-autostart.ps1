@@ -15,6 +15,7 @@ $expectedAppId = 'wx5306c5978fdb76e4'
 
 $runtimeFiles = @(
     'scripts/windows/start-wechat-resident-agent.ps1',
+    'scripts/windows/run-wechat-resident-agent-autostart.ps1',
     'core/scripts/wechat-resident-agent.js',
     'core/src/services/wechat-code-agent.js',
     'core/src/services/wechat-wmpf-resident-capture.js',
@@ -125,8 +126,8 @@ foreach ($rel in $runtimeFiles) {
     $fileResults += [pscustomobject]@{ path=$rel; sha256=$runtimeHash }
 }
 
-$runtimeLauncher = Join-Path $runtimeRoot 'scripts\windows\start-wechat-resident-agent.ps1'
 $runtimeAgent = Join-Path $runtimeRoot 'core\scripts\wechat-resident-agent.js'
+$runtimeRunner = Join-Path $runtimeRoot 'scripts\windows\run-wechat-resident-agent-autostart.ps1'
 
 $oldNodePath = $env:NODE_PATH
 $depModules = Join-Path $depsRoot 'node_modules'
@@ -151,13 +152,13 @@ if (-not $pwsh) { $pwsh = Get-Command powershell.exe -ErrorAction SilentlyContin
 if (-not $pwsh) { throw 'PowerShell executable was not found for Scheduled Task action.' }
 
 $userId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-$taskArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runtimeLauncher`""
+$taskArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runtimeRunner`""
 $action = New-ScheduledTaskAction -Execute ([string]$pwsh.Source) -Argument $taskArgs -WorkingDirectory $runtimeRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
-$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero)
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'FAR2 Windows WeChat Resident Agent. Runs only in the interactive desktop user session.' -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'FAR2 Windows WeChat Resident Agent. Runs only in the interactive desktop user session with highest privileges and local failure logging.' -Force | Out-Null
 
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $registered = ($null -ne $task)
@@ -168,7 +169,7 @@ if (-not $notStartedNow) { throw 'Resident Agent autostart task unexpectedly sta
 New-Item -ItemType Directory -Force -Path $reportRoot | Out-Null
 $reportPath = Join-Path $reportRoot ("wechat-resident-agent-autostart-install-{0}.json" -f $stamp)
 $report = [ordered]@{
-    version = 1
+    version = 2
     phase = 'wechat-resident-agent-interactive-logon-autostart-install'
     generatedAt = (Get-Date).ToUniversalTime().ToString('o')
     runtimeRoot = $runtimeRoot
@@ -179,7 +180,9 @@ $report = [ordered]@{
         stateAfterInstall = [string]$task.State
         startedNow = $false
         logonType = 'Interactive'
+        runLevel = 'Highest'
         session0 = $false
+        localFailureLog = $true
     }
     provider = [ordered]@{
         residentReadyDuringInstall = $health.Available
@@ -211,6 +214,8 @@ Write-Host ("Resident Agent runtime copy: {0}" -f $runtimeRoot)
 Write-Host ("Scheduled Task: {0}" -f $TaskName)
 Write-Host ("Interactive user: {0}" -f $userId)
 Write-Host 'Task registered: True' -ForegroundColor Green
+Write-Host 'Task run level: Highest' -ForegroundColor Green
+Write-Host 'Local failure logging: True' -ForegroundColor Green
 Write-Host 'Task started now: False' -ForegroundColor Green
 Write-Host 'Current manual Resident Agent left running: True' -ForegroundColor Green
 Write-Host 'FAR2Farm restarted: False' -ForegroundColor Green
