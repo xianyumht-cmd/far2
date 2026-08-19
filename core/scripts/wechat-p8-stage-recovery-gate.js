@@ -61,33 +61,38 @@ async function main() {
     let loginClientVersion = '';
     let childFailure = '';
 
-    // Stage-only account metadata. Never place a raw wx.login Code in the staged JSON.
-    try { baseStore.deleteAccount(validationId); } catch {}
-    baseStore.addOrUpdateAccount({
+    // Keep the validation account entirely in memory. The copied stage accounts.json is
+    // treated as read-only by this gate, which also avoids user/account scoping semantics
+    // in the normal store from hiding synthetic validation metadata.
+    let validationAccount = {
         id: validationId,
         name: validationName,
         platform: 'wx',
         codeRefreshEnabled: true,
         codeRefreshMode: 'windows_wechat',
         wechatAppId: EXPECTED_APP_ID,
-    });
+    };
 
     const storeFacade = {
         getAccounts() {
             const source = baseStore.getAccounts();
             const accounts = Array.isArray(source && source.accounts) ? source.accounts : [];
+            const visibleBase = accounts.filter(account => String(account && account.id || '') !== validationId);
+            const virtual = { ...validationAccount };
+            if (volatileCodeByAccount.has(validationId)) {
+                virtual.code = volatileCodeByAccount.get(validationId);
+            }
             return {
                 ...(source || {}),
-                accounts: accounts.map(account => {
-                    const id = String(account && account.id || '');
-                    if (!volatileCodeByAccount.has(id)) return account;
-                    return { ...account, code: volatileCodeByAccount.get(id) };
-                }),
+                accounts: [...visibleBase, virtual],
             };
         },
         addOrUpdateAccount(update) {
             const input = update && typeof update === 'object' ? { ...update } : {};
             const id = String(input.id || '').trim();
+            if (id !== validationId) {
+                return baseStore.addOrUpdateAccount(input);
+            }
             if (Object.prototype.hasOwnProperty.call(input, 'code')) {
                 const code = String(input.code || '').trim();
                 if (code) {
@@ -97,7 +102,8 @@ async function main() {
                 }
                 delete input.code;
             }
-            return baseStore.addOrUpdateAccount(input);
+            validationAccount = { ...validationAccount, ...input, id: validationId, platform: 'wx' };
+            return { ...validationAccount };
         },
     };
 
@@ -188,7 +194,7 @@ async function main() {
     });
 
     const report = {
-        version: 1,
+        version: 2,
         phase: 'wechat-p8-isolated-stage-real-login-recovery',
         generatedAt: new Date().toISOString(),
         stageCore,
@@ -196,7 +202,8 @@ async function main() {
         safety: {
             productionServiceTouched: false,
             productionDataTouchedByNodeGate: false,
-            stageOnlyAccountMutation: true,
+            stageOnlyAccountMutation: false,
+            validationAccountInMemoryOnly: true,
             rawCodePrinted: false,
             rawCodePersistedInReport: false,
             rawCodePersistedInStage: null,
@@ -292,7 +299,6 @@ async function main() {
         recovery.stop();
         stopLoginOnlyWorker(validationId);
         await waitUntil(() => !workers[validationId], 3000, 50);
-        try { baseStore.deleteAccount(validationId); } catch {}
 
         const after = baseStore.getAccounts();
         const afterAccounts = Array.isArray(after && after.accounts) ? after.accounts : [];
