@@ -2,10 +2,10 @@
 
 const process = require('node:process');
 
-const DEFAULT_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
 const DEFAULT_POLL_MS = 10 * 1000;
 const DEFAULT_RETRY_MS = 30 * 1000;
 const DEFAULT_WORKER_STOP_TIMEOUT_MS = 2500;
+const REFRESH_POLICY = 'on_invalid';
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -38,10 +38,6 @@ function createWechatRecoveryManager(options = {}) {
         throw new Error('WechatRecoveryManager requires a WeChat Code provider');
     }
 
-    const refreshIntervalMs = Math.max(
-        30 * 1000,
-        Number(processRef.env.FARM_WECHAT_CODE_REFRESH_INTERVAL_MS) || DEFAULT_REFRESH_INTERVAL_MS,
-    );
     const pollMs = Math.max(
         1000,
         Number(processRef.env.FARM_WECHAT_CODE_REFRESH_POLL_MS) || DEFAULT_POLL_MS,
@@ -95,6 +91,7 @@ function createWechatRecoveryManager(options = {}) {
         lastState.set(id, {
             state,
             updatedAt: Date.now(),
+            policy: REFRESH_POLICY,
             ...extra,
         });
     }
@@ -115,7 +112,7 @@ function createWechatRecoveryManager(options = {}) {
         return !workers[id];
     }
 
-    async function refreshAccount(accountId, reason = 'scheduled') {
+    async function refreshAccount(accountId, reason = 'manual') {
         const id = String(accountId || '').trim();
         if (!id) return { ok: false, reason: 'missing_account_id' };
         if (!enabled()) return { ok: false, reason: 'wechat_auto_refresh_disabled' };
@@ -200,11 +197,12 @@ function createWechatRecoveryManager(options = {}) {
                 const startedNow = startWorker(updated);
 
                 pendingReason.delete(id);
-                nextRefreshAt.set(id, refreshedAt + refreshIntervalMs);
+                nextRefreshAt.delete(id);
                 setState(id, 'ready', {
                     reason: 'refresh_ok',
                     provider: provider.name || 'windows_wechat_runtime',
                     refreshedAt,
+                    nextRefreshAt: 0,
                 });
                 addAccountLog(
                     'wechat_code_refresh_ok',
@@ -278,15 +276,11 @@ function createWechatRecoveryManager(options = {}) {
         for (const account of configuredAccounts()) {
             const id = String(account.id || '');
             if (!id || inFlight.has(id)) continue;
-            let due = Number(nextRefreshAt.get(id) || 0);
-            if (!due) {
-                due = now + refreshIntervalMs;
-                nextRefreshAt.set(id, due);
-                setState(id, 'scheduled', { nextRefreshAt: due });
-                continue;
-            }
-            if (now >= due) {
-                refreshAccount(id, pendingReason.get(id) || 'scheduled').catch(() => null);
+            const reason = pendingReason.get(id);
+            if (!reason) continue;
+            const due = Number(nextRefreshAt.get(id) || 0);
+            if (!due || now >= due) {
+                refreshAccount(id, reason).catch(() => null);
             }
         }
     }
@@ -298,11 +292,22 @@ function createWechatRecoveryManager(options = {}) {
         const accounts = configuredAccounts();
         for (const account of accounts) {
             const id = String(account.id || '');
-            nextRefreshAt.set(id, now + refreshIntervalMs);
-            setState(id, enabled() ? 'scheduled' : 'configured', { nextRefreshAt: now + refreshIntervalMs });
+            pendingReason.delete(id);
+            nextRefreshAt.delete(id);
+            const hasCode = !!String(account.code || '').trim();
+            if (enabled() && !hasCode) {
+                pendingReason.set(id, 'startup_missing_code');
+                nextRefreshAt.set(id, now);
+                setState(id, 'scheduled', { reason: 'startup_missing_code', nextRefreshAt: now });
+            } else {
+                setState(id, enabled() ? 'ready' : 'configured', {
+                    reason: enabled() ? 'monitoring_invalid_session' : 'disabled',
+                    nextRefreshAt: 0,
+                });
+            }
         }
         if (accounts.length) {
-            log('系统', `Windows 微信恢复管理已启用：${accounts.length} 个账号，Provider=${provider.name || 'windows_wechat_runtime'}`);
+            log('系统', `Windows 微信恢复管理已启用：${accounts.length} 个账号，策略=仅失效时刷新，Provider=${provider.name || 'windows_wechat_runtime'}`);
         }
         timer = setInterval(tick, pollMs);
         if (timer && typeof timer.unref === 'function') timer.unref();
@@ -320,7 +325,8 @@ function createWechatRecoveryManager(options = {}) {
             started,
             enabled: started && enabled(),
             provider: provider.name || 'windows_wechat_runtime',
-            refreshIntervalMs,
+            refreshPolicy: REFRESH_POLICY,
+            refreshIntervalMs: 0,
             pollMs,
             retryMs,
             configuredCount: accounts.length,
