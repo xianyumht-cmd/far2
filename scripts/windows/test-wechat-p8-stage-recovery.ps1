@@ -28,11 +28,47 @@ function Get-LatestStage {
     throw 'No valid P8 isolated stage was found. Run prepare-wechat-p8-stage.cmd first.'
 }
 
+function Get-OptionalPropertyValue {
+    param(
+        $Object,
+        [string]$Name
+    )
+    if ($null -eq $Object -or [string]::IsNullOrWhiteSpace($Name)) { return '' }
+    try {
+        $prop = $Object.PSObject.Properties[$Name]
+        if ($null -eq $prop) { return '' }
+        return [string]$prop.Value
+    } catch {
+        return ''
+    }
+}
+
 function Get-NodePath {
-    param($Manifest)
-    $candidate = [string]$Manifest.production.application
+    param(
+        $Manifest,
+        [string]$ServiceName = 'FAR2Farm'
+    )
+
+    # Stage manifests created before this runner recorded the service executable do
+    # not contain production.application. Do not require users to rebuild a valid
+    # isolated stage just because the manifest schema grew.
+    $production = $null
+    try { $production = $Manifest.production } catch {}
+    $candidate = Get-OptionalPropertyValue -Object $production -Name 'application'
     if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
+
+    # Prefer the exact executable currently configured for FAR2Farm when available.
+    try {
+        $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName\Parameters"
+        if (Test-Path -LiteralPath $key) {
+            $props = Get-ItemProperty -Path $key -ErrorAction Stop
+            $candidate = Get-OptionalPropertyValue -Object $props -Name 'Application'
+            if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate }
+        }
+    } catch {}
+
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $node) { $node = Get-Command node -ErrorAction SilentlyContinue }
     if ($node) { return [string]$node.Source }
     throw 'Node.js was not found.'
 }
@@ -100,7 +136,7 @@ $providerToken = [string][Environment]::GetEnvironmentVariable('FARM_WECHAT_CODE
 if ([string]::IsNullOrWhiteSpace($providerUrl)) { $providerUrl = 'http://127.0.0.1:43201/' }
 if ($providerToken.Length -lt 24) { throw 'Machine WeChat Provider token is missing. Keep the resident-agent setup from the previous step.' }
 
-$node = Get-NodePath -Manifest $manifest
+$node = Get-NodePath -Manifest $manifest -ServiceName $ServiceName
 $oldNodePath = $env:NODE_PATH
 $oldProviderUrl = $env:FARM_WECHAT_CODE_PROVIDER_URL
 $oldProviderToken = $env:FARM_WECHAT_CODE_PROVIDER_TOKEN
@@ -131,6 +167,7 @@ try {
     Write-Host ("Stage: {0}" -f $stage.Root)
     Write-Host ("Stage source HEAD: {0}" -f [string]$manifest.source.head)
     Write-Host ("Production service before gate: {0} / PID {1}" -f $beforeService.State, $beforeService.ProcessId)
+    Write-Host ("Node: {0}" -f $node)
     Write-Host 'Resident Provider token: configured (value hidden)'
     Write-Host ''
 
