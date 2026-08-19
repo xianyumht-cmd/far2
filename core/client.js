@@ -44,6 +44,9 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
     const originalTriggerCodeRefresh = typeof dataProvider.triggerCodeRefresh === 'function'
         ? dataProvider.triggerCodeRefresh.bind(dataProvider)
         : null;
+    const originalStartAccount = typeof dataProvider.startAccount === 'function'
+        ? dataProvider.startAccount.bind(dataProvider)
+        : null;
 
     let providerHealth = {
         available: false,
@@ -121,6 +124,22 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
             state,
         };
     }
+
+    dataProvider.startAccount = (accountRef) => {
+        const account = getAccount(accountRef);
+        if (account && String(account.platform || '').toLowerCase() === 'wx') {
+            const id = String(account.id || '');
+            const code = String(account.code || '').trim();
+            const mode = String(account.codeRefreshMode || 'windows_wechat').toLowerCase();
+            const residentConfigured = account.codeRefreshEnabled === true
+                && (mode === 'windows_wechat' || mode === 'windows_session');
+            if (residentConfigured && !code) {
+                return wechatRecoveryManager.triggerRefresh(id, 'web_enroll');
+            }
+        }
+        if (!originalStartAccount) return false;
+        return originalStartAccount(accountRef);
+    };
 
     dataProvider.getCodeManagerStatus = (accountRef = '') => {
         const base = originalGetCodeManagerStatus(accountRef) || {};
