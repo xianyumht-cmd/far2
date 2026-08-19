@@ -11,9 +11,10 @@ if (-not (Test-Path -LiteralPath $implementation -PathType Leaf)) {
 }
 
 # Keep the implementation next to this runner so its PSScriptRoot remains the repo's
-# scripts/windows directory. Patch two compatibility details before execution:
+# scripts/windows directory. Patch compatibility/safety details before execution:
 # 1) OrderedDictionary reports are accepted without Hashtable coercion surprises.
 # 2) node -e resolves production modules by absolute path, not the probe shell cwd.
+# 3) rollback is armed before the first production file copy, so a partial copy is recoverable.
 $text = Get-Content -LiteralPath $implementation -Raw -Encoding UTF8
 
 $oldReportParam = @'
@@ -35,9 +36,31 @@ $newDependency = @'
     & $node -e $dependencyProbe *> $null
 '@
 
+$oldMutationArm = @'
+    foreach ($rel in $runtimeFiles) {
+        $src = Join-Path $candidateRoot ($rel -replace '/', '\')
+        $dst = Join-Path $productionRoot ($rel -replace '/', '\')
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+        Copy-Item -LiteralPath $src -Destination $dst -Force
+        $report.apply.filesApplied += $rel
+    }
+    $mutated = $true
+'@
+$newMutationArm = @'
+    $mutated = $true
+    foreach ($rel in $runtimeFiles) {
+        $src = Join-Path $candidateRoot ($rel -replace '/', '\')
+        $dst = Join-Path $productionRoot ($rel -replace '/', '\')
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+        Copy-Item -LiteralPath $src -Destination $dst -Force
+        $report.apply.filesApplied += $rel
+    }
+'@
+
 foreach ($pair in @(
     @($oldReportParam, $newReportParam),
-    @($oldDependency, $newDependency)
+    @($oldDependency, $newDependency),
+    @($oldMutationArm, $newMutationArm)
 )) {
     if (-not $text.Contains([string]$pair[0])) {
         throw 'Controlled apply compatibility patch no longer matches implementation. Refusing partial execution.'
