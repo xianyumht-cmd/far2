@@ -31,7 +31,7 @@ function startAdminServerWithCodeManagerApi(dataProvider) {
     }
 }
 
-function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager) {
+function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager, wechatCodeProvider) {
     const dataProvider = runtimeEngine && runtimeEngine.dataProvider;
     if (!dataProvider || !wechatRecoveryManager) return;
 
@@ -45,6 +45,46 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
         ? dataProvider.triggerCodeRefresh.bind(dataProvider)
         : null;
 
+    let providerHealth = {
+        available: false,
+        reason: 'wechat_provider_health_unknown',
+        updatedAt: 0,
+        clientVersion: '',
+        gatewayVersion: '',
+        wmpfVersion: 0,
+        windowsSessionId: -1,
+    };
+
+    async function pollProviderHealth() {
+        if (!wechatCodeProvider || typeof wechatCodeProvider.getAvailability !== 'function') return;
+        try {
+            const result = await wechatCodeProvider.getAvailability({ platform: 'wx' });
+            providerHealth = {
+                available: !!(result && result.available),
+                reason: String(result && result.reason || (result && result.available ? 'ok' : 'wechat_provider_not_ready')),
+                updatedAt: Date.now(),
+                clientVersion: String(result && result.clientVersion || ''),
+                gatewayVersion: String(result && result.gatewayVersion || ''),
+                wmpfVersion: Number(result && result.wmpfVersion) || 0,
+                windowsSessionId: Number.isFinite(Number(result && result.windowsSessionId))
+                    ? Number(result.windowsSessionId)
+                    : -1,
+            };
+        } catch (err) {
+            providerHealth = {
+                ...providerHealth,
+                available: false,
+                reason: err && err.code ? String(err.code) : 'wechat_provider_health_failed',
+                updatedAt: Date.now(),
+            };
+        }
+    }
+
+    pollProviderHealth().catch(() => null);
+    const providerHealthTimer = setInterval(() => pollProviderHealth().catch(() => null), 5000);
+    if (providerHealthTimer && typeof providerHealthTimer.unref === 'function') providerHealthTimer.unref();
+    runtimeEngine.wechatProviderHealthTimer = providerHealthTimer;
+
     function getAccount(accountRef) {
         const raw = String(accountRef || '').trim();
         const id = typeof dataProvider.resolveAccountId === 'function'
@@ -57,16 +97,23 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
 
     function normalizeWechatStatusItem(item) {
         const source = item && typeof item === 'object' ? item : {};
-        const state = source.state && typeof source.state === 'object'
+        let state = source.state && typeof source.state === 'object'
             ? source.state
             : { state: source.refreshing ? 'refreshing' : 'scheduled', updatedAt: 0 };
+        if (!source.refreshing && !providerHealth.available) {
+            state = {
+                state: 'waiting_provider',
+                updatedAt: Number(providerHealth.updatedAt) || 0,
+                reason: String(providerHealth.reason || 'wechat_provider_not_ready'),
+            };
+        }
         return {
             accountId: String(source.accountId || ''),
             accountName: String(source.accountName || source.accountId || ''),
             platform: 'wx',
             sessionIdentityOk: true,
             sessionIdentityReason: 'windows_wechat_resident',
-            sessionStatus: 'resident_provider',
+            sessionStatus: providerHealth.available ? 'resident_connected' : String(providerHealth.reason || 'resident_waiting'),
             needsRebind: false,
             nextRefreshAt: Number(source.nextRefreshAt) || 0,
             refreshing: !!source.refreshing,
@@ -80,6 +127,13 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
         const wxRaw = wechatRecoveryManager.getStatus();
         const wxAccounts = (wxRaw.accounts || []).map(normalizeWechatStatusItem);
         const raw = String(accountRef || '').trim();
+        const wxMeta = {
+            enabled: !!wxRaw.enabled,
+            started: !!wxRaw.started,
+            provider: String(wxRaw.provider || ''),
+            configuredCount: wxAccounts.length,
+            agent: { ...providerHealth },
+        };
 
         if (raw) {
             const account = getAccount(raw);
@@ -95,6 +149,7 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
                 retryMs: Number(wxRaw.retryMs) || 0,
                 configuredCount: wxAccounts.length,
                 accounts: wxAccounts.filter(item => item.accountId === id),
+                wechat: wxMeta,
             };
         }
 
@@ -113,12 +168,7 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
             provider: providers.join('+') || 'unavailable',
             configuredCount: mergedAccounts.length,
             accounts: mergedAccounts,
-            wechat: {
-                enabled: !!wxRaw.enabled,
-                started: !!wxRaw.started,
-                provider: String(wxRaw.provider || ''),
-                configuredCount: wxAccounts.length,
-            },
+            wechat: wxMeta,
         };
     };
 
@@ -229,7 +279,7 @@ if (isWorkerProcess) {
         });
         wechatRecoveryManager.start();
         runtimeEngine.wechatRecoveryManager = wechatRecoveryManager;
-        installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager);
+        installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager, wechatCodeProvider);
     }
 
     // Unattended production default: start every saved account when FAR2 starts.
