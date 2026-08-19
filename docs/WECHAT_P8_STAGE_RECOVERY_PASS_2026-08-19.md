@@ -44,6 +44,21 @@ This closes the isolated proof for the production-shaped path:
 
 The next step is **not** to reset or replace the dirty production worktree. The production migration must first audit only the P8 runtime-critical files against the current `D:\project2\far2-test` working tree, preserve unrelated/dirty QQ work, and prove the P8 patch can be integrated without overwriting local changes.
 
+A read-only migration audit is now provided by:
+
+- `plan-wechat-p8-production-migration.cmd`
+- `scripts/windows/plan-wechat-p8-production-migration.ps1`
+
+The audit performs a three-way merge simulation for only these runtime-critical files:
+
+- `core/client.js`
+- `core/src/core/worker-bootstrap.js`
+- `core/src/services/wechat-gateway-profile.js`
+- `core/src/services/wechat-runtime-code-provider.js`
+- `core/src/services/wechat-recovery-manager.js`
+
+It writes merged candidates only under `%LOCALAPPDATA%\FAR2\p8-production-audit\...`; it does not modify production, stop/restart the service, mutate accounts, or control QQ workers. Any merge conflict fails closed. It also checks resident Provider health and whether NSSM still needs explicit Provider env injection before the eventual controlled apply/restart step.
+
 ## Safety boundary retained
 
 - no chat database/content/contact access
