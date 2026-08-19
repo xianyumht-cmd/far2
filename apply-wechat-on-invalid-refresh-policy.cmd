@@ -17,7 +17,7 @@ if %errorlevel%==0 (
 )
 echo PowerShell runner: %PS%
 echo.
-%PS% -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\apply-wechat-on-invalid-refresh-policy.ps1"
+%PS% -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows\apply-wechat-on-invalid-refresh-policy-v2.ps1"
 set "RC=%errorlevel%"
 echo.
 if "%RC%"=="0" (
