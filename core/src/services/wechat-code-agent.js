@@ -179,6 +179,8 @@ function createWechatCodeAgent(options = {}) {
             }
             try {
                 const result = await refresh(body && body.reason);
+                // The raw Code is returned only over the authenticated Provider channel.
+                // It is intentionally never written through logger() or ordinary FAR2 logs.
                 sendJson(res, 200, {
                     ok: true,
                     code: result.code,

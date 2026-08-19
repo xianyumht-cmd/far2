@@ -151,6 +151,7 @@ function createWechatRecoveryManager(options = {}) {
             );
 
             try {
+                // Always acquire the fresh Code before touching the currently running worker.
                 const result = await provider.refresh({ account, reason });
                 const freshCode = String(result && result.code || '').trim();
                 if (!freshCode) {
@@ -295,6 +296,9 @@ function createWechatRecoveryManager(options = {}) {
             nextRefreshAt.delete(id);
 
             if (enabled()) {
+                // wx.login Code is single-use. A FAR2Farm process restart has no live
+                // WeChat worker session to preserve, so acquire one fresh Code once at
+                // startup. This is a restart/bootstrap recovery, not a time-based refresh.
                 pendingReason.set(id, 'startup_recover');
                 nextRefreshAt.set(id, now);
                 setState(id, 'scheduled', { reason: 'startup_recover', nextRefreshAt: now });
