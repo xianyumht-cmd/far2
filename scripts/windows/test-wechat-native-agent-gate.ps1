@@ -89,6 +89,26 @@ function Install-Dependencies {
     if ($LASTEXITCODE -ne 0) { throw "P6 native gate dependency install failed with exit code $LASTEXITCODE." }
 }
 
+function Test-NativeModulePreflight {
+    param([string]$NodePath)
+    $script = @"
+const m=require('./src/services/wechat-wmpf-native-capture');
+new Function(m.buildFridaSource());
+const outer=m.encodeDebugMessage(7,'chromeDevtools',Buffer.from([1,2,3]));
+const decoded=m.decodeDebugMessage(outer);
+if(decoded.seq!==7||decoded.category!=='chromeDevtools'||decoded.data.length!==3)process.exit(2);
+const inner=m.encodeChromeDevtools('{\"id\":1}',9);
+const innerDecoded=m.decodeChromeDevtoolsResult(inner);
+if(String(innerDecoded.payload)!=='{\"id\":1}')process.exit(3);
+"@
+    Push-Location -LiteralPath $coreRoot
+    try {
+        & $NodePath -e $script
+        if ($LASTEXITCODE -ne 0) { throw "Native WMPF module preflight failed with exit code $LASTEXITCODE." }
+    }
+    finally { Pop-Location }
+}
+
 if (-not (Test-Path -LiteralPath $gateScript)) { throw "P6 native gate script not found: $gateScript" }
 
 $nodePath = Get-NodePath
@@ -104,9 +124,12 @@ if (-not (Test-Dependencies -NodePath $nodePath)) {
     }
 }
 
+Test-NativeModulePreflight -NodePath $nodePath
+
 Write-Host ''
 Write-Host 'FAR2 WeChat P6 native WMPF Agent runner' -ForegroundColor Cyan
 Write-Host ("Node: {0}" -f $nodePath)
+Write-Host 'Native module preflight: PASS' -ForegroundColor Green
 Write-Host 'WMPFDebugger checkout: NOT USED' -ForegroundColor Green
 Write-Host 'Transport owner: FAR2 (Frida instrumentation runtime only)' -ForegroundColor DarkGray
 Write-Host 'Raw Code logging: disabled' -ForegroundColor DarkGray
