@@ -14,12 +14,13 @@ function findCorruptBackup(filePath) {
     return fs.readdirSync(dir).find(name => name.startsWith(prefix) && name.endsWith('.bak')) || '';
 }
 
-function expectCriticalJson(fn, expectedFile) {
+function expectCriticalJson(fn, expectedFile, expectedReason = '') {
     let error = null;
     try { fn(); } catch (err) { error = err; }
     assert.ok(error, `expected critical JSON failure for ${expectedFile}`);
     assert.equal(error.code, 'critical_json_corrupt');
     assert.equal(path.basename(error.filePath), expectedFile);
+    if (expectedReason) assert.equal(error.reason, expectedReason);
     return error;
 }
 
@@ -72,27 +73,54 @@ function main() {
         assert.equal(claim.enabled, false);
         assert.equal(listTempFiles(dataDir).length, 0);
 
+        const originalRenameSync = fs.renameSync;
+        let injectedWriteFailure = false;
+        fs.renameSync = function failUsersRename(src, dest) {
+            if (!injectedWriteFailure && path.resolve(dest) === path.resolve(usersFile)) {
+                injectedWriteFailure = true;
+                const error = new Error('selftest atomic rename failure');
+                error.code = 'SELFTEST_WRITE_FAILURE';
+                throw error;
+            }
+            return originalRenameSync.apply(this, arguments);
+        };
+        let writeFailure = null;
+        try {
+            userStore.updateUser('admin', { enabled: false });
+        } catch (error) {
+            writeFailure = error;
+        } finally {
+            fs.renameSync = originalRenameSync;
+        }
+        assert.ok(writeFailure, 'critical user-state write failure must propagate');
+        assert.equal(writeFailure.code, 'SELFTEST_WRITE_FAILURE');
+        assert.equal(listTempFiles(dataDir).length, 0, 'failed atomic write must clean its temp file');
+        const persistedAfterFailure = JSON.parse(fs.readFileSync(usersFile, 'utf8'));
+        assert.equal(persistedAfterFailure.users[0].card, undefined, 'failed write must leave authoritative file unchanged');
+
         fs.writeFileSync(attemptsFile, '{broken-attempts', 'utf8');
         expectCriticalJson(
             () => userStore.validateUser('admin', 'wrong-password', '127.0.0.11'),
             'login-attempts.json',
+            'invalid_json',
         );
         assert.ok(findCorruptBackup(attemptsFile), 'corrupt login-attempts.json must be preserved');
 
-        fs.writeFileSync(cardsFile, '{broken-cards', 'utf8');
-        expectCriticalJson(() => userStore.getAllCards(), 'cards.json');
-        assert.ok(findCorruptBackup(cardsFile), 'corrupt cards.json must be preserved');
+        fs.writeFileSync(cardsFile, '{}', 'utf8');
+        expectCriticalJson(() => userStore.getAllCards(), 'cards.json', 'invalid_shape');
+        assert.ok(findCorruptBackup(cardsFile), 'invalid-shape cards.json must be preserved');
 
         fs.writeFileSync(claimFile, '{broken-claim', 'utf8');
-        expectCriticalJson(() => userStore.getCardClaimStatus(), 'card-claim.json');
+        expectCriticalJson(() => userStore.getCardClaimStatus(), 'card-claim.json', 'invalid_json');
         assert.ok(findCorruptBackup(claimFile), 'corrupt card-claim.json must be preserved');
 
-        fs.writeFileSync(usersFile, '{broken-users', 'utf8');
-        expectCriticalJson(() => userStore.getAllUsers(), 'users.json');
-        assert.ok(findCorruptBackup(usersFile), 'corrupt users.json must be preserved');
+        fs.writeFileSync(usersFile, '{}', 'utf8');
+        expectCriticalJson(() => userStore.getAllUsers(), 'users.json', 'invalid_shape');
+        assert.ok(findCorruptBackup(usersFile), 'invalid-shape users.json must be preserved');
 
         console.log('✅ users/cards/login attempts/login logs/card-claim writes are valid JSON with no temp leakage');
-        console.log('✅ critical user/security/card corruption fails closed and preserves backup bytes');
+        console.log('✅ critical write failure propagates and leaves the authoritative file unchanged');
+        console.log('✅ critical syntax/shape corruption fails closed and preserves backup bytes');
         console.log('✅ login log remains non-critical while its writer is atomic');
     } finally {
         Module._load = originalLoad;
