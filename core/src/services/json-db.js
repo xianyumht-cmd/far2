@@ -26,8 +26,31 @@ function readTextFile(filePath, fallback = '') {
     }
 }
 
+function getJsonBasename(filePath) {
+    return path.basename(String(filePath || '')).toLowerCase();
+}
+
 function isCriticalJsonFile(filePath) {
-    return CRITICAL_JSON_BASENAMES.has(path.basename(String(filePath || '')).toLowerCase());
+    return CRITICAL_JSON_BASENAMES.has(getJsonBasename(filePath));
+}
+
+function hasValidCriticalJsonShape(filePath, value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    switch (getJsonBasename(filePath)) {
+        case 'accounts.json':
+            return Array.isArray(value.accounts);
+        case 'users.json':
+            return Array.isArray(value.users);
+        case 'cards.json':
+            return Array.isArray(value.cards);
+        case 'login-attempts.json':
+            return true;
+        case 'card-claim.json':
+            return Array.isArray(value.records)
+                && (value.enabled === undefined || typeof value.enabled === 'boolean');
+        default:
+            return true;
+    }
 }
 
 function preserveCorruptJson(filePath) {
@@ -77,14 +100,20 @@ function readJsonFile(filePath, fallbackFactory = () => ({})) {
         return fallback;
     }
 
+    let parsed;
     try {
-        return JSON.parse(raw);
+        parsed = JSON.parse(raw);
     } catch (error) {
         if (isCriticalJsonFile(filePath)) {
             throw createCriticalJsonError(filePath, 'invalid_json', error);
         }
         return fallback;
     }
+
+    if (isCriticalJsonFile(filePath) && !hasValidCriticalJsonShape(filePath, parsed)) {
+        throw createCriticalJsonError(filePath, 'invalid_shape');
+    }
+    return parsed;
 }
 
 function writeJsonFileAtomic(filePath, data, space = 2) {
@@ -114,4 +143,5 @@ module.exports = {
     writeTextFileAtomic,
     writeJsonFileAtomic,
     isCriticalJsonFile,
+    hasValidCriticalJsonShape,
 };
