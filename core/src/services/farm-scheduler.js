@@ -48,6 +48,7 @@ function createFarmSchedulerService(options = {}) {
     let farmLoopRunning = false;
     let externalSchedulerMode = false;
     let fertilizerBuyCheckTimer = null;
+    let fertilizerBuyCheckRunning = false;
     let lastPushTime = 0;
 
     function scheduleNextFarmCheck(delayMs = farmCheckInterval) {
@@ -63,9 +64,13 @@ function createFarmSchedulerService(options = {}) {
 
     async function checkFertilizerBuyOnce() {
         if (!automationOn('fertilizer_buy_organic') && !automationOn('fertilizer_buy_normal')) {
-            return;
+            return false;
+        }
+        if (fertilizerBuyCheckRunning) {
+            return false;
         }
 
+        fertilizerBuyCheckRunning = true;
         try {
             const buyOptions = {
                 buyOrganic: automationOn('fertilizer_buy_organic'),
@@ -77,6 +82,7 @@ function createFarmSchedulerService(options = {}) {
             };
 
             await buyFertilizer(buyOptions);
+            return true;
         } catch (error) {
             logWarning('农场', `化肥自动购买检测失败: ${error.message}`, {
                 module: 'farm',
@@ -84,6 +90,9 @@ function createFarmSchedulerService(options = {}) {
                 result: 'error',
                 error: error.message,
             });
+            return false;
+        } finally {
+            fertilizerBuyCheckRunning = false;
         }
     }
 
@@ -174,6 +183,7 @@ function createFarmSchedulerService(options = {}) {
         checkFertilizerBuyOnce,
         isRunning: () => farmLoopRunning,
         isExternalSchedulerMode: () => externalSchedulerMode,
+        isFertilizerBuyCheckRunning: () => fertilizerBuyCheckRunning,
     };
 }
 
