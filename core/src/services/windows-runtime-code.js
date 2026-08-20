@@ -6,6 +6,9 @@ const { execFileSync, execSync } = require('node:child_process');
 const APP_ID = '1112386029';
 const MARKER = '/*__FAR2_CODE_MANAGER__*/';
 const MINIAPP_URI = 'tencent://ntqq-open/?&subCmd=miniapp&action=openQQMiniApp&actionParams=%7B%22sourceType%22%3A%22open%22%2C%22appId%22%3A%221112386029%22%2C%22hostScene%22%3A%221246700100%22%7D';
+const DEFAULT_FILE_POLL_MS = 250;
+const DEFAULT_CLIPBOARD_POLL_MS = 2000;
+const DEFAULT_CLIPBOARD_INITIAL_DELAY_MS = 1000;
 let captureInFlight = null;
 
 function sleep(ms) {
@@ -158,25 +161,46 @@ function isLikelyCode(value) {
         && !/^-\d+$/.test(code);
 }
 
-async function waitForRuntimeCode(startedAt, timeoutMs) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        for (const file of listCodeFiles()) {
+async function waitForRuntimeCode(startedAt, timeoutMs, options = {}) {
+    const nowFn = typeof options.now === 'function' ? options.now : Date.now;
+    const sleepFn = typeof options.sleep === 'function' ? options.sleep : sleep;
+    const listCodeFilesFn = typeof options.listCodeFiles === 'function' ? options.listCodeFiles : listCodeFiles;
+    const statFileFn = typeof options.statFile === 'function' ? options.statFile : (file => fs.statSync(file));
+    const readFileFn = typeof options.readFile === 'function'
+        ? options.readFile
+        : (file => fs.readFileSync(file, 'utf8'));
+    const readClipboardFn = typeof options.readClipboard === 'function' ? options.readClipboard : readClipboard;
+    const filePollMs = Math.max(50, Number(options.filePollMs) || DEFAULT_FILE_POLL_MS);
+    const clipboardPollMs = Math.max(filePollMs, Number(options.clipboardPollMs) || DEFAULT_CLIPBOARD_POLL_MS);
+    const clipboardInitialDelayMs = Math.max(
+        0,
+        Math.min(clipboardPollMs, Number(options.clipboardInitialDelayMs) || DEFAULT_CLIPBOARD_INITIAL_DELAY_MS),
+    );
+
+    const deadline = nowFn() + timeoutMs;
+    let nextClipboardReadAt = nowFn() + clipboardInitialDelayMs;
+
+    while (nowFn() < deadline) {
+        for (const file of listCodeFilesFn()) {
             try {
-                const stat = fs.statSync(file);
+                const stat = statFileFn(file);
                 if (stat.mtimeMs < startedAt - 1000) continue;
-                const code = fs.readFileSync(file, 'utf8').trim();
+                const code = String(readFileFn(file) || '').trim();
                 if (isLikelyCode(code)) {
                     return { code, source: '_code.txt', capturedAt: stat.mtimeMs };
                 }
             } catch {}
         }
 
-        const clipboard = readClipboard();
-        if (isLikelyCode(clipboard)) {
-            return { code: clipboard, source: 'clipboard', capturedAt: Date.now() };
+        const current = nowFn();
+        if (current >= nextClipboardReadAt) {
+            const clipboard = readClipboardFn();
+            nextClipboardReadAt = current + clipboardPollMs;
+            if (isLikelyCode(clipboard)) {
+                return { code: clipboard, source: 'clipboard', capturedAt: current };
+            }
         }
-        await sleep(250);
+        await sleepFn(filePollMs);
     }
     return null;
 }
@@ -242,4 +266,5 @@ module.exports = {
     findFarmFolders,
     openFarmMiniApp,
     isLikelyCode,
+    waitForRuntimeCode,
 };
