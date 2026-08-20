@@ -1,6 +1,10 @@
 const fs = require('fs');
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
 const { readJsonFile, writeJsonFileAtomic } = require('../services/json-db');
+const {
+    persistUserCardTransaction,
+    recoverUserCardTransaction,
+} = require('../services/user-card-transaction');
 const crypto = require('crypto');
 
 const USERS_FILE = getDataFile('users.json');
@@ -8,6 +12,7 @@ const CARDS_FILE = getDataFile('cards.json');
 const LOGIN_ATTEMPTS_FILE = getDataFile('login-attempts.json');
 const LOGIN_LOGS_FILE = getDataFile('login-logs.json');
 const CARD_CLAIM_FILE = getDataFile('card-claim.json');
+const USER_CARD_TXN_FILE = getDataFile('user-card-transaction.json');
 
 const DEFAULT_ACCOUNT_LIMIT = 2;
 
@@ -29,6 +34,31 @@ let loginLogs = [];
 
 function isCriticalJsonError(error) {
     return !!(error && error.code === 'critical_json_corrupt');
+}
+
+function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function recoverPendingUserCardTransaction() {
+    ensureDataDir();
+    return recoverUserCardTransaction({
+        usersFile: USERS_FILE,
+        cardsFile: CARDS_FILE,
+        journalFile: USER_CARD_TXN_FILE,
+    });
+}
+
+function saveUsersAndCardsTransaction(beforeUsers, beforeCards) {
+    return persistUserCardTransaction({
+        usersFile: USERS_FILE,
+        cardsFile: CARDS_FILE,
+        journalFile: USER_CARD_TXN_FILE,
+        beforeUsers,
+        beforeCards,
+        nextUsers: users,
+        nextCards: cards,
+    });
 }
 
 function loadLoginLogs() {
@@ -284,6 +314,7 @@ let cards = [];
 function loadUsers() {
     ensureDataDir();
     try {
+        recoverPendingUserCardTransaction();
         if (fs.existsSync(USERS_FILE)) {
             const data = readJsonFile(USERS_FILE, () => ({ users: [] }));
             users = Array.isArray(data.users) ? data.users : [];
@@ -292,7 +323,7 @@ function loadUsers() {
             saveUsers();
         }
     } catch (e) {
-        if (isCriticalJsonError(e)) throw e;
+        if (isCriticalJsonError(e) || String(e && e.code || '').startsWith('user_card_transaction_')) throw e;
         console.error('加载用户数据失败:', e.message);
         users = [];
     }
@@ -311,6 +342,7 @@ function saveUsers() {
 function loadCards() {
     ensureDataDir();
     try {
+        recoverPendingUserCardTransaction();
         if (fs.existsSync(CARDS_FILE)) {
             const data = readJsonFile(CARDS_FILE, () => ({ cards: [] }));
             cards = Array.isArray(data.cards) ? data.cards : [];
@@ -319,7 +351,7 @@ function loadCards() {
             saveCards();
         }
     } catch (e) {
-        if (isCriticalJsonError(e)) throw e;
+        if (isCriticalJsonError(e) || String(e && e.code || '').startsWith('user_card_transaction_')) throw e;
         console.error('加载卡密数据失败:', e.message);
         cards = [];
     }
@@ -449,6 +481,8 @@ function registerUser(username, password, cardCode) {
         return { ok: false, error: '注册只能使用时间卡密，额度卡密请登录后在续费中使用' };
     }
 
+    const beforeUsers = cloneJson(users);
+    const beforeCards = cloneJson(cards);
     const now = Date.now();
     
     const newUser = {
@@ -471,8 +505,13 @@ function registerUser(username, password, cardCode) {
     card.usedBy = username;
     card.usedAt = now;
 
-    saveUsers();
-    saveCards();
+    try {
+        saveUsersAndCardsTransaction(beforeUsers, beforeCards);
+    } catch (error) {
+        users = beforeUsers;
+        cards = beforeCards;
+        throw error;
+    }
     
     clearFailedAttempts(username);
 
@@ -501,6 +540,8 @@ function renewUser(username, cardCode) {
         return { ok: false, error: '卡密已被使用' };
     }
 
+    const beforeUsers = cloneJson(users);
+    const beforeCards = cloneJson(cards);
     const now = Date.now();
     const cardType = card.type || 'time';
     
@@ -551,8 +592,13 @@ function renewUser(username, cardCode) {
     card.usedBy = username;
     card.usedAt = now;
 
-    saveUsers();
-    saveCards();
+    try {
+        saveUsersAndCardsTransaction(beforeUsers, beforeCards);
+    } catch (error) {
+        users = beforeUsers;
+        cards = beforeCards;
+        throw error;
+    }
 
     return { ok: true, card: user.card, accountLimit: user.accountLimit || DEFAULT_ACCOUNT_LIMIT, cardType };
 }

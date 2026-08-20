@@ -36,6 +36,7 @@
     "farm:query-selftest": "node scripts/farm-query-selftest.js",
     "persistence:critical-json-selftest": "node scripts/critical-json-fail-closed-selftest.js",
     "persistence:user-store-selftest": "node scripts/user-store-persistence-selftest.js",
+    "persistence:user-card-transaction-selftest": "node scripts/user-card-transaction-selftest.js",
     "qr:runtime-code": "node scripts/qq-runtime-code-capture-test.js",
     "qr:process-map": "node scripts/qq-process-map-test.js",
     "qr:session-map": "node scripts/qq-session-map-test.js",

@@ -8,6 +8,7 @@ const CRITICAL_JSON_BASENAMES = new Set([
     'cards.json',
     'login-attempts.json',
     'card-claim.json',
+    'user-card-transaction.json',
 ]);
 
 function ensureParentDir(filePath) {
@@ -48,6 +49,13 @@ function hasValidCriticalJsonShape(filePath, value) {
         case 'card-claim.json':
             return Array.isArray(value.records)
                 && (value.enabled === undefined || typeof value.enabled === 'boolean');
+        case 'user-card-transaction.json':
+            return Number(value.version) === 1
+                && value.before && value.next
+                && Array.isArray(value.before.users)
+                && Array.isArray(value.before.cards)
+                && Array.isArray(value.next.users)
+                && Array.isArray(value.next.cards);
         default:
             return true;
     }
