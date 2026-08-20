@@ -47,7 +47,7 @@
     "qr:session-binding-audit": "node scripts/qq-session-binding-audit.js",
     "qr:code-manager-plan": "node scripts/qq-code-manager-plan.js",
     "qr:code-manager-config": "node scripts/qq-code-manager-config.js",
-    "qr:code-manager-selftest": "node scripts/qq-code-manager-selftest.js",
+    "qr:code-manager-selftest": "node scripts/qq-code-manager-selftest.js && node scripts/qq-code-manager-event-only-selftest.js",
     "qr:code-manager-api-selftest": "node scripts/qq-code-manager-api-selftest.js",
     "code:agent": "node scripts/qq-isolated-code-agent.js",
     "code:provider-selftest": "node scripts/qq-isolated-code-provider-selftest.js",
