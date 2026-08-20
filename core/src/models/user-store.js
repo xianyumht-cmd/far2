@@ -99,6 +99,7 @@ function saveLoginAttempts() {
         writeJsonFileAtomic(LOGIN_ATTEMPTS_FILE, loginAttempts);
     } catch (e) {
         console.error('保存登录尝试记录失败:', e.message);
+        throw e;
     }
 }
 
@@ -303,6 +304,7 @@ function saveUsers() {
         writeJsonFileAtomic(USERS_FILE, { users });
     } catch (e) {
         console.error('保存用户数据失败:', e.message);
+        throw e;
     }
 }
 
@@ -329,6 +331,7 @@ function saveCards() {
         writeJsonFileAtomic(CARDS_FILE, { cards });
     } catch (e) {
         console.error('保存卡密数据失败:', e.message);
+        throw e;
     }
 }
 
@@ -881,7 +884,7 @@ function saveCardClaimRecords() {
             records: cardClaimRecords
         });
     } catch (e) {
-        // console.error('保存卡密领取记录失败:', e.message);
+        throw e;
     }
 }
 
