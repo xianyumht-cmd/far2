@@ -111,6 +111,40 @@ async function main() {
     assert.deepEqual(scheduler.calls[4], ['clearAll']);
     assert.deepEqual(clearedIntervals, [1]);
 
+    let releaseBuy;
+    let overlapBuyCalls = 0;
+    const overlapService = createFarmSchedulerService({
+        checkFarm: async () => true,
+        isChecking: () => false,
+        isAutomationOn: (key) => key === 'fertilizer_buy_organic',
+        networkEvents: new EventEmitter(),
+        scheduler: createFakeScheduler(),
+        getFertilizerBuyOrganicCount: () => 1,
+        getFertilizerBuyOrganicThresholdHours: () => 10,
+        getFertilizerBuyNormalCount: () => 1,
+        getFertilizerBuyNormalThresholdHours: () => 10,
+        checkAndBuyFertilizerBoth: async () => {
+            overlapBuyCalls += 1;
+            if (overlapBuyCalls === 1) {
+                await new Promise(resolve => { releaseBuy = resolve; });
+            }
+        },
+        log: () => {},
+        logWarn: () => {},
+    });
+
+    const firstBuy = overlapService.checkFertilizerBuyOnce();
+    await Promise.resolve();
+    assert.equal(overlapService.isFertilizerBuyCheckRunning(), true);
+    const overlappingBuy = await overlapService.checkFertilizerBuyOnce();
+    assert.equal(overlappingBuy, false, 'overlapping fertilizer check must be skipped');
+    assert.equal(overlapBuyCalls, 1, 'second overlapping call must not reach purchase logic');
+    releaseBuy();
+    assert.equal(await firstBuy, true);
+    assert.equal(overlapService.isFertilizerBuyCheckRunning(), false);
+    assert.equal(await overlapService.checkFertilizerBuyOnce(), true);
+    assert.equal(overlapBuyCalls, 2, 'a later check must run again after the first finishes');
+
     const externalScheduler = createFakeScheduler();
     const externalEvents = new EventEmitter();
     const externalIntervals = [];
@@ -143,6 +177,7 @@ async function main() {
     console.log('✅ refresh 200ms contract PASS');
     console.log('✅ push 500ms debounce + 100ms delayed check contract PASS');
     console.log('✅ fertilizer-buy interval/options contract PASS');
+    console.log('✅ fertilizer-buy overlap suppression PASS');
     console.log('✅ external scheduler mode contract PASS');
     console.log('✅ no real timers/network touched PASS');
     console.log('\n=== RESULT ===');
