@@ -4,6 +4,10 @@ const process = require('node:process');
 
 const CRITICAL_JSON_BASENAMES = new Set([
     'accounts.json',
+    'users.json',
+    'cards.json',
+    'login-attempts.json',
+    'card-claim.json',
 ]);
 
 function ensureParentDir(filePath) {
