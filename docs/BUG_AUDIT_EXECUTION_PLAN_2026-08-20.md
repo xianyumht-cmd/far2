@@ -39,10 +39,13 @@ Source gate: **PASS WITH PR #58**. Normal WebUI polling becomes cache/read-only 
 
 ### Phase D — P4 persistence/restart audit
 
-Confirmed two persistence defect groups:
+Confirmed three persistence defect groups:
 
-- P4-001: critical `accounts.json` corruption silently became fallback state — PR #61.
-- P4-002: user/card/security files used direct overwrite plus tolerant reset — stacked PR #62 on #61.
+- P4-001: critical `accounts.json` corruption/invalid shape silently became fallback state — PR #61.
+- P4-002: user/card/security files used direct overwrite plus tolerant reset/write-failure swallowing — stacked PR #62 on #61.
+- P4-003: registration/renewal updated `users.json` and `cards.json` as one business operation without a cross-file transaction — stacked PR #63 on #62.
+
+PR #63 adds a crash-recoverable before/next journal. Its isolated transaction service regression passed for normal commit, prepared/no-op, partial-write rollback, both-next commit confirmation, injected second-file failure recovery and unknown-divergence fail-closed.
 
 Source gate: **COMPLETE WITH REPAIR PRS OPEN**.
 
@@ -69,10 +72,19 @@ Source gate: **COMPLETE, with CI/default-test aggregation recorded as a post-mer
 #59  P0-002  Code capture clipboard PowerShell throttle
 #60  P0-003  fertilizer timer overlap guard
 #61  P4-001  critical accounts JSON fail-closed
-#62  P4-002  user/card/security atomic persistence (stacked on #61)
+#62  P4-002  user/card/security atomic + fail-closed persistence (stacked on #61)
+#63  P4-003  user/card cross-file transaction journal (stacked on #62)
 ```
 
-No repair PR has been merged by this audit execution, and no Windows production deploy/restart has been performed.
+Stack dependency:
+
+```text
+#61 -> #62 -> #63
+```
+
+#62 was synchronized with the latest #61 using a normal merge commit, no rebase/force. #63 is based directly on the synchronized #62 head. All three are currently pure-ahead against their immediate stack base and were not merged to `main` by this audit execution.
+
+No Windows production deploy/restart has been performed.
 
 ## Remaining production gate
 
