@@ -22,6 +22,14 @@ function maskUin(uin) {
     return `${text.slice(0, 2)}****${text.slice(-2)}`;
 }
 
+function envFlagEnabled(value, defaultValue = true) {
+    const text = String(value == null ? '' : value).trim().toLowerCase();
+    if (!text) return defaultValue;
+    if (['0', 'false', 'off', 'no'].includes(text)) return false;
+    if (['1', 'true', 'on', 'yes'].includes(text)) return true;
+    return defaultValue;
+}
+
 function getSessionIdentity(account, binding) {
     const expectedUin = normalizeUin(account && (account.uin || account.qq));
     const boundUin = normalizeUin(binding && binding.qqUin);
@@ -107,10 +115,16 @@ function createCodeManager(options = {}) {
         500,
         Number(processRef.env.FARM_CODE_WORKER_STOP_TIMEOUT_MS) || DEFAULT_WORKER_STOP_TIMEOUT_MS,
     );
+    const scheduledRefreshEnabled = envFlagEnabled(
+        processRef.env.FARM_CODE_SCHEDULED_REFRESH,
+        true,
+    );
 
     let timer = null;
     let started = false;
     let warnedProvider = false;
+    let lastDesktopSnapshot = { bindings: [], runtimeSessions: [] };
+    let lastDesktopSnapshotAt = 0;
     const nextRefreshAt = new Map();
     const inFlight = new Map();
     const lastTriggerAt = new Map();
@@ -128,15 +142,29 @@ function createCodeManager(options = {}) {
         return getAccountsList().find(acc => String(acc.id || '') === id) || null;
     }
 
-    function getDesktopSnapshot() {
-        try {
-            return desktopSessionRegistry.getStatus();
-        } catch {
-            return { bindings: [], runtimeSessions: [] };
-        }
+    function normalizeDesktopSnapshot(snapshot) {
+        const raw = snapshot && typeof snapshot === 'object' ? snapshot : {};
+        return {
+            bindings: Array.isArray(raw.bindings) ? raw.bindings : [],
+            runtimeSessions: Array.isArray(raw.runtimeSessions) ? raw.runtimeSessions : [],
+        };
     }
 
-    function getBindingForAccount(accountId, snapshot = getDesktopSnapshot()) {
+    function getDesktopSnapshot() {
+        try {
+            lastDesktopSnapshot = normalizeDesktopSnapshot(desktopSessionRegistry.getStatus());
+            lastDesktopSnapshotAt = Date.now();
+        } catch {
+            // Keep the last known snapshot. Recovery remains fail-closed if it is empty/stale.
+        }
+        return lastDesktopSnapshot;
+    }
+
+    function getCachedDesktopSnapshot() {
+        return lastDesktopSnapshot;
+    }
+
+    function getBindingForAccount(accountId, snapshot = getCachedDesktopSnapshot()) {
         const id = String(accountId || '').trim();
         return (snapshot.bindings || []).find(item => String(item.accountId || '') === id) || null;
     }
@@ -153,16 +181,18 @@ function createCodeManager(options = {}) {
             && String(account.codeRefreshMode || 'windows_session').toLowerCase() === 'windows_session';
     }
 
-    function getConfiguredAccounts(snapshot = getDesktopSnapshot()) {
-        return getAccountsList()
-            .filter(isAccountConfigured)
-            .map(account => ({
-                account,
-                binding: getBindingForAccount(account.id, snapshot),
-            }));
+    function getConfiguredAccountList() {
+        return getAccountsList().filter(isAccountConfigured);
     }
 
-    function getManagedAccounts(snapshot = getDesktopSnapshot()) {
+    function getConfiguredAccounts(snapshot = getCachedDesktopSnapshot()) {
+        return getConfiguredAccountList().map(account => ({
+            account,
+            binding: getBindingForAccount(account.id, snapshot),
+        }));
+    }
+
+    function getManagedAccounts(snapshot = getCachedDesktopSnapshot()) {
         if (!isGlobalEnabled()) return [];
         return getConfiguredAccounts(snapshot);
     }
@@ -227,7 +257,7 @@ function createCodeManager(options = {}) {
         return !workers[id];
     }
 
-    async function refreshAccount(accountId, reason = 'scheduled') {
+    async function refreshAccount(accountId, reason = 'scheduled', snapshotOverride = null) {
         const id = String(accountId || '').trim();
         if (!id) return { ok: false, reason: 'missing_account_id' };
         if (!isGlobalEnabled()) return { ok: false, reason: 'auto_refresh_disabled' };
@@ -238,7 +268,11 @@ function createCodeManager(options = {}) {
             if (!account) return { ok: false, reason: 'account_not_found' };
             if (!isAccountConfigured(account)) return { ok: false, reason: 'account_not_configured' };
 
-            const snapshot = getDesktopSnapshot();
+            const snapshot = snapshotOverride || getDesktopSnapshot();
+            if (snapshotOverride) {
+                lastDesktopSnapshot = normalizeDesktopSnapshot(snapshotOverride);
+                lastDesktopSnapshotAt = Date.now();
+            }
             const binding = getBindingForAccount(id, snapshot);
             const availability = await providerAvailability(account, binding);
             const displayName = account.name || id;
@@ -352,11 +386,16 @@ function createCodeManager(options = {}) {
                 const updated = getAccountById(id);
                 const startedNow = startWorker(updated || { ...account, code: freshCode });
                 pendingReason.delete(id);
-                nextRefreshAt.set(id, refreshedAt + refreshIntervalMs);
+                if (scheduledRefreshEnabled) {
+                    nextRefreshAt.set(id, refreshedAt + refreshIntervalMs);
+                } else {
+                    nextRefreshAt.delete(id);
+                }
                 setState(id, 'ready', {
                     reason: 'refresh_ok',
                     provider: provider.name || 'unknown',
                     refreshedAt,
+                    nextRefreshAt: scheduledRefreshEnabled ? refreshedAt + refreshIntervalMs : 0,
                 });
 
                 addAccountLog('code_refresh_ok', 'Farm Code 刷新成功', id, displayName, {
@@ -443,18 +482,55 @@ function createCodeManager(options = {}) {
     }
 
     function tick() {
-        const snapshot = getDesktopSnapshot();
-        const managed = getManagedAccounts(snapshot);
-        const now = Date.now();
+        if (!isGlobalEnabled()) return;
 
-        for (const { account, binding } of managed) {
+        const accounts = getConfiguredAccountList();
+        const now = Date.now();
+        const dueAccounts = [];
+
+        for (const account of accounts) {
             const id = String(account.id || '');
             if (!id || inFlight.has(id)) continue;
+
+            const pending = pendingReason.has(id);
+            let due = Number(nextRefreshAt.get(id) || 0);
+
+            if (!due) {
+                if (scheduledRefreshEnabled) {
+                    due = now + refreshIntervalMs;
+                    nextRefreshAt.set(id, due);
+                    if (!lastState.has(id)) {
+                        setState(id, 'scheduled', { nextRefreshAt: due });
+                    }
+                } else if (!lastState.has(id)) {
+                    setState(id, 'ready', {
+                        reason: 'event_only',
+                        nextRefreshAt: 0,
+                    });
+                }
+                continue;
+            }
+
+            if (now >= due && (pending || scheduledRefreshEnabled)) {
+                dueAccounts.push(account);
+            }
+        }
+
+        if (!dueAccounts.length) return;
+
+        const snapshot = getDesktopSnapshot();
+        for (const account of dueAccounts) {
+            const id = String(account.id || '');
+            if (!id || inFlight.has(id)) continue;
+
+            const reason = pendingReason.get(id) || 'scheduled';
+            const binding = getBindingForAccount(id, snapshot);
 
             if (!binding || binding.status !== 'online' || binding.needsRebind) {
                 setState(id, 'waiting_session', {
                     reason: binding ? 'desktop_session_offline' : 'desktop_session_not_bound',
                 });
+                scheduleRetry(id, reason);
                 continue;
             }
 
@@ -465,21 +541,11 @@ function createCodeManager(options = {}) {
                     expectedUin: maskUin(identity.expectedUin),
                     boundUin: maskUin(identity.boundUin),
                 });
+                scheduleRetry(id, reason);
                 continue;
             }
 
-            let due = Number(nextRefreshAt.get(id) || 0);
-            if (!due) {
-                due = now + refreshIntervalMs;
-                nextRefreshAt.set(id, due);
-                setState(id, 'scheduled', { nextRefreshAt: due });
-                continue;
-            }
-
-            if (now >= due) {
-                const reason = pendingReason.get(id) || 'scheduled';
-                refreshAccount(id, reason).catch(() => null);
-            }
+            refreshAccount(id, reason, snapshot).catch(() => null);
         }
     }
 
@@ -492,12 +558,17 @@ function createCodeManager(options = {}) {
         const now = Date.now();
         for (const { account, binding } of managed) {
             const id = String(account.id || '');
-            nextRefreshAt.set(id, now + refreshIntervalMs);
+            const nextAt = scheduledRefreshEnabled ? now + refreshIntervalMs : 0;
+            if (scheduledRefreshEnabled) {
+                nextRefreshAt.set(id, nextAt);
+            } else {
+                nextRefreshAt.delete(id);
+            }
 
             if (!binding || binding.status !== 'online' || binding.needsRebind) {
                 setState(id, 'waiting_session', {
                     reason: binding ? 'desktop_session_offline' : 'desktop_session_not_bound',
-                    nextRefreshAt: now + refreshIntervalMs,
+                    nextRefreshAt: nextAt,
                 });
                 continue;
             }
@@ -508,16 +579,24 @@ function createCodeManager(options = {}) {
                     reason: identity.reason,
                     expectedUin: maskUin(identity.expectedUin),
                     boundUin: maskUin(identity.boundUin),
-                    nextRefreshAt: now + refreshIntervalMs,
+                    nextRefreshAt: nextAt,
                 });
                 continue;
             }
 
-            setState(id, 'scheduled', { nextRefreshAt: now + refreshIntervalMs });
+            if (scheduledRefreshEnabled) {
+                setState(id, 'scheduled', { nextRefreshAt: nextAt });
+            } else {
+                setState(id, 'ready', {
+                    reason: 'event_only',
+                    nextRefreshAt: 0,
+                });
+            }
         }
 
         if (managed.length) {
-            log('系统', `CodeManager 多账号 Session 调度已启用：${managed.length} 个账号，Provider=${provider.name || 'unknown'}`);
+            const mode = scheduledRefreshEnabled ? 'scheduled+event' : 'event-only';
+            log('系统', `CodeManager 多账号 Session 调度已启用：${managed.length} 个账号，Provider=${provider.name || 'unknown'}，mode=${mode}`);
         }
 
         timer = setInterval(tick, pollMs);
@@ -552,6 +631,8 @@ function createCodeManager(options = {}) {
                 };
             } else if (!isGlobalEnabled()) {
                 state = { state: 'configured', updatedAt: 0 };
+            } else if (!scheduledRefreshEnabled) {
+                state = { state: 'ready', updatedAt: 0, reason: 'event_only' };
             } else {
                 state = { state: 'scheduled', updatedAt: 0 };
             }
@@ -574,7 +655,7 @@ function createCodeManager(options = {}) {
     }
 
     function getStatus() {
-        const snapshot = getDesktopSnapshot();
+        const snapshot = getCachedDesktopSnapshot();
         const configured = getConfiguredAccounts(snapshot);
         return {
             enabled: started && isGlobalEnabled(),
@@ -582,8 +663,10 @@ function createCodeManager(options = {}) {
             globalEnabled: isGlobalEnabled(),
             provider: provider.name || 'unknown',
             refreshIntervalMs,
+            scheduledRefreshEnabled,
             pollMs,
             retryMs,
+            desktopSnapshotUpdatedAt: lastDesktopSnapshotAt,
             configuredCount: configured.length,
             accounts: configured.map(({ account, binding }) => buildAccountStatus(account, binding)),
         };
