@@ -1,5 +1,10 @@
 const fs = require('fs');
 const { getDataFile, ensureDataDir } = require('../config/runtime-paths');
+const { readJsonFile, writeJsonFileAtomic } = require('../services/json-db');
+const {
+    persistUserCardTransaction,
+    recoverUserCardTransaction,
+} = require('../services/user-card-transaction');
 const crypto = require('crypto');
 
 const USERS_FILE = getDataFile('users.json');
@@ -7,6 +12,7 @@ const CARDS_FILE = getDataFile('cards.json');
 const LOGIN_ATTEMPTS_FILE = getDataFile('login-attempts.json');
 const LOGIN_LOGS_FILE = getDataFile('login-logs.json');
 const CARD_CLAIM_FILE = getDataFile('card-claim.json');
+const USER_CARD_TXN_FILE = getDataFile('user-card-transaction.json');
 
 const DEFAULT_ACCOUNT_LIMIT = 2;
 
@@ -26,13 +32,40 @@ const MAX_ATTEMPTS_PER_IP = 10;
 let loginAttempts = {};
 let loginLogs = [];
 
+function isCriticalJsonError(error) {
+    return !!(error && error.code === 'critical_json_corrupt');
+}
+
+function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function recoverPendingUserCardTransaction() {
+    ensureDataDir();
+    return recoverUserCardTransaction({
+        usersFile: USERS_FILE,
+        cardsFile: CARDS_FILE,
+        journalFile: USER_CARD_TXN_FILE,
+    });
+}
+
+function saveUsersAndCardsTransaction(beforeUsers, beforeCards) {
+    return persistUserCardTransaction({
+        usersFile: USERS_FILE,
+        cardsFile: CARDS_FILE,
+        journalFile: USER_CARD_TXN_FILE,
+        beforeUsers,
+        beforeCards,
+        nextUsers: users,
+        nextCards: cards,
+    });
+}
+
 function loadLoginLogs() {
     try {
         ensureDataDir();
-        if (fs.existsSync(LOGIN_LOGS_FILE)) {
-            const data = JSON.parse(fs.readFileSync(LOGIN_LOGS_FILE, 'utf8'));
-            loginLogs = Array.isArray(data.logs) ? data.logs : [];
-        }
+        const data = readJsonFile(LOGIN_LOGS_FILE, () => ({ logs: [] }));
+        loginLogs = Array.isArray(data.logs) ? data.logs : [];
     } catch (e) {
         loginLogs = [];
     }
@@ -43,7 +76,7 @@ function saveLoginLogs() {
         ensureDataDir();
         const maxLogs = 1000;
         const logsToSave = loginLogs.slice(-maxLogs);
-        fs.writeFileSync(LOGIN_LOGS_FILE, JSON.stringify({ logs: logsToSave }, null, 2), 'utf8');
+        writeJsonFileAtomic(LOGIN_LOGS_FILE, { logs: logsToSave });
     } catch (e) {
         console.error('保存登录日志失败:', e.message);
     }
@@ -82,11 +115,10 @@ function clearLoginLogs() {
 function loadLoginAttempts() {
     try {
         ensureDataDir();
-        if (fs.existsSync(LOGIN_ATTEMPTS_FILE)) {
-            const data = JSON.parse(fs.readFileSync(LOGIN_ATTEMPTS_FILE, 'utf8'));
-            loginAttempts = data || {};
-        }
+        const data = readJsonFile(LOGIN_ATTEMPTS_FILE, () => ({}));
+        loginAttempts = (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
     } catch (e) {
+        if (isCriticalJsonError(e)) throw e;
         loginAttempts = {};
     }
 }
@@ -94,9 +126,10 @@ function loadLoginAttempts() {
 function saveLoginAttempts() {
     try {
         ensureDataDir();
-        fs.writeFileSync(LOGIN_ATTEMPTS_FILE, JSON.stringify(loginAttempts, null, 2), 'utf8');
+        writeJsonFileAtomic(LOGIN_ATTEMPTS_FILE, loginAttempts);
     } catch (e) {
         console.error('保存登录尝试记录失败:', e.message);
+        throw e;
     }
 }
 
@@ -281,14 +314,16 @@ let cards = [];
 function loadUsers() {
     ensureDataDir();
     try {
+        recoverPendingUserCardTransaction();
         if (fs.existsSync(USERS_FILE)) {
-            const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+            const data = readJsonFile(USERS_FILE, () => ({ users: [] }));
             users = Array.isArray(data.users) ? data.users : [];
         } else {
             users = [];
             saveUsers();
         }
     } catch (e) {
+        if (isCriticalJsonError(e) || String(e && e.code || '').startsWith('user_card_transaction_')) throw e;
         console.error('加载用户数据失败:', e.message);
         users = [];
     }
@@ -297,23 +332,26 @@ function loadUsers() {
 function saveUsers() {
     ensureDataDir();
     try {
-        fs.writeFileSync(USERS_FILE, JSON.stringify({ users }, null, 2), 'utf8');
+        writeJsonFileAtomic(USERS_FILE, { users });
     } catch (e) {
         console.error('保存用户数据失败:', e.message);
+        throw e;
     }
 }
 
 function loadCards() {
     ensureDataDir();
     try {
+        recoverPendingUserCardTransaction();
         if (fs.existsSync(CARDS_FILE)) {
-            const data = JSON.parse(fs.readFileSync(CARDS_FILE, 'utf8'));
+            const data = readJsonFile(CARDS_FILE, () => ({ cards: [] }));
             cards = Array.isArray(data.cards) ? data.cards : [];
         } else {
             cards = [];
             saveCards();
         }
     } catch (e) {
+        if (isCriticalJsonError(e) || String(e && e.code || '').startsWith('user_card_transaction_')) throw e;
         console.error('加载卡密数据失败:', e.message);
         cards = [];
     }
@@ -322,9 +360,10 @@ function loadCards() {
 function saveCards() {
     ensureDataDir();
     try {
-        fs.writeFileSync(CARDS_FILE, JSON.stringify({ cards }, null, 2), 'utf8');
+        writeJsonFileAtomic(CARDS_FILE, { cards });
     } catch (e) {
         console.error('保存卡密数据失败:', e.message);
+        throw e;
     }
 }
 
@@ -442,6 +481,8 @@ function registerUser(username, password, cardCode) {
         return { ok: false, error: '注册只能使用时间卡密，额度卡密请登录后在续费中使用' };
     }
 
+    const beforeUsers = cloneJson(users);
+    const beforeCards = cloneJson(cards);
     const now = Date.now();
     
     const newUser = {
@@ -464,8 +505,13 @@ function registerUser(username, password, cardCode) {
     card.usedBy = username;
     card.usedAt = now;
 
-    saveUsers();
-    saveCards();
+    try {
+        saveUsersAndCardsTransaction(beforeUsers, beforeCards);
+    } catch (error) {
+        users = beforeUsers;
+        cards = beforeCards;
+        throw error;
+    }
     
     clearFailedAttempts(username);
 
@@ -494,6 +540,8 @@ function renewUser(username, cardCode) {
         return { ok: false, error: '卡密已被使用' };
     }
 
+    const beforeUsers = cloneJson(users);
+    const beforeCards = cloneJson(cards);
     const now = Date.now();
     const cardType = card.type || 'time';
     
@@ -544,8 +592,13 @@ function renewUser(username, cardCode) {
     card.usedBy = username;
     card.usedAt = now;
 
-    saveUsers();
-    saveCards();
+    try {
+        saveUsersAndCardsTransaction(beforeUsers, beforeCards);
+    } catch (error) {
+        users = beforeUsers;
+        cards = beforeCards;
+        throw error;
+    }
 
     return { ok: true, card: user.card, accountLimit: user.accountLimit || DEFAULT_ACCOUNT_LIMIT, cardType };
 }
@@ -854,15 +907,16 @@ function loadCardClaimRecords() {
     ensureDataDir();
     try {
         if (fs.existsSync(CARD_CLAIM_FILE)) {
-            const data = JSON.parse(fs.readFileSync(CARD_CLAIM_FILE, 'utf8'));
+            const data = readJsonFile(CARD_CLAIM_FILE, () => ({ enabled: true, records: [] }));
             cardClaimEnabled = data.enabled === true;
-            cardClaimRecords = data.records || [];
+            cardClaimRecords = Array.isArray(data.records) ? data.records : [];
         } else {
             cardClaimEnabled = true;
             cardClaimRecords = [];
             saveCardClaimRecords();
         }
     } catch (e) {
+        if (isCriticalJsonError(e)) throw e;
         cardClaimEnabled = true;
         cardClaimRecords = [];
     }
@@ -871,12 +925,12 @@ function loadCardClaimRecords() {
 function saveCardClaimRecords() {
     ensureDataDir();
     try {
-        fs.writeFileSync(CARD_CLAIM_FILE, JSON.stringify({
+        writeJsonFileAtomic(CARD_CLAIM_FILE, {
             enabled: cardClaimEnabled,
             records: cardClaimRecords
-        }, null, 2), 'utf8');
+        });
     } catch (e) {
-        // console.error('保存卡密领取记录失败:', e.message);
+        throw e;
     }
 }
 
