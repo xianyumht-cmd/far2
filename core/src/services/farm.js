@@ -14,6 +14,7 @@ const { createFarmFertilizerService } = require('./farm-fertilizer');
 const { createPlantingService } = require('./planting-service');
 const { createEventSeedPriorityService } = require('./event-seed-priority');
 const { getPlantBySeedIdWithLearning } = require('./learned-seed-resolver');
+const { getRegistryAwareBagSeeds } = require('./registry-aware-bag-seeds');
 const {
     createEventSeedLogWarn,
     createEventSeedShopWrapper,
@@ -53,6 +54,9 @@ const {
 } = createPlantingService({
     // 背包 2x2 探测必须继续经过 facade wrapper，保持 operation-limit callback 语义。
     getAllLands,
+    // 背包种植也消费 Startup Crop Registry 的 exact proven Plant，避免只认静态 Plant.json。
+    getBagSeeds: getRegistryAwareBagSeeds,
+    getPlantBySeedId: getPlantBySeedIdWithLearning,
 });
 
 const { runBeforeShop: runEventSeedPriorityBeforeShop } = createEventSeedPriorityService({
@@ -60,7 +64,7 @@ const { runBeforeShop: runEventSeedPriorityBeforeShop } = createEventSeedPriorit
     getAllLands,
     plantSeeds,
     plant2x2Seed,
-    // Plant.json 未收录的新 seedId 只在本机 QQ 官方缓存给出确定 seed_id + size 证据时升级。
+    // Startup Registry exact proven Plant 优先，其次才允许旧 QQ cache learning。
     getPlantBySeedId: getPlantBySeedIdWithLearning,
     // unresolved 的真实拦截结果由 wrapper 的置信度安全门决定，避免中间层先打印误导性“已暂停”。
     logWarn: createEventSeedLogWarn(),
@@ -83,6 +87,8 @@ const {
     plant2x2Seed,
     plantFromBagSeeds,
     plantFromShop: plantFromShopWithEventSeedPriority,
+    // 无论当前选择商店策略还是“背包种子优先”，2x2 prepass 都能看到 Registry 新种子。
+    getBagSeeds: getRegistryAwareBagSeeds,
 });
 
 const {
