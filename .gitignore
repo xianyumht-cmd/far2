@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+core/node_modules/
+web/node_modules/
+
+# Build outputs
+web/dist/
+core/dist/
+dist/
+coverage/
+
+# FAR2 runtime state / account data
+core/data/
+
+# Logs / diagnostics / temporary files
+*.log
+*.log.*
+*.tmp
+*.temp
+*.pid
+*.pid.lock
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local environment overrides / private configuration
+.env.local
+.env.*.local
+.env.private
+.env.secret
+*.token
+*.secret
+*.credentials
+*.credential
+
+# Key / certificate material
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+*.keystore
+
+# Local package / staging artifacts
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.bak
+*.backup
+
+# IDE / editor
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python/tool caches used by helper scripts
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Windows shortcuts / local launch artifacts
+*.lnk
