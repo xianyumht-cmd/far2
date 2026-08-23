@@ -85,6 +85,21 @@ async function main() {
                     }
                     try { await capture.stop(); } catch {}
                     status = capture.getStatus();
+                } else if (
+                    status.connected === false
+                    && status.reason === 'wechat_resident_runtime_disconnected'
+                ) {
+                    // FAR2-WX-DISCONNECT-REARM-v1
+                    // WMPF host can remain alive while the farm runtime debug WebSocket drops.
+                    // Re-arm capture so the currently open farm mini-program can reconnect.
+                    lastCaptureStartError = 'wechat_resident_runtime_disconnected';
+                    const notice = `runtime-disconnected:${hookPid}`;
+                    if (notice !== lastSupervisorNotice) {
+                        lastSupervisorNotice = notice;
+                        console.log('[supervisor] farm runtime disconnected; rearming capture');
+                    }
+                    try { await capture.stop(); } catch {}
+                    status = capture.getStatus();
                 } else {
                     return status;
                 }
