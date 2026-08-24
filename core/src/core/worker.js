@@ -18,6 +18,7 @@ const {
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes } = require('../services/invite');
 const { autoBuyOrganicFertilizer, autoBuyFertilizer, checkAndBuyFertilizerBoth, buyFreeGifts, getFreeGiftDailyState } = require('../services/mall');
+const { checkAndBuyMysteryShop } = require('../services/mystery-shop');
 const { performDailyMonthCardGift, getMonthCardDailyState } = require('../services/monthcard');
 const { performDailyVipGift, getVipDailyState } = require('../services/qqvip');
 const { createScheduler, getSchedulerRegistrySnapshot } = require('../services/scheduler');
@@ -335,6 +336,11 @@ async function runUnifiedTick() {
     if (!dueFarm && !dueHelp && !dueSteal) return;
 
     const auto = getAutomation();
+
+    // FAR2-MYSTERY-SHOP-AUTOBUY-v1
+    // 独立于 farm/friend 开关轮询；内部有 15 秒冷却且仅 QQ 生效。
+    await checkAndBuyMysteryShop();
+
     // 串行执行而非并行，避免并发请求过多导致超时
     if (dueFarm) await runFarmTick(auto);
     if (dueHelp) await runHelpTick(auto);

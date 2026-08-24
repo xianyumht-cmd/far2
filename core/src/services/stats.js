@@ -59,6 +59,78 @@ const operations = {
     levelUp: 0,
 };
 
+// FAR2-MYSTERY-SHOP-STATS-v1
+// 每账号持久化在既有 data/stats/<accountId>.json 中；不新建第二套状态库。
+const mysteryShopStats = {
+    todayBuyCount: 0,
+    lastSuccessAt: 0,
+    status: 'waiting',
+    statusAt: 0,
+    lastError: '',
+};
+
+function resetMysteryShopDailyState() {
+    mysteryShopStats.todayBuyCount = 0;
+    mysteryShopStats.status = 'waiting';
+    mysteryShopStats.statusAt = Date.now();
+    mysteryShopStats.lastError = '';
+}
+
+function restoreMysteryShopStats(saved, todayKey) {
+    const source = (saved && saved.mysteryShop && typeof saved.mysteryShop === 'object')
+        ? saved.mysteryShop
+        : {};
+
+    mysteryShopStats.todayBuyCount = (saved && saved.date === todayKey)
+        ? Math.max(0, Number(source.todayBuyCount) || 0)
+        : 0;
+    mysteryShopStats.lastSuccessAt = Math.max(0, Number(source.lastSuccessAt) || 0);
+
+    // Worker 重启后“当前状态”重新从等待开始，避免残留旧的失败/成功提示。
+    mysteryShopStats.status = 'waiting';
+    mysteryShopStats.statusAt = Date.now();
+    mysteryShopStats.lastError = '';
+}
+
+function getMysteryShopStats() {
+    checkAndResetDailyStats();
+    return { ...mysteryShopStats };
+}
+
+function recordMysteryShopStatus(status, meta = {}) {
+    checkAndResetDailyStats();
+
+    const normalized = ['waiting', 'success', 'failed'].includes(String(status || ''))
+        ? String(status)
+        : 'waiting';
+    const now = Date.now();
+    const error = String(meta && meta.error || '').slice(0, 200);
+
+    if (normalized === 'success') {
+        mysteryShopStats.todayBuyCount += 1;
+        mysteryShopStats.lastSuccessAt = Math.max(0, Number(meta && meta.successAt) || now);
+        mysteryShopStats.status = 'success';
+        mysteryShopStats.statusAt = now;
+        mysteryShopStats.lastError = '';
+        scheduleSave();
+        return { ...mysteryShopStats };
+    }
+
+    // 正常轮询期间“等待”不会每 15~25 秒反复落盘。
+    if (
+        mysteryShopStats.status === normalized
+        && (normalized !== 'failed' || mysteryShopStats.lastError === error)
+    ) {
+        return { ...mysteryShopStats };
+    }
+
+    mysteryShopStats.status = normalized;
+    mysteryShopStats.statusAt = now;
+    mysteryShopStats.lastError = normalized === 'failed' ? error : '';
+    scheduleSave();
+    return { ...mysteryShopStats };
+}
+
 let currentDateKey = null;
 
 const lastState = {
@@ -100,6 +172,8 @@ function checkAndResetDailyStats() {
         Object.keys(operations).forEach((key) => {
             operations[key] = 0;
         });
+        resetMysteryShopDailyState();
+        scheduleSave();
     }
     currentDateKey = todayKey;
 }
@@ -119,6 +193,7 @@ function doSave() {
     const data = {
         date: todayKey,
         operations: { ...operations },
+        mysteryShop: { ...mysteryShopStats },
         initialState: { ...initialState },
         savedAt: Date.now(),
     };
@@ -159,6 +234,7 @@ function initStatsWithPersistence(accountId, gold, exp, coupon = 0) {
         }
     }
 
+    restoreMysteryShopStats(saved, todayKey);
     initStats(gold, exp, coupon);
 }
 
@@ -251,6 +327,7 @@ function getStats(statusData, userState, connected, limits) {
         },
         uptime: process.uptime(),
         operations: operationsSnapshot,
+        mysteryShop: getMysteryShopStats(),
         sessionExpGained: session.expGained,
         sessionGoldGained: session.goldGained,
         sessionCouponGained: session.couponGained,
@@ -266,6 +343,8 @@ function saveStats() {
 
 module.exports = {
     recordOperation,
+    recordMysteryShopStatus,
+    getMysteryShopStats,
     initStats,
     initStatsWithPersistence,
     updateStats,

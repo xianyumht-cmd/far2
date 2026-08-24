@@ -299,6 +299,48 @@ const OP_META: Record<string, { label: string, icon: string, color: string }> = 
   sell: { label: '出售', icon: 'i-carbon-shopping-cart', color: 'text-pink-500' },
 }
 
+// FAR2-MYSTERY-SHOP-DASHBOARD-v1
+const mysteryShopTodayCount = computed(() =>
+  Math.max(0, Number(status.value?.mysteryShop?.todayBuyCount || 0)),
+)
+
+function formatMysteryShopSuccessTime(timestamp: number) {
+  const ts = Number(timestamp || 0)
+  if (!ts)
+    return '暂无'
+
+  const d = new Date(ts)
+  const now = new Date()
+  const hhmmss = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`
+  if (
+    d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth()
+    && d.getDate() === now.getDate()
+  ) {
+    return hhmmss
+  }
+
+  return `${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${hhmmss.slice(0, 5)}`
+}
+
+function getMysteryShopStatusText() {
+  const value = String(status.value?.mysteryShop?.status || 'waiting')
+  if (value === 'success')
+    return '购买成功'
+  if (value === 'failed')
+    return '购买失败'
+  return '等待出现'
+}
+
+function getMysteryShopStatusClass() {
+  const value = String(status.value?.mysteryShop?.status || 'waiting')
+  if (value === 'success')
+    return 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-300'
+  if (value === 'failed')
+    return 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300'
+  return 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+}
+
 const filteredOperations = computed(() => {
   const ops = status.value?.operations || {}
   const result: Record<string, number> = {}
@@ -758,6 +800,44 @@ useIntervalFn(updateCountdowns, 1000)
               </div>
               <div class="text-sm font-bold 2xl:text-base">
                 {{ val }}
+              </div>
+            </div>
+          </div>
+
+          <!-- FAR2-MYSTERY-SHOP-DASHBOARD-v1 -->
+          <div
+            v-if="status?.connection?.connected"
+            class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700"
+          >
+            <div class="mb-2 flex items-center justify-between">
+              <div class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <div class="i-carbon-shopping-bag text-pink-500" />
+                <span>神秘商店</span>
+              </div>
+              <span
+                class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                :class="getMysteryShopStatusClass()"
+              >
+                {{ getMysteryShopStatusText() }}
+              </span>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div class="rounded bg-gray-50 px-3 py-2 dark:bg-gray-700/30">
+                <div class="text-[11px] text-gray-400">
+                  今日购买
+                </div>
+                <div class="mt-0.5 text-sm font-bold text-pink-600 dark:text-pink-400">
+                  {{ mysteryShopTodayCount }} 次
+                </div>
+              </div>
+              <div class="rounded bg-gray-50 px-3 py-2 dark:bg-gray-700/30">
+                <div class="text-[11px] text-gray-400">
+                  最近成功
+                </div>
+                <div class="mt-0.5 text-sm font-bold font-mono">
+                  {{ formatMysteryShopSuccessTime(status?.mysteryShop?.lastSuccessAt || 0) }}
+                </div>
               </div>
             </div>
           </div>
