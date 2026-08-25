@@ -396,8 +396,6 @@ function createEventSeedPriorityService(options = {}) {
         const targetLandIds = [...new Set((Array.isArray(run.landIds) ? run.landIds : [])
             .map(normalizePositiveInt)
             .filter(Boolean))];
-        const state = run.state && typeof run.state === 'object' ? run.state : {};
-        const userLevel = Math.max(0, Number(state.level) || 0);
         const accountId = accountKey(run.accountId);
         const emptyResult = {
             remainingLandIds: targetLandIds,
@@ -435,8 +433,9 @@ function createEventSeedPriorityService(options = {}) {
             inventory.knownSeeds.filter(row => row.count > 0 && row.specialCandidate),
             readPriority(),
         );
-        const usablePrioritySeeds = prioritySeeds.filter(row => row.requiredLevel <= userLevel);
-        const lockedPrioritySeeds = prioritySeeds.filter(row => row.requiredLevel > userLevel);
+        // Seeds that already exist in the bag are owned inventory. Level metadata belongs to
+        // shop/progression unlocks and must never block planting an owned activity/special seed.
+        const usablePrioritySeeds = prioritySeeds;
 
         let remainingLandIds = [...targetLandIds];
         const plantedLandIds = [];
@@ -451,15 +450,6 @@ function createEventSeedPriorityService(options = {}) {
                 knownSeedBlockReasons.push(reason);
             }
         };
-
-        if (lockedPrioritySeeds.length > 0) {
-            maybeLog(
-                accountId,
-                `locked:${lockedPrioritySeeds.map(row => row.seedId).join(',')}`,
-                `检测到活动/特殊背包种子但当前等级未解锁：${lockedPrioritySeeds.map(row => `${row.name}#${row.seedId}`).join('、')}，本轮继续原策略`,
-                { result: 'special_seed_locked', seedIds: lockedPrioritySeeds.map(row => row.seedId), userLevel },
-            );
-        }
 
         const twoByTwoSeeds = usablePrioritySeeds
             .filter(row => row.safeToPlant && row.plantSize === 2)

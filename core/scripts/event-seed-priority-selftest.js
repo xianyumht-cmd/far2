@@ -15,6 +15,8 @@ async function main() {
     const plants = new Map([
         [20002, { seed_id: 20002, name: '白萝卜', size: 0, land_level_need: 1 }],
         [20046, { seed_id: 20046, name: '爱心果', size: 2, land_level_need: 1, config_fallback: true }],
+        [20109, { seed_id: 20109, name: '蝴蝶兰', size: 0, land_level_need: 120 }],
+        [20112, { seed_id: 20112, name: '风信子', size: 0, land_level_need: 130 }],
         [20901, { seed_id: 20901, name: '活动花', size: 0, land_level_need: 1 }],
         [20902, { seed_id: 20902, name: '活动大花', size: 2, land_level_need: 1 }],
         [20903, { seed_id: 20903, name: '高级活动花', size: 0, land_level_need: 120 }],
@@ -22,6 +24,8 @@ async function main() {
     const items = new Map([
         [20002, { id: 20002, type: 5, name: '白萝卜种子', interaction_type: 'plant', price: 1 }],
         [20046, { id: 20046, type: 5, name: '爱心果种子', interaction_type: 'plant', price: 0 }],
+        [20109, { id: 20109, type: 5, name: '蝴蝶兰种子', interaction_type: 'plant', price: 0 }],
+        [20112, { id: 20112, type: 5, name: '风信子种子', interaction_type: 'plant', price: 0 }],
         [20901, { id: 20901, type: 5, name: '活动花种子', interaction_type: 'plant', price: 0 }],
         [20902, { id: 20902, type: 5, name: '活动大花种子', interaction_type: 'plant', price: 0 }],
         [20903, { id: 20903, type: 5, name: '高级活动花种子', interaction_type: 'plant', price: 0 }],
@@ -215,31 +219,45 @@ async function main() {
     assert.equal(twoResult.occupiedCount, 4);
     console.log('✅ known non-shop 2x2 event seed uses four-land planting path before shop PASS');
 
-    const lockedWrites = [];
-    const lockedService = createEventSeedPriorityService({
-        getBag: async () => ({ item_bag: { items: [{ id: 20903, count: 1 }] } }),
+    const ownedSpecialWrites = [];
+    const ownedSpecialService = createEventSeedPriorityService({
+        getBag: async () => ({ item_bag: { items: [{ id: 20109, count: 1 }, { id: 20112, count: 1 }] } }),
         getBagItems: reply => reply.item_bag.items,
         getItemById,
         getPlantBySeedId,
         getShopInfo: async () => ({ goods_list: [] }),
         listActivityOverview: async () => ({ activities: [] }),
         getBagSeedPriority: () => [],
-        plantSeeds: async (...args) => lockedWrites.push(args),
-        plant2x2Seed: async (...args) => lockedWrites.push(args),
+        plantSeeds: async (seedId, landIds, runOptions) => {
+            const selected = landIds.slice(0, runOptions.maxPlantCount);
+            ownedSpecialWrites.push([seedId, [...selected]]);
+            return {
+                planted: selected.length,
+                plantedLandIds: selected,
+                occupiedLandIds: selected,
+            };
+        },
+        plant2x2Seed: async () => {
+            throw new Error('2x2 should not run for 20109/20112');
+        },
         getAllLands: async () => ({ lands: [] }),
         discoveryStateStore: { record: () => {} },
         log: () => {},
         logWarn: () => {},
+        sleep: async () => {},
     });
-    const lockedResult = await lockedService.runBeforeShop({
-        landIds: [1],
-        state: { level: 113 },
+    const ownedSpecialResult = await ownedSpecialService.runBeforeShop({
+        landIds: [1, 2],
+        state: { level: 1 },
         accountId: 'fixture',
     });
-    assert.equal(lockedWrites.length, 0);
-    assert.equal(lockedResult.blockShopFallback, false);
-    assert.deepEqual(lockedResult.remainingLandIds, [1]);
-    console.log('✅ level-locked special seed does not consume or unnecessarily block normal planting PASS');
+    assert.deepEqual(ownedSpecialWrites.map(row => row[0]).sort((a, b) => a - b), [20109, 20112]);
+    assert.deepEqual(ownedSpecialResult.prioritySeedIds.slice().sort((a, b) => a - b), [20109, 20112]);
+    assert.equal(ownedSpecialResult.totalPlanted, 2);
+    assert.equal(ownedSpecialResult.occupiedCount, 2);
+    assert.deepEqual(ownedSpecialResult.remainingLandIds, []);
+    assert.equal(ownedSpecialResult.blockShopFallback, false);
+    console.log('✅ owned activity/special seeds ignore level metadata: 蝴蝶兰#20109 + 风信子#20112 PASS');
 
     console.log('\n=== RESULT ===');
     console.log(JSON.stringify({
