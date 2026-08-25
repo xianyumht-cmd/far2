@@ -178,11 +178,25 @@ async function testManualStartUsesFreshCodeAndIsIdempotent() {
     h.manager.stop();
 }
 
+async function testSilentWorkerExitRecovers() {
+    const h = createHarness({ providerReady: true });
+    h.manager.start();
+    await waitFor(() => !!h.workers.wx1);
+
+    delete h.workers.wx1;
+    h.manager.tick();
+    await waitFor(() => !!h.workers.wx1 && h.counts().startCount >= 2);
+
+    assert.equal(h.manager.getStatus().accounts[0].state.state, 'ready');
+    h.manager.stop();
+}
+
 async function main() {
     await testStartupWaitsThenAutoRecovers();
     await testExistingWorkerIsAtomicallyReplaced();
     await testManualStopCancelsPendingRecovery();
     await testManualStartUsesFreshCodeAndIsIdempotent();
+    await testSilentWorkerExitRecovers();
     console.log('wechat-recovery-manager-selftest: PASS');
 }
 
