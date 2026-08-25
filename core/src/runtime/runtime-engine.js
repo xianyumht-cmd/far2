@@ -37,6 +37,9 @@ function createRuntimeEngine(options = {}) {
   const onAccountLog = typeof options.onAccountLog === 'function' ? options.onAccountLog : null
   const startAdminServer = typeof options.startAdminServer === 'function' ? options.startAdminServer : null
   const codeRefreshProvider = options.codeRefreshProvider || null
+  const shouldAutoStartAccount = typeof options.shouldAutoStartAccount === 'function'
+    ? options.shouldAutoStartAccount
+    : null
 
   const workerControls = { startWorker: null, restartWorker: null }
   const runtimeState = createRuntimeState({
@@ -195,8 +198,31 @@ function createRuntimeEngine(options = {}) {
       log('系统', `发现 ${accounts.length} 个账号，正在启动...`)
     }
 
-    accounts.forEach(acc => startWorker(acc))
-    return accounts
+    const autoStartAccounts = []
+    let delegatedCount = 0
+    for (const account of accounts) {
+      let shouldStart = true
+      if (shouldAutoStartAccount) {
+        try {
+          shouldStart = shouldAutoStartAccount(account) !== false
+        }
+        catch (err) {
+          shouldStart = false
+          log('错误', `账号 ${account && account.name ? account.name : account && account.id ? account.id : 'unknown'} 自动启动判定失败，已安全跳过 (${err && err.message ? err.message : err})`)
+        }
+      }
+      if (!shouldStart) {
+        delegatedCount += 1
+        continue
+      }
+      autoStartAccounts.push(account)
+      startWorker(account)
+    }
+
+    if (delegatedCount > 0) {
+      log('系统', `${delegatedCount} 个账号已交由平台恢复管理器接管启动，避免复用一次性旧 Code`)
+    }
+    return autoStartAccounts
   }
 
   async function start(options = {}) {
