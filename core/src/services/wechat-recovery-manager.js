@@ -38,6 +38,8 @@ function createWechatRecoveryManager(options = {}) {
         throw new Error('WechatRecoveryManager requires a WeChat Code provider');
     }
 
+    const writeLog = typeof log === 'function' ? log : (() => {});
+    const writeAccountLog = typeof addAccountLog === 'function' ? addAccountLog : (() => {});
     const pollMs = Math.max(
         1000,
         Number(processRef.env.FARM_WECHAT_CODE_REFRESH_POLL_MS) || DEFAULT_POLL_MS,
@@ -55,8 +57,12 @@ function createWechatRecoveryManager(options = {}) {
     const pendingReason = new Map();
     const inFlight = new Map();
     const lastState = new Map();
+    const suspended = new Set();
+    const intentVersion = new Map();
+    let providerAvailable = null;
     let timer = null;
     let started = false;
+    let tickQueued = false;
 
     function enabled() {
         return processRef.platform === 'win32'
@@ -85,6 +91,17 @@ function createWechatRecoveryManager(options = {}) {
         return getAccounts().filter(isConfigured);
     }
 
+    function getIntentVersion(accountId) {
+        return Number(intentVersion.get(String(accountId || '')) || 0);
+    }
+
+    function bumpIntentVersion(accountId) {
+        const id = String(accountId || '').trim();
+        const next = getIntentVersion(id) + 1;
+        intentVersion.set(id, next);
+        return next;
+    }
+
     function setState(accountId, state, extra = {}) {
         const id = String(accountId || '').trim();
         if (!id) return;
@@ -98,8 +115,18 @@ function createWechatRecoveryManager(options = {}) {
 
     function scheduleRetry(accountId, reason) {
         const id = String(accountId || '').trim();
+        if (!id || suspended.has(id)) return;
         pendingReason.set(id, String(reason || 'retry'));
         nextRefreshAt.set(id, Date.now() + retryMs);
+    }
+
+    function queueTick() {
+        if (!started || tickQueued) return;
+        tickQueued = true;
+        setImmediate(() => {
+            tickQueued = false;
+            tick();
+        });
     }
 
     async function waitWorkerStopped(accountId) {
@@ -112,24 +139,35 @@ function createWechatRecoveryManager(options = {}) {
         return !workers[id];
     }
 
+    function isIntentCurrent(accountId, version) {
+        const id = String(accountId || '').trim();
+        return !suspended.has(id) && getIntentVersion(id) === version;
+    }
+
     async function refreshAccount(accountId, reason = 'manual') {
         const id = String(accountId || '').trim();
         if (!id) return { ok: false, reason: 'missing_account_id' };
         if (!enabled()) return { ok: false, reason: 'wechat_auto_refresh_disabled' };
+        if (suspended.has(id)) return { ok: false, reason: 'wechat_recovery_suspended' };
         if (inFlight.has(id)) return inFlight.get(id);
 
+        const version = getIntentVersion(id);
         const task = (async () => {
             const account = getAccount(id);
             if (!isConfigured(account)) return { ok: false, reason: 'wechat_account_not_configured' };
+            if (!isIntentCurrent(id, version)) return { ok: false, reason: 'wechat_recovery_intent_changed' };
             const displayName = account.name || id;
 
             if (typeof provider.getAvailability === 'function') {
                 const availability = await provider.getAvailability(account);
+                if (!isIntentCurrent(id, version)) {
+                    return { ok: false, reason: 'wechat_recovery_intent_changed' };
+                }
                 if (!availability || availability.available !== true) {
                     const why = availability && availability.reason ? availability.reason : 'wechat_provider_not_ready';
                     setState(id, 'waiting_provider', { reason: why, trigger: reason });
                     scheduleRetry(id, reason);
-                    addAccountLog(
+                    writeAccountLog(
                         'wechat_code_refresh_waiting_provider',
                         `等待 Windows 微信 Code Provider (${why})`,
                         id,
@@ -140,9 +178,8 @@ function createWechatRecoveryManager(options = {}) {
                 }
             }
 
-            const wasRunning = !!workers[id];
             setState(id, 'refreshing', { reason, provider: provider.name || 'windows_wechat_runtime' });
-            addAccountLog(
+            writeAccountLog(
                 'wechat_code_refresh_start',
                 `开始刷新微信 Farm Code (${reason})`,
                 id,
@@ -151,7 +188,8 @@ function createWechatRecoveryManager(options = {}) {
             );
 
             try {
-                // Always acquire the fresh Code before touching the currently running worker.
+                // wx.login Code is single-use. Always acquire a fresh Code before
+                // touching the current worker, then atomically swap the worker.
                 const result = await provider.refresh({ account, reason });
                 const freshCode = String(result && result.code || '').trim();
                 if (!freshCode) {
@@ -160,7 +198,16 @@ function createWechatRecoveryManager(options = {}) {
                     throw err;
                 }
 
-                if (wasRunning) {
+                // A manual stop/start can happen while Provider.refresh() is running.
+                // Never let an obsolete recovery attempt resurrect an account.
+                if (!isIntentCurrent(id, version)) {
+                    return { ok: false, reason: 'wechat_recovery_intent_changed' };
+                }
+
+                // Re-check at swap time instead of relying on state captured before
+                // Provider.refresh(). This closes the startup/manual-start race where
+                // a stale worker can appear while a fresh Code is being acquired.
+                if (workers[id]) {
                     stopWorker(id);
                     const stopped = await waitWorkerStopped(id);
                     if (!stopped) {
@@ -168,6 +215,10 @@ function createWechatRecoveryManager(options = {}) {
                         err.code = 'wechat_worker_stop_timeout';
                         throw err;
                     }
+                }
+
+                if (!isIntentCurrent(id, version)) {
+                    return { ok: false, reason: 'wechat_recovery_intent_changed' };
                 }
 
                 const refreshedAt = Date.now();
@@ -195,6 +246,11 @@ function createWechatRecoveryManager(options = {}) {
                 store.addOrUpdateAccount(update);
                 const updated = getAccount(id) || { ...account, ...update };
                 const startedNow = startWorker(updated);
+                if (!startedNow && !workers[id]) {
+                    const err = new Error('fresh Code 已写入，但微信 worker 未能启动');
+                    err.code = 'wechat_worker_start_failed';
+                    throw err;
+                }
 
                 pendingReason.delete(id);
                 nextRefreshAt.delete(id);
@@ -204,7 +260,7 @@ function createWechatRecoveryManager(options = {}) {
                     refreshedAt,
                     nextRefreshAt: 0,
                 });
-                addAccountLog(
+                writeAccountLog(
                     'wechat_code_refresh_ok',
                     '微信 Farm Code 刷新成功',
                     id,
@@ -213,6 +269,9 @@ function createWechatRecoveryManager(options = {}) {
                 );
                 return { ok: true, restarted: !!startedNow, reason };
             } catch (err) {
+                if (!isIntentCurrent(id, version)) {
+                    return { ok: false, reason: 'wechat_recovery_intent_changed' };
+                }
                 const message = err && err.message ? err.message : String(err || 'unknown');
                 const errorCode = err && err.code ? String(err.code) : 'wechat_provider_failed';
                 store.addOrUpdateAccount({
@@ -224,12 +283,12 @@ function createWechatRecoveryManager(options = {}) {
                 });
                 scheduleRetry(id, reason);
                 setState(id, 'provider_error', { reason: errorCode, message });
-                log('错误', `微信账号 ${displayName} Code 刷新失败: ${message}`, {
+                writeLog('错误', `微信账号 ${displayName} Code 刷新失败: ${message}`, {
                     accountId: id,
                     accountName: displayName,
                     platform: 'wx',
                 });
-                addAccountLog(
+                writeAccountLog(
                     'wechat_code_refresh_failed',
                     `微信 Farm Code 刷新失败: ${message}`,
                     id,
@@ -238,7 +297,10 @@ function createWechatRecoveryManager(options = {}) {
                 );
                 return { ok: false, reason: errorCode, message };
             }
-        })().finally(() => inFlight.delete(id));
+        })().finally(() => {
+            inFlight.delete(id);
+            if (pendingReason.has(id) && !suspended.has(id)) queueTick();
+        });
 
         inFlight.set(id, task);
         return task;
@@ -248,25 +310,80 @@ function createWechatRecoveryManager(options = {}) {
         const account = getAccount(accountId);
         if (!enabled() || !isConfigured(account)) return false;
         const id = String(account.id || '');
+        if (suspended.has(id)) suspended.delete(id);
         pendingReason.set(id, String(reason || 'manual'));
         nextRefreshAt.set(id, Date.now());
         refreshAccount(id, reason).catch(() => null);
         return true;
     }
 
+    function requestStart(accountId, reason = 'web_start') {
+        const account = getAccount(accountId);
+        if (!enabled() || !isConfigured(account)) return false;
+        const id = String(account.id || '');
+        if (workers[id] && !suspended.has(id)) return false;
+        bumpIntentVersion(id);
+        suspended.delete(id);
+        pendingReason.set(id, String(reason || 'web_start'));
+        nextRefreshAt.set(id, Date.now());
+        refreshAccount(id, reason).catch(() => null);
+        return true;
+    }
+
+    function suspendAccount(accountId, reason = 'manual_stop') {
+        const account = getAccount(accountId);
+        if (!isConfigured(account)) return false;
+        const id = String(account.id || '');
+        bumpIntentVersion(id);
+        suspended.add(id);
+        pendingReason.delete(id);
+        nextRefreshAt.delete(id);
+        setState(id, 'stopped_by_user', { reason, nextRefreshAt: 0 });
+        return true;
+    }
+
+    function handleProviderHealth(health) {
+        const available = !!(health && health.available === true);
+        const previous = providerAvailable;
+        providerAvailable = available;
+
+        if (!started || !enabled()) return;
+        if (!available || previous === true) return;
+
+        const now = Date.now();
+        let accelerated = 0;
+        for (const account of configuredAccounts()) {
+            const id = String(account.id || '');
+            if (!id || suspended.has(id) || !pendingReason.has(id)) continue;
+            nextRefreshAt.set(id, now);
+            accelerated += 1;
+        }
+        if (accelerated > 0) {
+            writeLog('系统', `检测到 Windows 微信 Provider 恢复，立即继续 ${accelerated} 个微信农场恢复任务`);
+            queueTick();
+        }
+    }
+
     function handleAccountLog(entry) {
         if (!entry || !entry.accountId) return;
         const account = getAccount(entry.accountId);
         if (!isConfigured(account) || !enabled()) return;
+        const id = String(account.id || '');
+        if (suspended.has(id)) return;
+
         const action = String(entry.action || '');
         if (action === 'ws_400') {
-            triggerRefresh(account.id, 'ws_400');
+            triggerRefresh(id, 'ws_400');
+            return;
+        }
+        if (action === 'worker_exit') {
+            triggerRefresh(id, 'worker_exit');
             return;
         }
         if (action === 'kickout_stop') {
             const kickReason = String(entry.reason || '未知');
             if (/版本过低|客户端版本/i.test(kickReason)) return;
-            triggerRefresh(account.id, `kickout:${kickReason}`);
+            triggerRefresh(id, `kickout:${kickReason}`);
         }
     }
 
@@ -275,7 +392,7 @@ function createWechatRecoveryManager(options = {}) {
         const now = Date.now();
         for (const account of configuredAccounts()) {
             const id = String(account.id || '');
-            if (!id || inFlight.has(id)) continue;
+            if (!id || suspended.has(id) || inFlight.has(id)) continue;
             const reason = pendingReason.get(id);
             if (!reason) continue;
             const due = Number(nextRefreshAt.get(id) || 0);
@@ -292,8 +409,10 @@ function createWechatRecoveryManager(options = {}) {
         const accounts = configuredAccounts();
         for (const account of accounts) {
             const id = String(account.id || '');
+            suspended.delete(id);
             pendingReason.delete(id);
             nextRefreshAt.delete(id);
+            bumpIntentVersion(id);
 
             if (enabled()) {
                 // wx.login Code is single-use. A FAR2Farm process restart has no live
@@ -310,16 +429,18 @@ function createWechatRecoveryManager(options = {}) {
             }
         }
         if (accounts.length) {
-            log('系统', `Windows 微信恢复管理已启用：${accounts.length} 个账号，策略=失效/重启恢复时刷新，Provider=${provider.name || 'windows_wechat_runtime'}`);
+            writeLog('系统', `Windows 微信恢复管理已启用：${accounts.length} 个账号，策略=失效/重启恢复时刷新，Provider=${provider.name || 'windows_wechat_runtime'}`);
         }
         timer = setInterval(tick, pollMs);
         if (timer && typeof timer.unref === 'function') timer.unref();
+        queueTick();
     }
 
     function stop() {
         if (timer) clearInterval(timer);
         timer = null;
         started = false;
+        tickQueued = false;
     }
 
     function getStatus() {
@@ -328,6 +449,7 @@ function createWechatRecoveryManager(options = {}) {
             started,
             enabled: started && enabled(),
             provider: provider.name || 'windows_wechat_runtime',
+            providerAvailable,
             refreshPolicy: REFRESH_POLICY,
             refreshIntervalMs: 0,
             pollMs,
@@ -341,6 +463,7 @@ function createWechatRecoveryManager(options = {}) {
                     platform: 'wx',
                     nextRefreshAt: Number(nextRefreshAt.get(id) || 0),
                     refreshing: inFlight.has(id),
+                    suspended: suspended.has(id),
                     pendingReason: pendingReason.get(id) || '',
                     state: lastState.get(id) || null,
                 };
@@ -354,7 +477,11 @@ function createWechatRecoveryManager(options = {}) {
         tick,
         refreshAccount,
         triggerRefresh,
+        requestStart,
+        suspendAccount,
+        handleProviderHealth,
         handleAccountLog,
+        isConfigured,
         getStatus,
     };
 }
