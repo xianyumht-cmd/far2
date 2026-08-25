@@ -393,8 +393,19 @@ function createWechatRecoveryManager(options = {}) {
         for (const account of configuredAccounts()) {
             const id = String(account.id || '');
             if (!id || suspended.has(id) || inFlight.has(id)) continue;
-            const reason = pendingReason.get(id);
+
+            let reason = pendingReason.get(id);
+            if (!reason && !workers[id]) {
+                // Configured WeChat accounts are desired-running unless the user
+                // explicitly stopped them through suspendAccount(). Recover silent
+                // worker exits even when no ws_400/kickout log was emitted.
+                reason = 'worker_missing_recover';
+                pendingReason.set(id, reason);
+                nextRefreshAt.set(id, now);
+                setState(id, 'scheduled', { reason, nextRefreshAt: now });
+            }
             if (!reason) continue;
+
             const due = Number(nextRefreshAt.get(id) || 0);
             if (!due || now >= due) {
                 refreshAccount(id, reason).catch(() => null);
