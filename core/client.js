@@ -31,6 +31,13 @@ function startAdminServerWithCodeManagerApi(dataProvider) {
     }
 }
 
+function isWechatResidentManagedAccount(account) {
+    if (!account || String(account.platform || '').toLowerCase() !== 'wx') return false;
+    if (account.codeRefreshEnabled !== true) return false;
+    const mode = String(account.codeRefreshMode || 'windows_wechat').toLowerCase();
+    return mode === 'windows_wechat' || mode === 'windows_session';
+}
+
 function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager, wechatCodeProvider) {
     const dataProvider = runtimeEngine && runtimeEngine.dataProvider;
     if (!dataProvider || !wechatRecoveryManager) return;
@@ -46,6 +53,12 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
         : null;
     const originalStartAccount = typeof dataProvider.startAccount === 'function'
         ? dataProvider.startAccount.bind(dataProvider)
+        : null;
+    const originalStopAccount = typeof dataProvider.stopAccount === 'function'
+        ? dataProvider.stopAccount.bind(dataProvider)
+        : null;
+    const originalRestartAccount = typeof dataProvider.restartAccount === 'function'
+        ? dataProvider.restartAccount.bind(dataProvider)
         : null;
 
     let providerHealth = {
@@ -81,6 +94,9 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
                 updatedAt: Date.now(),
             };
         }
+        if (typeof wechatRecoveryManager.handleProviderHealth === 'function') {
+            wechatRecoveryManager.handleProviderHealth(providerHealth);
+        }
     }
 
     pollProviderHealth().catch(() => null);
@@ -103,7 +119,7 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
         let state = source.state && typeof source.state === 'object'
             ? source.state
             : { state: source.refreshing ? 'refreshing' : 'scheduled', updatedAt: 0 };
-        if (!source.refreshing && !providerHealth.available) {
+        if (!source.refreshing && !source.suspended && !providerHealth.available) {
             state = {
                 state: 'waiting_provider',
                 updatedAt: Number(providerHealth.updatedAt) || 0,
@@ -120,6 +136,7 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
             needsRebind: false,
             nextRefreshAt: Number(source.nextRefreshAt) || 0,
             refreshing: !!source.refreshing,
+            suspended: !!source.suspended,
             pendingReason: String(source.pendingReason || ''),
             state,
         };
@@ -127,18 +144,40 @@ function installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryMa
 
     dataProvider.startAccount = (accountRef) => {
         const account = getAccount(accountRef);
-        if (account && String(account.platform || '').toLowerCase() === 'wx') {
+        if (account && isWechatResidentManagedAccount(account)) {
             const id = String(account.id || '');
             const code = String(account.code || '').trim();
-            const mode = String(account.codeRefreshMode || 'windows_wechat').toLowerCase();
-            const residentConfigured = account.codeRefreshEnabled === true
-                && (mode === 'windows_wechat' || mode === 'windows_session');
-            if (residentConfigured && !code) {
-                return wechatRecoveryManager.triggerRefresh(id, 'web_enroll');
+            if (typeof wechatRecoveryManager.requestStart === 'function') {
+                return wechatRecoveryManager.requestStart(id, code ? 'web_start' : 'web_enroll');
             }
+            return wechatRecoveryManager.triggerRefresh(id, code ? 'web_start' : 'web_enroll');
         }
         if (!originalStartAccount) return false;
         return originalStartAccount(accountRef);
+    };
+
+    dataProvider.stopAccount = (accountRef) => {
+        const account = getAccount(accountRef);
+        if (account && isWechatResidentManagedAccount(account)) {
+            const id = String(account.id || '');
+            if (typeof wechatRecoveryManager.suspendAccount === 'function') {
+                wechatRecoveryManager.suspendAccount(id, 'web_stop');
+            }
+        }
+        if (!originalStopAccount) return false;
+        return originalStopAccount(accountRef);
+    };
+
+    dataProvider.restartAccount = (accountRef) => {
+        const account = getAccount(accountRef);
+        if (account && isWechatResidentManagedAccount(account)) {
+            const id = String(account.id || '');
+            // WeChat wx.login Code is single-use. A restart must rotate the Code
+            // through the recovery manager instead of restarting with stored Code.
+            return wechatRecoveryManager.triggerRefresh(id, 'web_restart');
+        }
+        if (!originalRestartAccount) return false;
+        return originalRestartAccount(accountRef);
     };
 
     dataProvider.getCodeManagerStatus = (accountRef = '') => {
@@ -265,6 +304,12 @@ if (isWorkerProcess) {
         workerScriptPath: path.join(__dirname, 'src/core/worker-bootstrap.js'),
         startAdminServer: startAdminServerWithCodeManagerApi,
         codeRefreshProvider,
+        shouldAutoStartAccount: (account) => {
+            // Resident-managed WeChat accounts must bootstrap from a fresh wx.login
+            // Code. Never let generic startup reuse the persisted one-time Code.
+            if (wechatCodeProvider && isWechatResidentManagedAccount(account)) return false;
+            return true;
+        },
         onStatusSync: (accountId, status) => {
             emitRealtimeStatus(accountId, status);
         },
@@ -282,8 +327,9 @@ if (isWorkerProcess) {
     // WeChat recovery is intentionally separate from the mature QQ exact-UIN
     // CodeManager. The data-provider bridge only multiplexes config/status/API
     // routing; it does not change QQ session identity or QQ provider behavior.
+    let wechatRecoveryManager = null;
     if (wechatCodeProvider) {
-        const wechatRecoveryManager = createWechatRecoveryManager({
+        wechatRecoveryManager = createWechatRecoveryManager({
             store: runtimeEngine.store,
             workers: runtimeEngine.workers,
             startWorker: runtimeEngine.startWorker,
@@ -296,15 +342,17 @@ if (isWorkerProcess) {
         runtimeEngine.runtimeEvents.on('account_log', entry => {
             wechatRecoveryManager.handleAccountLog(entry);
         });
-        wechatRecoveryManager.start();
         runtimeEngine.wechatRecoveryManager = wechatRecoveryManager;
         installWechatRecoveryDataProviderBridge(runtimeEngine, wechatRecoveryManager, wechatCodeProvider);
     }
 
     // Unattended production default: start every saved account when FAR2 starts.
-    // Set FARM_AUTO_START_ACCOUNTS=0 only when intentionally running panel-only.
+    // Resident-managed WeChat accounts are delegated to WechatRecoveryManager so
+    // startup always uses a fresh wx.login Code instead of the persisted Code.
     runtimeEngine.start({
         startAdminServer: true,
+    }).then(() => {
+        if (wechatRecoveryManager) wechatRecoveryManager.start();
     }).catch((err) => {
         mainLogger.error('runtime bootstrap failed', { error: err && err.message ? err.message : String(err) });
     });
