@@ -9,7 +9,6 @@ const {
     isAutomationOn,
     getFriendQuietHours,
     getFriendBlacklist,
-    setFriendBlacklist,
     getPlantBlacklist,
     getKnownFriendGids,
     getKnownFriendGidSyncCooldownSec,
@@ -1842,7 +1841,7 @@ async function checkFriends(options = {}) {
 
                     try {
                         await visitFriend(friend, totalActions, state.gid, state.accountId);
-                    } catch (e) {
+                    } catch {
                         // 单个好友失败不影响整体
                     }
                     await randomDelay(2000, 3500);

@@ -10,13 +10,11 @@ const { toNum, log, sleep } = require('../utils/utils');
 const ORGANIC_FERTILIZER_MALL_GOODS_ID = 1002;
 const INORGANIC_FERTILIZER_MALL_GOODS_ID = 1003;
 const BUY_COOLDOWN_MS = 10 * 60 * 1000;
-const CHECK_BUY_COOLDOWN_MS = 60 * 1000;
 const MAX_ROUNDS = 100;
 const BUY_PER_ROUND = 10;
 const FREE_GIFTS_DAILY_KEY = 'mall_free_gifts';
 
 let lastBuyAt = 0;
-let lastCheckBuyAt = 0;
 let buyDoneDateKey = '';
 let buyLastSuccessAt = 0;
 let buyPausedNoGoldDateKey = '';
@@ -414,7 +412,7 @@ async function checkAndBuyFertilizerByThreshold(type, count, thresholdHours) {
 
 async function checkAndBuyFertilizerBoth(options) {
     const { getBag, getBagItems, getContainerHoursFromBagItems } = require('./warehouse');
-    const { sleep, randomDelay } = require('../utils/utils');
+    const { sleep } = require('../utils/utils');
     
     const {
         buyOrganic = false,
