@@ -39,7 +39,7 @@ function normalizePlantSize(value) {
 }
 
 function normalizeAccountFilePart(value) {
-    return String(value || 'default').replace(/[^a-zA-Z0-9_.-]+/g, '_').slice(0, 80) || 'default';
+    return String(value || 'default').replace(/[^\w.-]+/g, '_').slice(0, 80) || 'default';
 }
 
 function buildIllustratedOffsetRule(illustratedItems, plants) {

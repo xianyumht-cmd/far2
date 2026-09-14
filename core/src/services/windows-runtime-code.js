@@ -157,7 +157,7 @@ function isLikelyCode(value) {
     const code = String(value || '').trim();
     return code.length >= 6
         && code.length <= 256
-        && /^[A-Za-z0-9_-]+$/.test(code)
+        && /^[\w-]+$/.test(code)
         && !/^-\d+$/.test(code);
 }
 
