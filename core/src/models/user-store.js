@@ -367,20 +367,44 @@ function saveCards() {
     }
 }
 
+function getBootstrapAdminPassword() {
+    const password = String(process.env.ADMIN_BOOTSTRAP_PASSWORD || '');
+    if (!password) {
+        const error = new Error('No administrator account exists. Set ADMIN_BOOTSTRAP_PASSWORD to a strong password (12+ characters) and restart FAR2.');
+        error.code = 'admin_bootstrap_password_required';
+        throw error;
+    }
+
+    const validation = validatePasswordStrength(password);
+    if (password.length < 12 || !validation.valid) {
+        const error = new Error('ADMIN_BOOTSTRAP_PASSWORD must be at least 12 characters and satisfy the configured password policy.');
+        error.code = 'admin_bootstrap_password_weak';
+        throw error;
+    }
+
+    return password;
+}
+
 function initDefaultAdmin() {
     loadUsers();
-    const adminExists = users.find(u => u.username === 'admin');
-    if (!adminExists) {
-        const defaultPassword = 'admin';
-        users.push({
-            username: 'admin',
-            password: hashPassword(defaultPassword),
-            role: 'admin',
-            createdAt: Date.now()
-        });
-        saveUsers();
-        console.log('[用户系统] 已创建默认管理员账号，默认密码: admin');
+    const adminExists = users.some(user => user && user.role === 'admin');
+    if (adminExists) return;
+
+    if (users.some(user => user && user.username === 'admin')) {
+        const error = new Error('Cannot bootstrap administrator: username "admin" already exists without the admin role.');
+        error.code = 'admin_bootstrap_username_conflict';
+        throw error;
     }
+
+    const bootstrapPassword = getBootstrapAdminPassword();
+    users.push({
+        username: 'admin',
+        password: hashPassword(bootstrapPassword),
+        role: 'admin',
+        createdAt: Date.now()
+    });
+    saveUsers();
+    console.log('[用户系统] 已使用 ADMIN_BOOTSTRAP_PASSWORD 创建初始管理员账号 admin');
 }
 
 function validateUser(username, password, ip = 'unknown') {

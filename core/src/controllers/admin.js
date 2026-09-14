@@ -8,7 +8,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const process = require('node:process');
 const express = require('express');
-const fetch = require('node-fetch');
 const { Server: SocketIOServer } = require('socket.io');
 const { version } = require('../../package.json');
 const { CONFIG, updateRuntimeConfig, getRuntimeConfig, getDefaultSystemConfig } = require('../config/config');
@@ -149,7 +148,7 @@ function startAdminServer(dataProvider) {
         }
         
         res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS, PUT');
-        res.header('Access-Control-Allow-Headers', 'Content-Type, x-account-id, x-admin-token, x-proxy-api-key, x-proxy-api-url, x-proxy-app-id');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, x-account-id, x-admin-token');
         res.header('Access-Control-Allow-Credentials', 'true');
         res.header('Access-Control-Max-Age', '86400');
         
@@ -461,7 +460,7 @@ function startAdminServer(dataProvider) {
     });
 
     app.use('/api', (req, res, next) => {
-        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/proxy' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();
+        if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();
         return authRequired(req, res, next);
     });
 
@@ -2434,51 +2433,6 @@ function startAdminServer(dataProvider) {
             }
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
-        }
-    });
-
-    // ============ 微信登录代理 API ============
-    // 用于转发请求到第三方微信登录 API（如 api.aineishe.com）
-    app.post('/api/proxy', async (req, res) => {
-        const { action, ...params } = req.body || {};
-
-        if (!action) {
-            return res.status(400).json({ code: -1, msg: '缺少 action 参数' });
-        }
-
-        // 从请求头或配置中获取 API 配置
-        // 优先使用请求头中的配置（前端传入）
-        const apiUrl = req.headers['x-proxy-api-url'] || process.env.WX_PROXY_API_URL || 'http://127.0.0.1:8059/api';
-        const apiKey = req.headers['x-proxy-api-key'] || process.env.WX_PROXY_API_KEY || '';
-        const appId = req.headers['x-proxy-app-id'] || process.env.WX_PROXY_APP_ID || 'wx5306c5978fdb76e4';
-
-        if (!apiKey) {
-            return res.status(400).json({ code: -1, msg: '缺少 API Key' });
-        }
-
-        // 如果是 jslogin 动作，自动添加 appid
-        if (action === 'jslogin') {
-            params.appid = appId;
-        }
-
-        try {
-            const url = `${apiUrl}?api_key=${encodeURIComponent(apiKey)}&action=${action}`;
-            adminLogger.info('proxy request', { action, apiUrl });
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(params)
-            });
-
-            const data = await response.json();
-            res.json(data);
-        } catch (error) {
-            adminLogger.error('proxy error', { error: error.message, action });
-            res.status(500).json({
-                code: -1,
-                msg: `代理请求失败: ${  error.message}`,
-            });
         }
     });
 

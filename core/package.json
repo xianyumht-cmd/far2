@@ -70,7 +70,8 @@
     "build:linux": "pkg . --no-bytecode --targets node18-linux-x64 --out-path dist",
     "build:mac": "pkg . --no-bytecode --targets node18-macos-x64,node18-macos-arm64 --out-path dist",
     "lint": "eslint . --fix",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "security:phase1-selftest": "node scripts/security-phase1-selftest.js && node scripts/user-store-persistence-selftest.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
