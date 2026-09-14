@@ -15,6 +15,7 @@ services:
       - TZ=${TZ:-Asia/Shanghai}
       - NODE_ENV=production
       - ADMIN_PORT=3007
+      - ADMIN_BOOTSTRAP_PASSWORD=${ADMIN_BOOTSTRAP_PASSWORD:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3007/api/status"]
       interval: 30s
