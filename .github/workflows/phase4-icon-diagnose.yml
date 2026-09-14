@@ -39,27 +39,49 @@ jobs:
           node <<'NODE'
           const { icons } = require('@iconify-json/carbon')
           const names = Object.keys(icons.icons)
-          const targets = ['leaf','crown','health-status','circle','list-blocked','paw','user-offline','circle-dash','circle-dash-function','circle-dash-string','circle-dash-return','renew','renew-animate-spin','restart','restart-animate-spin']
-          const tokenSet = target => new Set(target.split('-'))
-          const score = (name, target) => {
-            const a = tokenSet(name)
-            const b = tokenSet(target)
-            let common = 0
-            for (const token of a) if (b.has(token)) common++
-            return -(common * 20) + Math.abs(name.length - target.length)
+          console.log('=== SEMANTIC CANDIDATES ===')
+          for (const keyword of ['star','trophy','award','medal','badge','dog','pet','animal','health','status','blocked','lock','offline','user','circle','sprout','tree']) {
+            const matches = names.filter(n => n.includes(keyword)).slice(0,80)
+            console.log(`${keyword}: ${matches.join(',')}`)
           }
-          console.log('=== COLLECTION CHECK ===')
-          for (const target of targets) {
-            const related = names
-              .filter(n => {
-                const a = tokenSet(n)
-                const b = tokenSet(target)
-                return [...a].some(token => b.has(token))
+          console.log('=== EXACT CANDIDATES ===')
+          for (const name of ['sprout','tree','star','star-filled','trophy','badge','crop-health','health-cross','status-resolved','circle-dash','circle-filled','circle-outline','locked-and-blocked','user','user-profile','user-avatar','user-online','renew','restart']) {
+            console.log(`${name}=${Object.hasOwn(icons.icons, name)}`)
+          }
+          NODE
+      - name: Isolate UnoCSS extraction
+        shell: bash
+        working-directory: web
+        run: |
+          node <<'NODE'
+          const { createGenerator } = require('@unocss/core')
+          const { presetIcons } = require('unocss')
+          const samples = {
+            tsFallback: "function getOpIcon(key: string | number) { return OP_META[String(key)]?.icon || 'i-carbon-circle-dash' }",
+            staticSpin: '<div class="i-carbon-renew mr-2 animate-spin text-xl" />',
+            boundSpin: '<div class="i-carbon-renew" :class="loading ? \'animate-spin\' : \'\'" />',
+            restartBound: '<div class="i-carbon-restart" :class="loading ? \'animate-spin\' : \'\'" />',
+          }
+          ;(async () => {
+            for (const [label, source] of Object.entries(samples)) {
+              const requested = []
+              const uno = await createGenerator({
+                presets: [presetIcons({
+                  collections: {
+                    carbon: async name => {
+                      requested.push(name)
+                      return '<svg viewBox="0 0 16 16"></svg>'
+                    },
+                  },
+                })],
               })
-              .sort((a,b) => score(a,target)-score(b,target) || a.localeCompare(b))
-              .slice(0,16)
-            console.log(JSON.stringify({ target, exists: Object.hasOwn(icons.icons, target), related }))
-          }
+              await uno.generate(source)
+              console.log(JSON.stringify({ label, requested: [...new Set(requested)] }))
+            }
+          })().catch(error => {
+            console.error(error)
+            process.exitCode = 1
+          })
           NODE
       - name: Reproduce Web build warnings
         run: pnpm -C web build
