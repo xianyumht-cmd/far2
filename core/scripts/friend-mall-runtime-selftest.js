@@ -4,7 +4,7 @@ const networkPath = require.resolve('../src/utils/network');
 const friendPath = require.resolve('../src/services/friend');
 const mallPath = require.resolve('../src/services/mall');
 const network = require(networkPath);
-const { types } = require('../src/utils/proto');
+const { loadProto, types } = require('../src/utils/proto');
 
 async function testFriendApplicationsRpc() {
     const originalSendMsgAsync = network.sendMsgAsync;
@@ -83,6 +83,7 @@ async function testOrganicMallPurchaseSuccessPath() {
 async function main() {
     console.log('FAR2 Friend Applications + Mall Purchase Runtime Regression Self-Test');
     console.log('安全: 使用真实 protobuf + fake sendMsgAsync，不连接 QQ、不进行真实购买。\n');
+    await loadProto();
     await testFriendApplicationsRpc();
     console.log('✅ pending friend applications GetApplications RPC PASS');
     await testOrganicMallPurchaseSuccessPath();
