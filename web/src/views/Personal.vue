@@ -61,7 +61,7 @@ const currentTab = ref<'farm' | 'bag' | 'task' | 'dog' | 'career' | 'appearance'
         @click="currentTab = 'dog'"
       >
         <div class="flex items-center space-x-2">
-          <div class="i-carbon-paw text-lg" />
+          <div class="i-carbon-pet-image-o text-lg" />
           <span>护主犬</span>
         </div>
       </button>

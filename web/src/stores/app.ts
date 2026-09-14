@@ -63,7 +63,7 @@ export const useAppStore = defineStore('app', () => {
       primary: '#22c55e',
       secondary: '#16a34a',
       gradient: 'linear-gradient(135deg, #4ade80 0%, #22c55e 100%)',
-      icon: 'i-carbon-leaf',
+      icon: 'i-carbon-sprout',
     },
     // 紫罗兰主题
     'dark-purple': {
@@ -74,7 +74,7 @@ export const useAppStore = defineStore('app', () => {
       primary: '#a855f7',
       secondary: '#9333ea',
       gradient: 'linear-gradient(135deg, #c084fc 0%, #a855f7 100%)',
-      icon: 'i-carbon-crown',
+      icon: 'i-carbon-trophy',
     },
     // 橙色暖阳主题
     'dark-orange': {

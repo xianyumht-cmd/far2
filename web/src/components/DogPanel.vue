@@ -155,7 +155,7 @@ onMounted(refresh)
     <div class="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between dark:bg-gray-800">
       <div>
         <div class="flex items-center gap-2 font-semibold text-gray-800 dark:text-gray-100">
-          <div class="i-carbon-paw text-lg" />
+          <div class="i-carbon-pet-image-o text-lg" />
           护主犬状态
           <span class="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
             手动单次

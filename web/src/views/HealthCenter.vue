@@ -202,7 +202,7 @@ useIntervalFn(() => refresh(true), 10000)
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div class="flex items-center gap-2">
-          <div class="i-carbon-health-status text-2xl" :style="{ color: 'var(--theme-primary)' }" />
+          <div class="i-carbon-crop-health text-2xl" :style="{ color: 'var(--theme-primary)' }" />
           <h1 class="text-2xl font-bold">
             运行健康中心
           </h1>
