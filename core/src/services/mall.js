@@ -159,7 +159,7 @@ async function autoBuyOrganicFertilizerViaMall() {
             event: '购买化肥',
             result: 'ok',
             count: totalBought,
-            type,
+            type: 'organic',
         });
     }
     

@@ -551,6 +551,15 @@ async function getAllFriends(forceSync = false) {
     return types.GetAllFriendsReply.decode(replyBody);
 }
 
+async function getApplications() {
+    if (!types.GetApplicationsRequest || !types.GetApplicationsReply) {
+        throw new Error('GetApplications 接口类型未加载');
+    }
+    const body = types.GetApplicationsRequest.encode(types.GetApplicationsRequest.create({})).finish();
+    const { body: replyBody } = await sendMsgAsync('gamepb.friendpb.FriendService', 'GetApplications', body);
+    return types.GetApplicationsReply.decode(replyBody);
+}
+
 async function acceptFriends(gids) {
     const body = types.AcceptFriendsRequest.encode(types.AcceptFriendsRequest.create({
         friend_gids: gids.map(g => toLong(g)),
@@ -2100,6 +2109,7 @@ module.exports = {
     isHelpExpLimitReached,
     getOperationLimits,
     getFriendsList,
+    getApplications,
     getFriendLandsDetail,
     buildFriendLandMutationDetail,
     doFriendOperation,
