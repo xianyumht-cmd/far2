@@ -18,7 +18,7 @@ function toPositiveInt(value) {
 function normalizeAccountFilePart(value) {
     return String(value || '')
         .trim()
-        .replace(/[^a-zA-Z0-9_.-]+/g, '_')
+        .replace(/[^\w.-]+/g, '_')
         .slice(0, 80);
 }
 

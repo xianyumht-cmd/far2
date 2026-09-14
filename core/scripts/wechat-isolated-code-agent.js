@@ -8,7 +8,7 @@ function safeText(value, max = 180) {
     return String(value || '')
         .replace(/([?&](?:code|token|ticket|password)=)[^\s&]+/gi, '$1[REDACTED]')
         .replace(/(Bearer\s+)[\w.-]+/gi, '$1[REDACTED]')
-        .replace(/\b[A-Za-z0-9_-]{32}\b/g, '[REDACTED_32]')
+        .replace(/\b[\w-]{32}\b/g, '[REDACTED_32]')
         .slice(0, max);
 }
 
