@@ -32,7 +32,7 @@ function makeRunner(currentSha, targetSha) {
         if (joined === 'rev-parse origin/main') return { status: 0, stdout: targetSha, stderr: '' };
         if (joined.startsWith('merge-base --is-ancestor ')) return { status: 0, stdout: '', stderr: '' };
         if (joined === 'fetch --prune origin main') return { status: 0, stdout: '', stderr: '' };
-        if (joined === 'show origin/main:core/package.json') return { status: 0, stdout: '{"version":"2.3.0"}', stderr: '' };
+        if (joined === 'show origin/main:core/package.json') return { status: 0, stdout: '{"version":"2.3.1"}', stderr: '' };
         if (joined.startsWith('log --format=')) return { status: 0, stdout: 'abc123\tfeat: updater', stderr: '' };
         if (file === 'sc.exe' || file === 'sc') return { status: 0, stdout: 'RUNNING', stderr: '' };
         if ((file === 'schtasks.exe' || file === 'schtasks') && joined.startsWith('/Query /TN ')) return { status: 0, stdout: 'Ready', stderr: '' };
@@ -87,7 +87,7 @@ async function main() {
     const checked = await updater.check();
     assert.equal(checked.available, true);
     assert.equal(checked.targetSha, targetSha);
-    assert.equal(checked.latestVersion, '2.3.0');
+    assert.equal(checked.latestVersion, '2.3.1');
     assert.deepEqual(checked.releaseNotes, ['abc123\tfeat: updater']);
     assert.ok(calls.some(call => call.join(' ').includes('fetch --prune origin main')));
     assert.ok(!calls.some(call => call.join(' ').includes('evil.example')));
@@ -125,6 +125,52 @@ async function main() {
     const scheduledCheck = scheduledUpdater.performCheck({ allowQueued: true });
     assert.equal(scheduledCheck.available, true);
     assert.equal(scheduledUpdater.loadState().phase, 'idle');
+
+    scheduledUpdater.saveState({
+        phase: 'updating',
+        stage: 'verify',
+        previousSha: currentSha,
+        targetSha,
+        requestedAction: 'apply',
+        workerPid: 9999,
+        workerStartedAt: Date.now(),
+    });
+    const recoveryUpdater = createReleaseUpdater({
+        projectRoot: root,
+        runner,
+        isProcessAlive: () => false,
+        processRef: {
+            platform: 'win32',
+            pid: 4567,
+            execPath: 'C:\\Program Files\\nodejs\\node.exe',
+            env: { FAR2_SERVICE_NAME: 'FAR2Farm', FAR2_UPDATE_TASK_NAME: 'FAR2UpdateAgent' },
+            pkg: false,
+        },
+    });
+    assert.throws(() => recoveryUpdater.beginCheck(), error => error.code === 'update_recovery_required');
+    const queuedRecovery = recoveryUpdater.beginApply();
+    assert.equal(queuedRecovery.accepted, true);
+    assert.equal(recoveryUpdater.loadState().recoveryRequired, true);
+    const recovered = recoveryUpdater.recoverInterruptedUpdate();
+    assert.equal(recovered.recovered, true);
+    assert.equal(recovered.previousSha, currentSha);
+    assert.ok(calls.some(call => call.join(' ').includes(`reset --hard ${currentSha}`)));
+    assert.ok(calls.some(call => call.join(' ').includes('install --frozen-lockfile')));
+    assert.ok(calls.some(call => call.join(' ').includes('build')));
+
+    recoveryUpdater.saveState({
+        phase: 'checking',
+        stage: 'fetch',
+        requestedAction: 'check',
+        workerPid: 9998,
+        workerStartedAt: Date.now(),
+        previousSha: '',
+        targetSha: '',
+    });
+    assert.equal(recoveryUpdater.beginCheck().accepted, true);
+    assert.equal(recoveryUpdater.loadState().phase, 'queued');
+    assert.equal(recoveryUpdater.loadState().recoveryRequired, false);
+    recoveryUpdater.saveState({ phase: 'idle', requestedAction: '', recoveryRequired: false });
 
     const installerPath = path.join(__dirname, '..', '..', 'scripts', 'windows', 'install-far2-update-agent.ps1');
     const installer = fs.readFileSync(installerPath, 'utf8');

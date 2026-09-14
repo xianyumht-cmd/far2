@@ -33,6 +33,7 @@ function main() {
     const argv = process.argv.slice(2);
     const updater = createReleaseUpdater({ restartSupported: true });
     const queuedState = updater.loadState();
+    updater.saveState({ workerPid: process.pid, workerStartedAt: Date.now() });
     const scheduledTask = argv.includes('--scheduled-task');
     const requestedAction = scheduledTask
         ? String(queuedState.requestedAction || '').trim()
@@ -56,6 +57,7 @@ function main() {
         throw error;
     }
 
+    if (queuedState.recoveryRequired) updater.recoverInterruptedUpdate();
     updater.performUpdate({ restartFromPid: parentPid });
     terminateParent(parentPid);
 }

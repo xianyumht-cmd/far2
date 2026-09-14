@@ -10,7 +10,9 @@ const OFFICIAL_ORIGIN_PATTERNS = [
 ];
 const UPDATE_BRANCH = 'main';
 const STATE_VERSION = 1;
+const WORKER_MAX_RUNTIME_MS = 3 * 60 * 60 * 1000;
 const ACTIVE_PHASES = new Set(['queued', 'checking', 'updating', 'rolling_back', 'restart_pending']);
+const WORKER_PHASES = new Set(['checking', 'updating', 'rolling_back']);
 
 function assertCanonicalOrigin(value) {
     const origin = String(value || '').trim();
@@ -124,6 +126,19 @@ function createReleaseUpdater(options = {}) {
         };
         atomicWriteJson(fsRef, statePath, next);
         return next;
+    }
+
+    function isProcessAlive(pid) {
+        const numericPid = Number(pid) || 0;
+        if (!numericPid) return false;
+        if (typeof options.isProcessAlive === 'function') return !!options.isProcessAlive(numericPid);
+        if (typeof processRef.kill !== 'function') return true;
+        try {
+            processRef.kill(numericPid, 0);
+            return true;
+        } catch (error) {
+            return !!(error && error.code === 'EPERM');
+        }
     }
 
     function getCurrentVersion() {
@@ -280,13 +295,44 @@ function createReleaseUpdater(options = {}) {
             message: 'Windows Update Agent 未在 45 秒内启动。请确认安装任务且对应 Windows 用户处于登录状态。',
             lastError: 'Update Agent start timed out.',
             errorCode: 'update_agent_start_timeout',
+            requestedAction: '',
             restartPending: false,
+            workerPid: 0,
+            workerStartedAt: 0,
+        });
+    }
+
+    function reconcileWorkerState(state) {
+        if (!state || !WORKER_PHASES.has(String(state.phase || ''))) return state;
+        const workerPid = Number(state.workerPid) || 0;
+        const workerStartedAt = Number(state.workerStartedAt) || 0;
+        const runtimeExceeded = !!workerStartedAt && Date.now() - workerStartedAt > WORKER_MAX_RUNTIME_MS;
+        if (workerPid && !runtimeExceeded && isProcessAlive(workerPid)) return state;
+
+        const previousSha = String(state.previousSha || '').trim();
+        const hasRollbackPoint = /^[0-9a-f]{40}$/i.test(previousSha);
+        const requiresRecovery = state.phase === 'rolling_back'
+            || (state.phase === 'updating' && hasRollbackPoint);
+        return saveState({
+            phase: requiresRecovery ? 'recovery_required' : 'interrupted',
+            stage: requiresRecovery ? 'worker_interrupted_recovery_required' : 'worker_interrupted',
+            message: requiresRecovery
+                ? '升级 Worker 意外中断。下一次“一键升级”会先恢复上一个已验证版本，再重新升级。'
+                : '升级 Worker 意外中断，可以重新执行检查或升级。',
+            lastError: runtimeExceeded
+                ? 'Update Agent exceeded the maximum runtime.'
+                : (workerPid ? 'Update Agent process is no longer running.' : 'Update Agent process metadata is missing.'),
+            errorCode: requiresRecovery ? 'update_recovery_required' : 'update_worker_interrupted',
+            requestedAction: '',
+            restartPending: false,
+            workerPid: 0,
+            workerStartedAt: 0,
         });
     }
 
     function status() {
         const snapshot = getGitSnapshot();
-        const state = reconcileQueuedState(reconcileRestartState());
+        const state = reconcileWorkerState(reconcileQueuedState(reconcileRestartState()));
         return {
             capability: capability(),
             currentVersion: getCurrentVersion(),
@@ -378,6 +424,77 @@ function createReleaseUpdater(options = {}) {
         }
     }
 
+    function recoverInterruptedUpdate() {
+        const state = loadState();
+        if (!state.recoveryRequired) return { recovered: false };
+
+        const previousSha = String(state.recoveryPreviousSha || state.previousSha || '').trim();
+        if (!/^[0-9a-f]{40}$/i.test(previousSha)) {
+            const error = new Error('Interrupted update does not contain a valid rollback commit.');
+            error.code = 'update_recovery_invalid_rollback_sha';
+            saveState({
+                phase: 'rollback_failed',
+                stage: 'recovery',
+                message: '上次升级中断，但缺少可验证的回滚提交，需要人工处理。',
+                lastError: error.message,
+                rollbackError: error.message,
+                errorCode: error.code,
+                restartPending: false,
+            });
+            throw error;
+        }
+
+        const cap = capability();
+        if (!cap.supported) {
+            const error = new Error(cap.reason);
+            error.code = cap.reason;
+            throw error;
+        }
+
+        try {
+            saveState({
+                phase: 'rolling_back',
+                stage: 'recovery_reset',
+                message: '检测到上次升级中断，正在恢复上一个已验证版本…',
+                rollbackError: '',
+            });
+            git(['cat-file', '-e', `${previousSha}^{commit}`], { timeout: 30000 });
+            git(['reset', '--hard', previousSha], { timeout: 120000 });
+            pnpm(['install', '--frozen-lockfile'], { timeout: 600000, maxBuffer: 32 * 1024 * 1024 });
+            pnpm(['build'], { timeout: 600000, maxBuffer: 32 * 1024 * 1024 });
+            const restoredSha = git(['rev-parse', 'HEAD']).stdout;
+            if (restoredSha !== previousSha) {
+                const error = new Error(`Recovery target mismatch: ${restoredSha} != ${previousSha}`);
+                error.code = 'update_recovery_target_mismatch';
+                throw error;
+            }
+            saveState({
+                phase: 'recovered',
+                stage: 'recovery_complete',
+                message: '已恢复上一个已验证版本，正在重新执行升级。',
+                recoveryRequired: false,
+                recoveryPreviousSha: '',
+                recoveryTargetSha: '',
+                rollbackSha: previousSha,
+                lastError: '',
+                rollbackError: '',
+                restartPending: false,
+            });
+            return { recovered: true, previousSha };
+        } catch (error) {
+            saveState({
+                phase: 'rollback_failed',
+                stage: 'recovery',
+                message: '上次升级中断且自动恢复失败，需要人工处理。',
+                lastError: error.message,
+                rollbackError: error.message,
+                errorCode: error.code || 'update_recovery_failed',
+                restartPending: false,
+            });
+            throw error;
+        }
+    }
+
     function performUpdate({ restartFromPid = 0 } = {}) {
         ensureCleanMain();
         saveState({ phase: 'updating', stage: 'fetch', message: '正在获取最新版本…', lastError: '', rollbackError: '', restartFromPid });
@@ -459,18 +576,46 @@ function createReleaseUpdater(options = {}) {
             error.code = 'update_action_invalid';
             throw error;
         }
-        const currentState = loadState();
+        const currentState = reconcileWorkerState(reconcileQueuedState(reconcileRestartState()));
         if (ACTIVE_PHASES.has(String(currentState.phase || ''))) {
             return { accepted: false, reason: 'update_busy', action };
         }
-        const cap = ensureCleanMain();
+        const recoveryRequired = currentState.phase === 'recovery_required';
+        if (recoveryRequired && action !== 'apply') {
+            const error = new Error('Interrupted update must be recovered before checking for updates.');
+            error.code = 'update_recovery_required';
+            throw error;
+        }
+
+        let cap;
+        if (recoveryRequired) {
+            cap = capability();
+            if (!cap.supported) {
+                const error = new Error(cap.reason);
+                error.code = cap.reason;
+                throw error;
+            }
+            const rollbackSha = String(currentState.previousSha || '').trim();
+            if (!/^[0-9a-f]{40}$/i.test(rollbackSha)) {
+                const error = new Error('Interrupted update does not contain a valid rollback commit.');
+                error.code = 'update_recovery_invalid_rollback_sha';
+                throw error;
+            }
+        } else {
+            cap = ensureCleanMain();
+        }
+
         const restartFromPid = action === 'apply' ? processRef.pid : 0;
         saveState({
             phase: 'queued',
             stage: 'dispatch',
-            message: action === 'check' ? '检查更新任务已排队…' : '升级任务已排队…',
+            message: recoveryRequired ? '恢复任务已排队，随后会重新执行升级…' : (action === 'check' ? '检查更新任务已排队…' : '升级任务已排队…'),
             requestedAction: action,
+            recoveryRequired,
+            recoveryPreviousSha: recoveryRequired ? String(currentState.previousSha || '') : '',
+            recoveryTargetSha: recoveryRequired ? String(currentState.targetSha || '') : '',
             workerPid: 0,
+            workerStartedAt: 0,
             restartFromPid,
             restartPending: false,
             lastError: '',
@@ -520,6 +665,7 @@ function createReleaseUpdater(options = {}) {
         loadState,
         saveState,
         performCheck,
+        recoverInterruptedUpdate,
         performUpdate,
         statePath,
         projectRoot,
