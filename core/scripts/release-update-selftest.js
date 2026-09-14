@@ -32,7 +32,7 @@ function makeRunner(currentSha, targetSha) {
         if (joined === 'rev-parse origin/main') return { status: 0, stdout: targetSha, stderr: '' };
         if (joined.startsWith('merge-base --is-ancestor ')) return { status: 0, stdout: '', stderr: '' };
         if (joined === 'fetch --prune origin main') return { status: 0, stdout: '', stderr: '' };
-        if (joined === 'show origin/main:core/package.json') return { status: 0, stdout: '{"version":"2.3.1"}', stderr: '' };
+        if (joined === 'show origin/main:core/package.json') return { status: 0, stdout: '{"version":"2.3.2"}', stderr: '' };
         if (joined.startsWith('log --format=')) return { status: 0, stdout: 'abc123\tfeat: updater', stderr: '' };
         if (file === 'sc.exe' || file === 'sc') return { status: 0, stdout: 'RUNNING', stderr: '' };
         if ((file === 'schtasks.exe' || file === 'schtasks') && joined.startsWith('/Query /TN ')) return { status: 0, stdout: 'Ready', stderr: '' };
@@ -87,7 +87,7 @@ async function main() {
     const checked = await updater.check();
     assert.equal(checked.available, true);
     assert.equal(checked.targetSha, targetSha);
-    assert.equal(checked.latestVersion, '2.3.1');
+    assert.equal(checked.latestVersion, '2.3.2');
     assert.deepEqual(checked.releaseNotes, ['abc123\tfeat: updater']);
     assert.ok(calls.some(call => call.join(' ').includes('fetch --prune origin main')));
     assert.ok(!calls.some(call => call.join(' ').includes('evil.example')));
@@ -181,6 +181,18 @@ async function main() {
     assert.ok(installer.includes("@('install', '--frozen-lockfile')"));
     assert.ok(installer.includes("@('verify')"));
     assert.match(installer, /Verification changed tracked files/);
+    assert.match(installer, /\/api\/ping/);
+    assert.match(installer, /Wait-Far2Health/);
+    assert.match(installer, /expectedVersion/);
+
+    const adminSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'controllers', 'admin.js'), 'utf8');
+    assert.match(adminSource, /req\.path === '\/ping'/);
+    const updateUi = fs.readFileSync(path.join(__dirname, '..', '..', 'web', 'src', 'views', 'SystemUpdate.vue'), 'utf8');
+    assert.match(updateUi, /responseStatus === 401/);
+    assert.match(updateUi, /reason=update-restart&redirect=%2Fsystem-update/);
+    const loginUi = fs.readFileSync(path.join(__dirname, '..', '..', 'web', 'src', 'views', 'Login.vue'), 'utf8');
+    assert.match(loginUi, /requestedRedirect\.startsWith\('\/'\)/);
+    assert.match(loginUi, /!requestedRedirect\.startsWith\('\/\/'\)/);
 
     const bootstrapCmdPath = path.join(__dirname, '..', '..', 'install-webui-update.cmd');
     const bootstrapCmd = fs.readFileSync(bootstrapCmdPath, 'utf8');

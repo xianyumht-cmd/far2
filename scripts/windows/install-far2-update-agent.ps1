@@ -60,6 +60,33 @@ function Assert-CanonicalOrigin {
     }
 }
 
+function Wait-Far2Health {
+    param(
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][string]$ExpectedVersion,
+        [int]$TimeoutSeconds = 45
+    )
+
+    $uri = "http://127.0.0.1:$Port/api/ping"
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastError = ''
+    do {
+        try {
+            $response = Invoke-RestMethod -Uri $uri -Method Get -TimeoutSec 3 -ErrorAction Stop
+            $actualVersion = [string]$response.data.version
+            if ($response.ok -eq $true -and $response.data.ok -eq $true -and $actualVersion -eq $ExpectedVersion) {
+                return $true
+            }
+            $lastError = "Unexpected health response/version: expected=$ExpectedVersion actual=$actualVersion"
+        } catch {
+            $lastError = $_.Exception.Message
+        }
+        Start-Sleep -Milliseconds 750
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    throw "FAR2 HTTP health check failed at $uri after $TimeoutSeconds seconds. Last error: $lastError"
+}
+
 function Get-ServiceEnvironmentEntries {
     param([string]$Name)
     $parametersKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$Name\Parameters"
@@ -111,12 +138,20 @@ $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $coreDir = Join-Path $projectRoot 'core'
 $workerPath = Join-Path $coreDir 'scripts\release-update-worker.js'
 $runnerPath = Join-Path $PSScriptRoot 'run-far2-update-agent.ps1'
+$packagePath = Join-Path $coreDir 'package.json'
 
 if (-not (Test-Path -LiteralPath (Join-Path $projectRoot '.git') -PathType Container)) {
     throw "FAR2 must be a Git checkout: $projectRoot"
 }
 if (-not (Test-Path -LiteralPath $workerPath -PathType Leaf)) {
     throw "Update worker not found: $workerPath"
+}
+if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
+    throw "FAR2 package.json not found: $packagePath"
+}
+$expectedVersion = [string]((Get-Content -LiteralPath $packagePath -Raw -Encoding UTF8 | ConvertFrom-Json).version)
+if ([string]::IsNullOrWhiteSpace($expectedVersion)) {
+    throw 'FAR2 package version is empty.'
 }
 if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
     throw "Update Agent runner not found: $runnerPath"
@@ -194,13 +229,24 @@ $environmentMap['FAR2_UPDATE_TASK_NAME'] = $TaskName
 $environmentMap['FAR2_SERVICE_NAME'] = $ServiceName
 Set-ServiceEnvironmentMap -Name $ServiceName -Map $environmentMap
 
-Write-Host '[FAR2] Restarting service so the WebUI receives the verified 2.3.0 build and Update Agent configuration...'
+$adminPort = 3007
+if ($environmentMap.Contains('ADMIN_PORT')) {
+    $configuredPort = 0
+    if ([int]::TryParse([string]$environmentMap['ADMIN_PORT'], [ref]$configuredPort) -and $configuredPort -ge 1 -and $configuredPort -le 65535) {
+        $adminPort = $configuredPort
+    }
+}
+
+Write-Host '[FAR2] Restarting service so the WebUI receives Update Agent configuration...'
 Restart-Service -Name $ServiceName -Force -ErrorAction Stop
 Start-Sleep -Seconds 3
 $service = Get-Service -Name $ServiceName -ErrorAction Stop
 if ($service.Status -ne 'Running') {
     throw "FAR2 service did not return to Running state: $($service.Status)"
 }
+Write-Host "[FAR2] Waiting for HTTP health: http://127.0.0.1:$adminPort/api/ping expectedVersion=$expectedVersion"
+Wait-Far2Health -Port $adminPort -ExpectedVersion $expectedVersion | Out-Null
+Write-Host '[FAR2] HTTP health verified.'
 
 Write-Host ''
 Write-Host '=== FAR2 WebUI one-click update enabled ===' -ForegroundColor Green

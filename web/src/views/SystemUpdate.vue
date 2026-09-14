@@ -67,6 +67,18 @@ const reasonText: Record<string, string> = {
   update_origin_rejected: 'Git origin 不是官方 xianyumht-cmd/far2，已拒绝升级。',
 }
 
+function redirectAfterRestartLogin() {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
+  action.value = ''
+  reconnecting.value = false
+  adminToken.value = ''
+  localStorage.removeItem('user_info')
+  window.location.assign('/login?reason=update-restart&redirect=%2Fsystem-update')
+}
+
 function formatTime(value?: number) {
   if (!value)
     return '-'
@@ -105,6 +117,11 @@ async function loadStatus(silent = false) {
     }
   }
   catch (error: any) {
+    const responseStatus = Number(error?.response?.status) || 0
+    if (responseStatus === 401 && (state.value.phase === 'restart_pending' || action.value === 'apply' || reconnecting.value)) {
+      redirectAfterRestartLogin()
+      return
+    }
     if (state.value.phase === 'restart_pending' || action.value === 'apply') {
       reconnecting.value = true
       return
