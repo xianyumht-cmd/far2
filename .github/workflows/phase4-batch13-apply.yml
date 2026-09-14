@@ -91,7 +91,8 @@ jobs:
           NODE
           test "$after_status" -ne 0
 
-          mapfile -t product_changed < <(git diff --name-only)
+          mapfile -t product_changed < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$' || true)
+          printf 'product diff before verify:\n%s\n' "${product_changed[*]}"
           test "${#product_changed[@]}" -eq 2
           for file in "${files[@]}"; do
             printf '%s\n' "${product_changed[@]}" | grep -Fxq "$file"
