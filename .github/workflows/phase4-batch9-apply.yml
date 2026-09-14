@@ -1,0 +1,126 @@
+name: Phase4 Batch9 Apply
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch9-safe-regex-normalize-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact safe regexp normalizations
+        shell: bash
+        run: |
+          files=(
+            core/scripts/wechat-isolated-code-agent.js
+            core/scripts/wechat-resident-agent.js
+            core/src/services/runtime-crop-registry-resolver.js
+            core/src/services/startup-crop-registry-v2.js
+            core/src/services/startup-crop-registry.js
+            core/src/services/windows-runtime-code.js
+          )
+          core_files=(
+            scripts/wechat-isolated-code-agent.js
+            scripts/wechat-resident-agent.js
+            src/services/runtime-crop-registry-resolver.js
+            src/services/startup-crop-registry-v2.js
+            src/services/startup-crop-registry.js
+            src/services/windows-runtime-code.js
+          )
+          set +e
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/batch9-before.json
+          before_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const rows = JSON.parse(fs.readFileSync('/tmp/batch9-before.json', 'utf8'));
+          const messages = [];
+          for (const row of rows) {
+            const rel = path.relative(process.cwd(), row.filePath).replaceAll('\\', '/');
+            for (const m of row.messages || []) {
+              if (m.ruleId) messages.push({ file: rel, ...m });
+            }
+          }
+          const expectedFiles = new Set([
+            'core/scripts/wechat-isolated-code-agent.js',
+            'core/scripts/wechat-resident-agent.js',
+            'core/src/services/runtime-crop-registry-resolver.js',
+            'core/src/services/startup-crop-registry-v2.js',
+            'core/src/services/startup-crop-registry.js',
+            'core/src/services/windows-runtime-code.js',
+          ]);
+          if (messages.length !== 12) throw new Error(`expected exactly 12 findings, got ${messages.length}: ${JSON.stringify(messages)}`);
+          const counts = new Map();
+          const fileCounts = new Map();
+          for (const m of messages) {
+            counts.set(m.ruleId, (counts.get(m.ruleId) || 0) + 1);
+            fileCounts.set(m.file, (fileCounts.get(m.file) || 0) + 1);
+            if (!m.fix) throw new Error(`${m.ruleId} at ${m.file}:${m.line}:${m.column} has no ESLint fix`);
+          }
+          if (counts.size !== 2 || counts.get('regexp/prefer-w') !== 6 || counts.get('regexp/use-ignore-case') !== 6) {
+            throw new Error(`unexpected rule distribution: ${JSON.stringify([...counts])}`);
+          }
+          if (fileCounts.size !== expectedFiles.size) throw new Error(`unexpected file distribution: ${JSON.stringify([...fileCounts])}`);
+          for (const file of expectedFiles) {
+            if (fileCounts.get(file) !== 2) throw new Error(`expected 2 findings in ${file}, got ${fileCounts.get(file) || 0}`);
+          }
+          console.log('preflight PASS: exactly 12 autofixable findings across six approved files');
+          NODE
+          test "$before_status" -ne 0
+          pnpm -C core exec eslint "${core_files[@]}" --fix
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/batch9-after.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = JSON.parse(fs.readFileSync('/tmp/batch9-after.json', 'utf8'));
+          const messages = rows.flatMap(row => row.messages || []).filter(m => m.ruleId);
+          if (messages.length !== 0) throw new Error(`expected zero targeted findings after fix, got ${messages.length}: ${JSON.stringify(messages)}`);
+          console.log('post-fix PASS: all six target files have zero ESLint findings');
+          NODE
+          mapfile -t product_changed < <(git diff --name-only | grep -vE '^[^/]+\.cmd$' || true)
+          printf 'product diff before verify:\n%s\n' "${product_changed[*]}"
+          test "${#product_changed[@]}" -eq 6
+          for file in "${files[@]}"; do
+            printf '%s\n' "${product_changed[@]}" | grep -Fxq "$file"
+            git diff --check -- "$file"
+          done
+      - name: Verify repository
+        run: pnpm verify
+      - name: Diff integrity
+        shell: bash
+        run: |
+          git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$|^core/scripts/wechat-isolated-code-agent\.js$|^core/scripts/wechat-resident-agent\.js$|^core/src/services/runtime-crop-registry-resolver\.js$|^core/src/services/startup-crop-registry-v2\.js$|^core/src/services/startup-crop-registry\.js$|^core/src/services/windows-runtime-code\.js$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
+          git diff --check -- core/scripts/wechat-isolated-code-agent.js core/scripts/wechat-resident-agent.js core/src/services/runtime-crop-registry-resolver.js core/src/services/startup-crop-registry-v2.js core/src/services/startup-crop-registry.js core/src/services/windows-runtime-code.js
+          git status --short
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            core/scripts/wechat-isolated-code-agent.js \
+            core/scripts/wechat-resident-agent.js \
+            core/src/services/runtime-crop-registry-resolver.js \
+            core/src/services/startup-crop-registry-v2.js \
+            core/src/services/startup-crop-registry.js \
+            core/src/services/windows-runtime-code.js
+          git commit -m "chore(quality): normalize safe core regexes"
+          git push origin HEAD:chore/phase4-batch9-safe-regex-normalize-20260915
