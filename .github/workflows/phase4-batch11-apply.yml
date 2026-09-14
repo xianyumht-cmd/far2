@@ -1,0 +1,139 @@
+name: Phase4 Batch11 Apply
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch11-evidence-regex-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply exact Batch11 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            core/src/services/qq-unknown-item-context-evidence.js
+            core/src/services/qq-seed-config-learner.js
+            core/src/services/qq-seed-batch-evidence.js
+          )
+          core_files=(
+            src/services/qq-unknown-item-context-evidence.js
+            src/services/qq-seed-config-learner.js
+            src/services/qq-seed-batch-evidence.js
+          )
+
+          set +e
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/batch11-before.json
+          before_status=$?
+          set -e
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const rows = JSON.parse(fs.readFileSync('/tmp/batch11-before.json', 'utf8'));
+          const messages = [];
+          for (const row of rows) {
+            const file = path.relative(process.cwd(), row.filePath).replaceAll('\\', '/');
+            for (const m of row.messages || []) if (m.ruleId) messages.push({ file, ...m });
+          }
+          if (messages.length !== 16) throw new Error(`expected exactly 16 findings, got ${messages.length}: ${JSON.stringify(messages)}`);
+          const rules = new Map();
+          let fixable = 0;
+          for (const m of messages) {
+            rules.set(m.ruleId, (rules.get(m.ruleId) || 0) + 1);
+            if (m.fix) fixable += 1;
+          }
+          const expected = new Map([
+            ['no-labels', 8],
+            ['regexp/use-ignore-case', 3],
+            ['regexp/prefer-w', 1],
+            ['regexp/no-useless-non-capturing-group', 4],
+          ]);
+          if (rules.size !== expected.size) throw new Error(`unexpected rule set: ${JSON.stringify([...rules])}`);
+          for (const [rule, count] of expected) {
+            if (rules.get(rule) !== count) throw new Error(`expected ${count} ${rule}, got ${rules.get(rule) || 0}`);
+          }
+          if (fixable !== 8) throw new Error(`expected exactly 8 fixable findings, got ${fixable}`);
+          for (const m of messages) {
+            if (m.ruleId === 'no-labels') {
+              if (m.fix) throw new Error(`no-labels unexpectedly fixable at ${m.file}:${m.line}`);
+            } else if (!m.fix) {
+              throw new Error(`${m.ruleId} unexpectedly lacks fixer at ${m.file}:${m.line}`);
+            }
+          }
+          console.log('preflight PASS: 16 findings = 8 approved autofixes + 8 preserved no-labels');
+          NODE
+          test "$before_status" -ne 0
+
+          pnpm -C core exec eslint "${core_files[@]}" --fix || true
+          set +e
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/batch11-after.json
+          after_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = JSON.parse(fs.readFileSync('/tmp/batch11-after.json', 'utf8'));
+          const messages = rows.flatMap(row => row.messages || []).filter(m => m.ruleId);
+          if (messages.length !== 8) throw new Error(`expected exactly 8 preserved findings after fix, got ${messages.length}: ${JSON.stringify(messages)}`);
+          if (messages.some(m => m.ruleId !== 'no-labels')) throw new Error(`unexpected post-fix rule: ${JSON.stringify(messages)}`);
+          if (messages.some(m => m.fix)) throw new Error(`post-fix no-labels unexpectedly fixable: ${JSON.stringify(messages)}`);
+          console.log('post-fix PASS: only 8 pre-existing no-labels findings remain');
+          NODE
+          test "$after_status" -ne 0
+
+          mapfile -t product_changed < <(git diff --name-only | grep -vE '^[^/]+\.cmd$' || true)
+          printf 'product diff before verify:\n%s\n' "${product_changed[*]}"
+          test "${#product_changed[@]}" -eq 3
+          for file in "${files[@]}"; do
+            printf '%s\n' "${product_changed[@]}" | grep -Fxq "$file"
+            git diff --check -- "$file"
+          done
+
+      - name: Verify repository
+        run: pnpm verify
+
+      - name: Diff integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$|^core/src/services/qq-unknown-item-context-evidence\.js$|^core/src/services/qq-seed-config-learner\.js$|^core/src/services/qq-seed-batch-evidence\.js$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
+          git diff --check -- \
+            core/src/services/qq-unknown-item-context-evidence.js \
+            core/src/services/qq-seed-config-learner.js \
+            core/src/services/qq-seed-batch-evidence.js
+          git status --short
+
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            core/src/services/qq-unknown-item-context-evidence.js \
+            core/src/services/qq-seed-config-learner.js \
+            core/src/services/qq-seed-batch-evidence.js
+          git commit -m "chore(quality): normalize evidence scanning regexes"
+          git push origin HEAD:chore/phase4-batch11-evidence-regex-20260915
