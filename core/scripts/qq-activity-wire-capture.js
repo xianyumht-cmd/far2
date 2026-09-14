@@ -201,7 +201,7 @@ function readVarint(buf, start) {
     let pos = start;
     while (pos < buf.length && pos < start + 10) {
         const byte = buf[pos++];
-        value += (byte & 0x7f) * mul;
+        value += (byte & 0x7F) * mul;
         if ((byte & 0x80) === 0) return { value, next: pos };
         mul *= 128;
     }
@@ -234,7 +234,7 @@ function parseWire(buf) {
             let text = '';
             try {
                 const candidate = bytes.toString('utf8');
-                if (/^[\x20-\x7e\u4e00-\u9fff]+$/u.test(candidate)) text = candidate;
+                if (/^[\x20-\x7E\u4E00-\u9FFF]+$/u.test(candidate)) text = candidate;
             } catch {}
             fields.push({ field, wire, length: len.value, bytes: bytes.toString('hex'), text });
             pos += len.value;
