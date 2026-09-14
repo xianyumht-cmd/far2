@@ -40,6 +40,10 @@ function main() {
         return originalLoad.call(this, request, parent, isMain);
     };
 
+    const originalBootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+    const bootstrapPassword = 'FAR2-Phase1-Selftest-9!';
+    process.env.ADMIN_BOOTSTRAP_PASSWORD = bootstrapPassword;
+
     try {
         const userStore = require('../src/models/user-store');
 
@@ -52,7 +56,14 @@ function main() {
         const users = JSON.parse(fs.readFileSync(usersFile, 'utf8'));
         assert.equal(users.users.length, 1);
         assert.equal(users.users[0].username, 'admin');
+        assert.equal(users.users[0].role, 'admin');
+        assert.notEqual(users.users[0].password, 'admin');
         assert.equal(listTempFiles(dataDir).length, 0, 'atomic writer must not leave temp files');
+
+        const fixedDefaultLogin = userStore.validateUser('admin', 'admin', '127.0.0.8');
+        assert.equal(fixedDefaultLogin.error, 'invalid_credentials', 'legacy admin/admin login must be rejected');
+        const bootstrapLogin = userStore.validateUser('admin', bootstrapPassword, '127.0.0.9');
+        assert.equal(bootstrapLogin.role, 'admin', 'configured bootstrap credential must work');
 
         userStore.validateUser('admin', 'wrong-password', '127.0.0.10');
         const attempts = JSON.parse(fs.readFileSync(attemptsFile, 'utf8'));
@@ -124,6 +135,10 @@ function main() {
         console.log('✅ login log remains non-critical while its writer is atomic');
     } finally {
         Module._load = originalLoad;
+        if (originalBootstrapPassword === undefined)
+            delete process.env.ADMIN_BOOTSTRAP_PASSWORD;
+        else
+            process.env.ADMIN_BOOTSTRAP_PASSWORD = originalBootstrapPassword;
         fs.rmSync(root, { recursive: true, force: true });
     }
 }
