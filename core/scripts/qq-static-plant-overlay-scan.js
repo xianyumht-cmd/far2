@@ -96,7 +96,7 @@ function maybeDecompress(buffer) {
     const variants = [];
     if (!buffer || buffer.length < 2) return variants;
     try {
-        if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+        if (buffer[0] === 0x1F && buffer[1] === 0x8B) {
             variants.push({ layer: 'gzip', buffer: zlib.gunzipSync(buffer, { maxOutputLength: 128 * 1024 * 1024 }) });
         } else if (buffer[0] === 0x78) {
             variants.push({ layer: 'zlib', buffer: zlib.inflateSync(buffer, { maxOutputLength: 128 * 1024 * 1024 }) });
@@ -129,7 +129,7 @@ function sanitizeSnippet(value) {
         .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
         .replace(/https?:\/\/[^\s"']+/gi, '[URL]')
         .replace(/(?:authorization|token|ticket|session|openid|code)\s*[:=]\s*["']?[^\s,"'}]{12,}/gi, '$1=[MASKED]')
-        .replace(/[A-Za-z0-9+/_=-]{64,}/g, '[LONG_VALUE_MASKED]')
+        .replace(/[\w+/=-]{64,}/g, '[LONG_VALUE_MASKED]')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 2200);
