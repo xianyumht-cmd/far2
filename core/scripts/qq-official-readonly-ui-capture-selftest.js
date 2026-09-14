@@ -11,7 +11,7 @@ function vi(value) {
     let n = Number(value) || 0;
     const out = [];
     do {
-        let b = n & 0x7f;
+        let b = n & 0x7F;
         n = Math.floor(n / 128);
         if (n > 0) b |= 0x80;
         out.push(b);

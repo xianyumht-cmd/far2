@@ -133,7 +133,7 @@ function encodeVarint(value) {
     if (!Number.isSafeInteger(n) || n < 0) throw new Error(`invalid varint: ${value}`);
     const out = [];
     do {
-        let byte = n & 0x7f;
+        let byte = n & 0x7F;
         n = Math.floor(n / 128);
         if (n > 0) byte |= 0x80;
         out.push(byte);
@@ -152,7 +152,7 @@ function readVarint(buf, start) {
 
     while (pos < buf.length && pos < start + 10) {
         const byte = BigInt(buf[pos++]);
-        value |= (byte & 0x7fn) << shift;
+        value |= (byte & 0x7Fn) << shift;
         if ((byte & 0x80n) === 0n) {
             return {
                 value: value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : value.toString(),

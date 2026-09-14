@@ -220,7 +220,7 @@ function readVarint(buf, start) {
     let pos = start;
     while (pos < buf.length && pos < start + 10) {
         const byte = buf[pos++];
-        value += (byte & 0x7f) * mul;
+        value += (byte & 0x7F) * mul;
         if ((byte & 0x80) === 0) return { value, next: pos };
         mul *= 128;
     }
@@ -232,7 +232,7 @@ function printableText(bytes) {
     try {
         const text = bytes.toString('utf8');
         if (!text || text.includes('\uFFFD')) return '';
-        if (/^[\x20-\x7e\u3000-\u303f\u3400-\u9fff\uf900-\ufaff\r\n\t]+$/u.test(text)) return text;
+        if (/^[\x20-\x7E\u3000-\u303F\u3400-\u9FFF\uF900-\uFAFF\r\n\t]+$/u.test(text)) return text;
     } catch {}
     return '';
 }
