@@ -53,7 +53,16 @@
     "package:linux": "pnpm build:web && pnpm -C core build:linux",
     "package:mac": "pnpm build:web && pnpm -C core build:mac",
     "package:release": "pnpm build:web && pnpm -C core build:release",
-    "install:all": "pnpm install -r"
+    "install:all": "pnpm install -r",
+    "lint:baseline": "node scripts/lint-baseline-check.mjs",
+    "lint:fix": "pnpm lint:fix:core && pnpm lint:fix:web",
+    "lint:fix:core": "pnpm -C core lint:fix",
+    "lint:fix:web": "pnpm -C web lint:fix",
+    "typecheck": "pnpm -C web typecheck",
+    "test": "pnpm -C core test",
+    "test:security": "pnpm -C core test:security",
+    "test:regression": "pnpm -C core test:regression",
+    "verify": "pnpm lint:baseline && pnpm typecheck && pnpm test && pnpm build"
   },
   "pnpm": {
     "overrides": {
