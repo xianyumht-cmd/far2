@@ -23,8 +23,7 @@ function registerCatalogApi(app, options = {}) {
         const key = String(accountId || '');
         const previous = accountQueues.get(key) || Promise.resolve();
         const run = previous.catch(() => {}).then(task);
-        let tracked;
-        tracked = run.finally(() => {
+        const tracked = run.finally(() => {
             if (accountQueues.get(key) === tracked) accountQueues.delete(key);
         });
         accountQueues.set(key, tracked);
