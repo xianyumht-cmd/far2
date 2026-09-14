@@ -1,5 +1,6 @@
 const express = require('express');
 const { registerCodeManagerApi } = require('./code-manager-api');
+const { registerUpdateApi } = require('./update-api');
 
 function installCodeManagerApiHook(provider) {
     const proto = express.application;
@@ -71,6 +72,7 @@ function installCodeManagerApiHook(provider) {
                 getAccessibleAccountIds,
                 handleApiError,
             });
+            registerUpdateApi(this);
         }
         return result;
     };
