@@ -28,6 +28,8 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000;
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const MAX_ATTEMPTS_PER_IP = 10;
+const FAILED_ATTEMPT_RETENTION = LOCKOUT_DURATION;
+const MAX_LOGIN_ATTEMPT_ENTRIES = 4096;
 
 let loginAttempts = {};
 let loginLogs = [];
@@ -126,6 +128,7 @@ function loadLoginAttempts() {
 function saveLoginAttempts() {
     try {
         ensureDataDir();
+        pruneLoginAttempts();
         writeJsonFileAtomic(LOGIN_ATTEMPTS_FILE, loginAttempts);
     } catch (e) {
         console.error('保存登录尝试记录失败:', e.message);
@@ -133,22 +136,72 @@ function saveLoginAttempts() {
     }
 }
 
-function cleanExpiredAttempts() {
-    const now = Date.now();
+function getAttemptTimestamp(attempt) {
+    if (!attempt || typeof attempt !== 'object') return 0;
+    const values = [attempt.lastAttempt, attempt.windowStart, attempt.firstAttempt]
+        .map(value => Number(value || 0))
+        .filter(value => Number.isFinite(value) && value > 0);
+    return values.length > 0 ? Math.max(...values) : 0;
+}
+
+function pruneLoginAttempts(now = Date.now()) {
     let cleaned = false;
-    
+
     for (const key of Object.keys(loginAttempts)) {
         const attempt = loginAttempts[key];
-        if (attempt.lockedUntil && attempt.lockedUntil < now) {
+        if (!attempt || typeof attempt !== 'object' || Array.isArray(attempt)) {
             delete loginAttempts[key];
             cleaned = true;
-        } else if (attempt.windowStart && (now - attempt.windowStart) > RATE_LIMIT_WINDOW) {
+            continue;
+        }
+
+        const lockedUntil = Number(attempt.lockedUntil || 0);
+        if (lockedUntil > 0 && lockedUntil <= now) {
             delete loginAttempts[key];
+            cleaned = true;
+            continue;
+        }
+
+        if (key.startsWith('ip:')) {
+            const windowStart = Number(attempt.windowStart || 0);
+            if (!Number.isFinite(windowStart) || windowStart <= 0 || (now - windowStart) > RATE_LIMIT_WINDOW) {
+                delete loginAttempts[key];
+                cleaned = true;
+            }
+            continue;
+        }
+
+        if (key.startsWith('user:') && lockedUntil <= 0) {
+            const lastAttempt = getAttemptTimestamp(attempt);
+            if (!lastAttempt || (now - lastAttempt) > FAILED_ATTEMPT_RETENTION) {
+                delete loginAttempts[key];
+                cleaned = true;
+            }
+        }
+    }
+
+    const keys = Object.keys(loginAttempts);
+    if (keys.length > MAX_LOGIN_ATTEMPT_ENTRIES) {
+        const candidates = keys
+            .map(key => ({ key, attempt: loginAttempts[key] }))
+            .sort((left, right) => {
+                const leftLocked = Number(left.attempt?.lockedUntil || 0) > now ? 1 : 0;
+                const rightLocked = Number(right.attempt?.lockedUntil || 0) > now ? 1 : 0;
+                if (leftLocked !== rightLocked) return leftLocked - rightLocked;
+                return getAttemptTimestamp(left.attempt) - getAttemptTimestamp(right.attempt);
+            });
+        const excess = keys.length - MAX_LOGIN_ATTEMPT_ENTRIES;
+        for (let index = 0; index < excess; index++) {
+            delete loginAttempts[candidates[index].key];
             cleaned = true;
         }
     }
-    
-    if (cleaned) saveLoginAttempts();
+
+    return cleaned;
+}
+
+function cleanExpiredAttempts() {
+    if (pruneLoginAttempts()) saveLoginAttempts();
 }
 
 function checkRateLimit(ip) {
@@ -211,7 +264,7 @@ function recordFailedAttempt(username) {
     const now = Date.now();
     
     if (!loginAttempts[userKey]) {
-        loginAttempts[userKey] = { count: 1, firstAttempt: now };
+        loginAttempts[userKey] = { count: 1, firstAttempt: now, lastAttempt: now };
     } else {
         loginAttempts[userKey].count++;
         loginAttempts[userKey].lastAttempt = now;
