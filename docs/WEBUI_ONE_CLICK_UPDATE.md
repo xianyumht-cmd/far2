@@ -96,3 +96,9 @@ The Update Agent records its PID and start time. If FAR2 observes an active chec
 - the next `一键升级` first hard-resets to the recorded previous verified commit, reinstalls the frozen dependency graph, rebuilds the WebUI, verifies the restored SHA, and only then retries the normal update transaction
 - `检查更新` is blocked while recovery is required so it cannot hide an incomplete prior transaction
 - automatic recovery never deletes arbitrary untracked user files
+
+## Restart session and bootstrap health
+
+FAR2 authentication tokens are intentionally process-local. A successful service restart invalidates the browser's old token. The upgrade page treats the first post-restart 401 as the expected session boundary: it stops polling, clears stale local session state, redirects to login, and returns to `/system-update` after a successful login.
+
+The first-time Windows bootstrap also verifies real HTTP readiness instead of trusting the NSSM `Running` state alone. After restart it polls loopback `/api/ping` and requires the reported FAR2 version to match the just-installed `core/package.json` version before declaring one-click update enabled. The ping response is deliberately minimal (`ok`, uptime, version) and contains no account/configuration data.
