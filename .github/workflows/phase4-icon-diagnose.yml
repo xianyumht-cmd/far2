@@ -30,24 +30,34 @@ jobs:
             echo "--- $name ---"
             grep -RIn --exclude-dir=node_modules --exclude-dir=dist -- "i-carbon-$name\|carbon-$name" web/src web/uno.config.ts || true
           done
+          echo '=== DYNAMIC / NEIGHBORING CANDIDATES ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E "i-carbon-(circle-dash|renew|restart)|getOpIcon|animate-spin" web/src || true
       - name: Inspect installed Carbon collection
         shell: bash
+        working-directory: web
         run: |
           node <<'NODE'
           const { icons } = require('@iconify-json/carbon')
           const names = Object.keys(icons.icons)
-          const targets = ['leaf','crown','health-status','circle','list-blocked','paw','user-offline','circle-dash-function','circle-dash-string','circle-dash-return','renew-animate-spin','restart-animate-spin']
-          const score = (a,b) => {
-            let i = 0
-            while (i < a.length && i < b.length && a[i] === b[i]) i++
-            return Math.abs(a.length-b.length) - i * 2
+          const targets = ['leaf','crown','health-status','circle','list-blocked','paw','user-offline','circle-dash','circle-dash-function','circle-dash-string','circle-dash-return','renew','renew-animate-spin','restart','restart-animate-spin']
+          const tokenSet = target => new Set(target.split('-'))
+          const score = (name, target) => {
+            const a = tokenSet(name)
+            const b = tokenSet(target)
+            let common = 0
+            for (const token of a) if (b.has(token)) common++
+            return -(common * 20) + Math.abs(name.length - target.length)
           }
           console.log('=== COLLECTION CHECK ===')
           for (const target of targets) {
             const related = names
-              .filter(n => n.includes(target.split('-')[0]) || target.includes(n.split('-')[0]))
+              .filter(n => {
+                const a = tokenSet(n)
+                const b = tokenSet(target)
+                return [...a].some(token => b.has(token))
+              })
               .sort((a,b) => score(a,target)-score(b,target) || a.localeCompare(b))
-              .slice(0,12)
+              .slice(0,16)
             console.log(JSON.stringify({ target, exists: Object.hasOwn(icons.icons, target), related }))
           }
           NODE
