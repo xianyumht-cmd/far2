@@ -1,0 +1,115 @@
+name: Phase4 Batch12 Apply
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch12-static-scan-regex-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply exact Batch12 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='core/scripts/qq-static-plant-overlay-scan.js'
+          core_file='scripts/qq-static-plant-overlay-scan.js'
+
+          set +e
+          pnpm -C core exec eslint "$core_file" --format json > /tmp/batch12-before.json
+          before_status=$?
+          set -e
+          node <<'NODE'
+          const fs=require('node:fs');
+          const rows=JSON.parse(fs.readFileSync('/tmp/batch12-before.json','utf8'));
+          const messages=rows.flatMap(r=>r.messages||[]).filter(m=>m.ruleId);
+          if(messages.length!==12) throw new Error(`expected 12 findings, got ${messages.length}: ${JSON.stringify(messages)}`);
+          const rules=new Map(); let fixable=0;
+          for(const m of messages){rules.set(m.ruleId,(rules.get(m.ruleId)||0)+1); if(m.fix)fixable++;}
+          const expected=new Map([
+            ['unicorn/number-literal-case',2],
+            ['no-control-regex',1],
+            ['unicorn/escape-case',1],
+            ['regexp/control-character-escape',2],
+            ['regexp/no-useless-dollar-replacements',1],
+            ['regexp/prefer-w',1],
+            ['regexp/use-ignore-case',1],
+            ['no-labels',3],
+          ]);
+          if(rules.size!==expected.size) throw new Error(`unexpected rule set: ${JSON.stringify([...rules])}`);
+          for(const [rule,count] of expected) if(rules.get(rule)!==count) throw new Error(`expected ${count} ${rule}, got ${rules.get(rule)||0}`);
+          if(fixable!==7) throw new Error(`expected 7 fixable findings, got ${fixable}`);
+          const approved=new Set(['unicorn/number-literal-case','unicorn/escape-case','regexp/control-character-escape','regexp/prefer-w','regexp/use-ignore-case']);
+          for(const m of messages){
+            if(approved.has(m.ruleId)){ if(!m.fix) throw new Error(`${m.ruleId} unexpectedly lacks fixer`); }
+            else if(m.fix) throw new Error(`${m.ruleId} unexpectedly fixable`);
+          }
+          console.log('preflight PASS: 12 findings = 7 approved autofixes + 5 preserved findings');
+          NODE
+          test "$before_status" -ne 0
+
+          pnpm -C core exec eslint "$core_file" --fix || true
+          set +e
+          pnpm -C core exec eslint "$core_file" --format json > /tmp/batch12-after.json
+          after_status=$?
+          set -e
+          node <<'NODE'
+          const fs=require('node:fs');
+          const rows=JSON.parse(fs.readFileSync('/tmp/batch12-after.json','utf8'));
+          const messages=rows.flatMap(r=>r.messages||[]).filter(m=>m.ruleId);
+          if(messages.length!==5) throw new Error(`expected 5 preserved findings, got ${messages.length}: ${JSON.stringify(messages)}`);
+          const rules=new Map(); for(const m of messages) rules.set(m.ruleId,(rules.get(m.ruleId)||0)+1);
+          const expected=new Map([['no-control-regex',1],['regexp/no-useless-dollar-replacements',1],['no-labels',3]]);
+          if(rules.size!==expected.size) throw new Error(`unexpected post-fix rule set: ${JSON.stringify([...rules])}`);
+          for(const [rule,count] of expected) if(rules.get(rule)!==count) throw new Error(`expected post-fix ${count} ${rule}, got ${rules.get(rule)||0}`);
+          if(messages.some(m=>m.fix)) throw new Error(`preserved findings unexpectedly fixable: ${JSON.stringify(messages)}`);
+          console.log('post-fix PASS: only 5 approved pre-existing non-fixable findings remain');
+          NODE
+          test "$after_status" -ne 0
+
+          mapfile -t product_changed < <(git diff --name-only | grep -vE '^[^/]+\.cmd$' || true)
+          test "${#product_changed[@]}" -eq 1
+          test "${product_changed[0]}" = "$file"
+          git diff --check -- "$file"
+
+      - name: Verify repository
+        run: pnpm verify
+
+      - name: Diff integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$|^core/scripts/qq-static-plant-overlay-scan\.js$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
+          git diff --check -- core/scripts/qq-static-plant-overlay-scan.js
+          git status --short
+
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/scripts/qq-static-plant-overlay-scan.js
+          git commit -m "chore(quality): normalize static plant scan literals"
+          git push origin HEAD:chore/phase4-batch12-static-scan-regex-20260915
