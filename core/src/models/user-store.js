@@ -68,7 +68,7 @@ function loadLoginLogs() {
         ensureDataDir();
         const data = readJsonFile(LOGIN_LOGS_FILE, () => ({ logs: [] }));
         loginLogs = Array.isArray(data.logs) ? data.logs : [];
-    } catch (e) {
+    } catch {
         loginLogs = [];
     }
 }

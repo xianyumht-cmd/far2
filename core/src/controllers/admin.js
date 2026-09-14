@@ -1,4 +1,3 @@
-const crypto = require('node:crypto');
 /**
  * 管理面板 HTTP 服务
  * 改写为接收 DataProvider 模式
@@ -22,7 +21,6 @@ const { MiniProgramLoginSession } = require('../services/qrlogin');
 const { getSchedulerRegistrySnapshot } = require('../services/scheduler');
 const userStore = require('../models/user-store');
 
-const hashPassword = (pwd) => crypto.createHash('sha256').update(String(pwd || '')).digest('hex');
 const adminLogger = createModuleLogger('admin');
 
 let app = null;
@@ -813,7 +811,7 @@ function startAdminServer(dataProvider) {
             if (provider && typeof provider.getFriends === 'function') {
                 friendsList = await provider.getFriends(id) || [];
             }
-        } catch (e) {
+        } catch {
             // 忽略获取好友列表失败
         }
         
@@ -873,7 +871,7 @@ function startAdminServer(dataProvider) {
             if (provider && typeof provider.getFriends === 'function') {
                 friendsList = await provider.getFriends(id) || [];
             }
-        } catch (e) {
+        } catch {
             // 忽略获取好友列表失败
         }
         
