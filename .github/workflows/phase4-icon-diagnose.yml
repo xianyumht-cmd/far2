@@ -1,18 +1,22 @@
-name: Phase4 Icon Diagnose
+name: Phase4 Icon Cleanup Verify
 
 on:
   push:
     branches:
       - chore/phase4-cleanup-batch2-icons-20260914
+    paths:
+      - .github/workflows/phase4-icon-diagnose.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  diagnose:
+  verify-and-apply:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.2
@@ -21,67 +25,122 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Locate invalid icon requests
+      - name: Apply exact icon cleanup
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              'web/src/stores/app.ts': [
+                  ('i-carbon-leaf', 'i-carbon-sprout', 1),
+                  ('i-carbon-crown', 'i-carbon-trophy', 1),
+              ],
+              'web/src/router/menu.ts': [
+                  ('i-carbon-health-status', 'i-carbon-crop-health', 1),
+              ],
+              'web/src/views/HealthCenter.vue': [
+                  ('i-carbon-health-status', 'i-carbon-crop-health', 1),
+              ],
+              'web/src/views/Dashboard.vue': [
+                  ('i-carbon-circle text-amber-500', 'i-carbon-circle-filled text-amber-500', 1),
+              ],
+              'web/src/views/Friends.vue': [
+                  ('i-carbon-list-blocked', 'i-carbon-locked-and-blocked', 2),
+                  ('i-carbon-user-offline', 'i-carbon-user-profile', 1),
+              ],
+              'web/src/views/Personal.vue': [
+                  ('i-carbon-paw', 'i-carbon-pet-image-o', 1),
+              ],
+              'web/src/components/DogPanel.vue': [
+                  ('i-carbon-paw', 'i-carbon-pet-image-o', 1),
+              ],
+              'web/src/components/FarmPanel.vue': [
+                  ('i-carbon-user-offline', 'i-carbon-user-profile', 1),
+              ],
+              'web/src/components/TaskPanel.vue': [
+                  ('i-carbon-user-offline', 'i-carbon-user-profile', 1),
+              ],
+          }
+
+          for filename, edits in replacements.items():
+              path = Path(filename)
+              text = path.read_text(encoding='utf-8')
+              for old, new, expected in edits:
+                  actual = text.count(old)
+                  if actual != expected:
+                      raise SystemExit(f'{filename}: expected {expected} occurrences of {old!r}, found {actual}')
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+
+          uno = Path('web/uno.config.ts')
+          text = uno.read_text(encoding='utf-8')
+          anchor = "  safelist: carbonIconNames.map(iconName => `i-carbon-${iconName}`),\n"
+          if text.count(anchor) != 1:
+              raise SystemExit('web/uno.config.ts: safelist anchor mismatch')
+          block = """  blocklist: [
+            'i-carbon-circle-dash-function',
+            'i-carbon-circle-dash-string',
+            'i-carbon-circle-dash-return',
+            'i-carbon-renew-animate-spin',
+            'i-carbon-restart-animate-spin',
+          ],
+"""
+          text = text.replace(anchor, anchor + block)
+          uno.write_text(text, encoding='utf-8')
+          PY
+      - name: Assert invalid literal icons are gone
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== SOURCE OCCURRENCES ==='
-          for name in leaf crown health-status circle list-blocked paw user-offline circle-dash-function circle-dash-string circle-dash-return renew-animate-spin restart-animate-spin; do
-            echo "--- $name ---"
-            grep -RIn --exclude-dir=node_modules --exclude-dir=dist -- "i-carbon-$name\|carbon-$name" web/src web/uno.config.ts || true
-          done
-          echo '=== DYNAMIC / NEIGHBORING CANDIDATES ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E "i-carbon-(circle-dash|renew|restart)|getOpIcon|animate-spin" web/src || true
-      - name: Inspect installed Carbon collection
+          if grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E 'i-carbon-(leaf|crown|health-status|circle[ "\x27]|list-blocked|paw|user-offline)' web/src; then
+            echo 'Invalid literal Carbon icon remains.' >&2
+            exit 1
+          fi
+      - name: Verify Carbon replacements exist
         shell: bash
         working-directory: web
         run: |
           node <<'NODE'
           const { icons } = require('@iconify-json/carbon')
-          const names = Object.keys(icons.icons)
-          console.log('=== SEMANTIC CANDIDATES ===')
-          for (const keyword of ['star','trophy','award','medal','badge','dog','pet','animal','health','status','blocked','lock','offline','user','circle','sprout','tree']) {
-            const matches = names.filter(n => n.includes(keyword)).slice(0,80)
-            console.log(`${keyword}: ${matches.join(',')}`)
+          for (const name of ['sprout','trophy','crop-health','circle-filled','locked-and-blocked','pet-image-o','user-profile','circle-dash','renew','restart']) {
+            if (!Object.hasOwn(icons.icons, name)) throw new Error(`Missing Carbon icon: ${name}`)
           }
-          console.log('=== EXACT CANDIDATES ===')
-          for (const name of ['sprout','tree','star','star-filled','trophy','badge','crop-health','health-cross','status-resolved','circle-dash','circle-filled','circle-outline','locked-and-blocked','user','user-profile','user-avatar','user-online','renew','restart']) {
-            console.log(`${name}=${Object.hasOwn(icons.icons, name)}`)
-          }
+          console.log('Carbon replacement icons: PASS')
           NODE
-      - name: Isolate UnoCSS extraction
+      - name: Require warning-free Web build
         shell: bash
-        working-directory: web
         run: |
-          node <<'NODE'
-          const { createGenerator } = require('@unocss/core')
-          const { presetIcons } = require('unocss')
-          const samples = {
-            tsFallback: "function getOpIcon(key: string | number) { return OP_META[String(key)]?.icon || 'i-carbon-circle-dash' }",
-            staticSpin: '<div class="i-carbon-renew mr-2 animate-spin text-xl" />',
-            boundSpin: '<div class="i-carbon-renew" :class="loading ? \'animate-spin\' : \'\'" />',
-            restartBound: '<div class="i-carbon-restart" :class="loading ? \'animate-spin\' : \'\'" />',
-          }
-          ;(async () => {
-            for (const [label, source] of Object.entries(samples)) {
-              const requested = []
-              const uno = await createGenerator({
-                presets: [presetIcons({
-                  collections: {
-                    carbon: async name => {
-                      requested.push(name)
-                      return '<svg viewBox="0 0 16 16"></svg>'
-                    },
-                  },
-                })],
-              })
-              await uno.generate(source)
-              console.log(JSON.stringify({ label, requested: [...new Set(requested)] }))
-            }
-          })().catch(error => {
-            console.error(error)
-            process.exitCode = 1
-          })
-          NODE
-      - name: Reproduce Web build warnings
-        run: pnpm -C web build
+          set -o pipefail
+          pnpm -C web build 2>&1 | tee /tmp/web-build.log
+          if grep -F '[unocss] failed to load icon' /tmp/web-build.log; then
+            echo 'UnoCSS icon warnings remain.' >&2
+            exit 1
+          fi
+      - name: Run canonical verification
+        run: pnpm verify
+      - name: Integrity checks
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --short -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml)"
+          git status --short
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            web/uno.config.ts \
+            web/src/stores/app.ts \
+            web/src/router/menu.ts \
+            web/src/views/HealthCenter.vue \
+            web/src/views/Dashboard.vue \
+            web/src/views/Friends.vue \
+            web/src/views/Personal.vue \
+            web/src/components/DogPanel.vue \
+            web/src/components/FarmPanel.vue \
+            web/src/components/TaskPanel.vue
+          git commit -m 'chore(web): replace invalid Carbon icon candidates'
+          git push origin HEAD:chore/phase4-cleanup-batch2-icons-20260914
