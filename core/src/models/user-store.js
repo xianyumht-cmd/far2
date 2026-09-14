@@ -921,62 +921,6 @@ function changePassword(username, oldPassword, newPassword) {
     return { ok: true, message: '密码修改成功' };
 }
 
-// 保存用户微信登录配置
-function saveWxLoginConfig(username, config) {
-    loadUsers();
-    const user = users.find(u => u.username === username);
-    if (!user) {
-        return { ok: false, error: '用户不存在' };
-    }
-
-    user.wxLoginConfig = {
-        ...config,
-        updatedAt: Date.now()
-    };
-
-    saveUsers();
-    return { ok: true, config: user.wxLoginConfig };
-}
-
-// 获取用户微信登录配置
-function getWxLoginConfig(username) {
-    loadUsers();
-    const user = users.find(u => u.username === username);
-    if (!user) {
-        return { ok: false, error: '用户不存在' };
-    }
-
-    return { ok: true, config: user.wxLoginConfig || null };
-}
-
-// 获取用户账号额度
-function getUserAccountLimit(username) {
-    loadUsers();
-    const user = users.find(u => u.username === username);
-    if (!user) {
-        return DEFAULT_ACCOUNT_LIMIT;
-    }
-    return user.accountLimit || DEFAULT_ACCOUNT_LIMIT;
-}
-
-// 检查用户是否可以添加更多账号
-function canAddAccount(username) {
-    loadUsers();
-    const user = users.find(u => u.username === username);
-    if (!user) {
-        return { canAdd: false, current: 0, limit: DEFAULT_ACCOUNT_LIMIT };
-    }
-    
-    // 管理员无限制
-    if (user.role === 'admin') {
-        return { canAdd: true, current: 0, limit: -1 };
-    }
-    
-    const limit = user.accountLimit || DEFAULT_ACCOUNT_LIMIT;
-    // 需要从 store 获取当前账号数量，这里先返回额度信息
-    return { canAdd: true, current: 0, limit };
-}
-
 initDefaultAdmin();
 
 // ============ 卡密领取功能 ============
@@ -1001,14 +945,10 @@ function loadCardClaimRecords() {
 
 function saveCardClaimRecords() {
     ensureDataDir();
-    try {
-        writeJsonFileAtomic(CARD_CLAIM_FILE, {
-            enabled: cardClaimEnabled,
-            records: cardClaimRecords
-        });
-    } catch (e) {
-        throw e;
-    }
+    writeJsonFileAtomic(CARD_CLAIM_FILE, {
+        enabled: cardClaimEnabled,
+        records: cardClaimRecords
+    });
 }
 
 function getCardClaimStatus() {
