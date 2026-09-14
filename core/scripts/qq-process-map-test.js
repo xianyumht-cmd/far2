@@ -60,7 +60,7 @@ function sanitize(text) {
   value = value.replace(new RegExp(`(?<!\\d)${FARM_APP_ID}(?!\\d)`, 'g'), '__FARM_APP_ID__');
   value = value.replace(/(?<!\d)(\d{8,12})(?!\d)/g, m => `${m.slice(0, 2)}****${m.slice(-2)}`);
   value = value.replace(/__FARM_APP_ID__/g, FARM_APP_ID);
-  value = value.replace(/[A-Za-z0-9_-]{32,}/g, '<long-value-redacted>');
+  value = value.replace(/[\w-]{32,}/g, '<long-value-redacted>');
   return value;
 }
 

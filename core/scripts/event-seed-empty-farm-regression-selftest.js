@@ -155,7 +155,7 @@ async function main() {
     getServerTimeSec: () => 1000,
   });
   const result = await orchestrator.runFarmOperation('all');
-  assert.equal(result.actions.some(x => /^种植/u.test(x)), false);
+  assert.equal(result.actions.some(x => x.startsWith('种植')), false);
   assert.equal(records.some(([name]) => name === 'plant'), false);
   console.log('✅ zero real planting no longer reports fake 种植N PASS');
 

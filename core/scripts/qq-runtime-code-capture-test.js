@@ -147,7 +147,7 @@ function readClipboard() {
 
 function isLikelyCode(value) {
   const code = String(value || '').trim();
-  return code.length >= 6 && code.length <= 256 && /^[A-Za-z0-9_-]+$/.test(code) && !/^-\d+$/.test(code);
+  return code.length >= 6 && code.length <= 256 && /^[\w-]+$/.test(code) && !/^-\d+$/.test(code);
 }
 
 async function waitForRuntimeCode(startedAt, timeoutMs = 90000) {
