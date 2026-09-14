@@ -84,7 +84,7 @@ function buildRuntimeHealth(options = {}) {
         const friendImported = friend.imported === true || (friendGidCount || 0) > 0 || (friendOpenIdCount || 0) > 0;
         const recentEvents = accountEvents
             .filter(entry => String(entry.accountId || '') === accountId)
-            .filter(entry => /^(code_refresh_|ws_400|kickout)/.test(String(entry.action || '')))
+            .filter(entry => /^(?:code_refresh_|ws_400|kickout)/.test(String(entry.action || '')))
             .slice(0, 6)
             .map(entry => ({
                 time: String(entry.time || ''),
