@@ -1,0 +1,35 @@
+name: Phase4 Batch5 Lint Inventory
+
+on:
+  push:
+    branches:
+      - diag/phase4-batch5-lint-inventory-20260915
+    paths:
+      - .github/workflows/phase4-batch5-lint-inventory.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Collect ESLint JSON
+        shell: bash
+        run: |
+          pnpm -C core exec eslint . --format json > /tmp/core-eslint.json || true
+          pnpm -C web exec eslint "src/**/*.{ts,vue}" --format json > /tmp/web-eslint.json || true
+      - name: Print lint inventory
+        run: node .github/scripts/phase4-batch5-lint-inventory.cjs
