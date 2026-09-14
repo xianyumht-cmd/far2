@@ -1,6 +1,6 @@
 {
   "name": "qq-farm-bot",
-  "version": "2.2.2",
+  "version": "2.3.0",
   "description": "",
   "license": "ISC",
   "author": "",
@@ -75,7 +75,8 @@
     "security:phase2-selftest": "node scripts/security-phase2-selftest.js && node scripts/security-phase1-selftest.js && node scripts/user-store-persistence-selftest.js",
     "lint:fix": "eslint . --fix",
     "test:security": "pnpm security:phase2-selftest && pnpm persistence:critical-json-selftest && pnpm persistence:user-card-transaction-selftest",
-    "test:regression": "pnpm startup:scope-selftest && pnpm startup:crop-registry-selftest && pnpm illustrated:proto-selftest && pnpm catalog:actions-selftest && pnpm land:controls-selftest && pnpm planting:2x2-selftest && pnpm mutation:readonly-selftest && pnpm friend:mutation-selftest && pnpm bag:use-ux-selftest && pnpm dog:readonly-selftest && pnpm career:readonly-selftest && pnpm avatar-frame:readonly-selftest && pnpm activity:readonly-selftest && pnpm farm:land-analyzer-selftest && pnpm farm:api-selftest && pnpm farm:fertilizer-selftest && pnpm planting:service-selftest && pnpm farm:orchestrator-selftest && pnpm farm:scheduler-selftest && pnpm farm:query-selftest && pnpm qr:runtime-code-throttle-selftest && pnpm qr:code-manager-selftest && pnpm qr:code-manager-api-selftest && pnpm code:provider-selftest && pnpm test:security"
+    "test:regression": "pnpm startup:scope-selftest && pnpm startup:crop-registry-selftest && pnpm illustrated:proto-selftest && pnpm catalog:actions-selftest && pnpm land:controls-selftest && pnpm planting:2x2-selftest && pnpm mutation:readonly-selftest && pnpm friend:mutation-selftest && pnpm bag:use-ux-selftest && pnpm dog:readonly-selftest && pnpm career:readonly-selftest && pnpm avatar-frame:readonly-selftest && pnpm activity:readonly-selftest && pnpm farm:land-analyzer-selftest && pnpm farm:api-selftest && pnpm farm:fertilizer-selftest && pnpm planting:service-selftest && pnpm farm:orchestrator-selftest && pnpm farm:scheduler-selftest && pnpm farm:query-selftest && pnpm qr:runtime-code-throttle-selftest && pnpm qr:code-manager-selftest && pnpm qr:code-manager-api-selftest && pnpm code:provider-selftest && pnpm test:security && pnpm update:selftest",
+    "update:selftest": "node scripts/release-update-selftest.js"
   },
   "dependencies": {
     "axios": "^1.6.0",

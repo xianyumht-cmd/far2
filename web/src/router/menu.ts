@@ -72,6 +72,14 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Settings.vue'),
   },
   {
+    path: 'system-update',
+    name: 'system-update',
+    label: '升级',
+    icon: 'i-carbon-upgrade',
+    component: () => import('@/views/SystemUpdate.vue'),
+    adminOnly: true,
+  },
+  {
     path: 'admin',
     name: 'admin',
     label: '后台',
