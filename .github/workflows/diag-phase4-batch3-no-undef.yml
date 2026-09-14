@@ -28,11 +28,21 @@ jobs:
         shell: bash
         run: |
           set +e
-          pnpm exec eslint core/src/services/friend.js core/src/services/mall.js --format json > /tmp/eslint.json
+          pnpm -C core exec eslint src/services/friend.js src/services/mall.js --format json > /tmp/eslint.json 2> /tmp/eslint.err
           status=$?
+          echo "ESLINT_STATUS=$status"
+          echo "--- stderr ---"
+          cat /tmp/eslint.err || true
+          echo "--- stdout ---"
+          cat /tmp/eslint.json || true
           node - <<'NODE'
           const fs = require('fs')
-          const reports = JSON.parse(fs.readFileSync('/tmp/eslint.json', 'utf8'))
+          const raw = fs.readFileSync('/tmp/eslint.json', 'utf8').trim()
+          if (!raw.startsWith('[')) {
+            console.log('NO_JSON_REPORT')
+            process.exit(0)
+          }
+          const reports = JSON.parse(raw)
           for (const report of reports) {
             const messages = report.messages.filter(message => message.ruleId === 'no-undef')
             if (!messages.length) continue
