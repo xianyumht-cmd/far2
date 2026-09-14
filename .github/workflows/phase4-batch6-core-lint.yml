@@ -1,0 +1,52 @@
+name: Phase4 Batch6 Core Lint Inventory
+
+on:
+  push:
+    branches:
+      - diag/phase4-batch6-core-lint-20260915
+    paths:
+      - .github/workflows/phase4-batch6-core-lint.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Core ESLint inventory
+        shell: bash
+        run: |
+          pnpm -C core exec eslint . --format json > /tmp/core-eslint.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const rows = JSON.parse(fs.readFileSync('/tmp/core-eslint.json','utf8')).flatMap(file =>
+            (file.messages || []).map(m => ({
+              file: path.relative(process.cwd(), file.filePath).replaceAll('\\','/'),
+              line: m.line || 0,
+              column: m.column || 0,
+              rule: m.ruleId || '(parser)',
+              message: String(m.message || '').replace(/\s+/g,' ').trim(),
+            }))
+          );
+          const tally = fn => [...rows.reduce((m,r) => m.set(fn(r),(m.get(fn(r))||0)+1), new Map()).entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]));
+          console.log(`CORE_TOTAL=${rows.length}`);
+          console.log('TOP_RULES');
+          for (const [k,v] of tally(r=>r.rule).slice(0,30)) console.log(`${v}\t${k}`);
+          console.log('TOP_FILES');
+          for (const [k,v] of tally(r=>r.file).slice(0,40)) console.log(`${v}\t${k}`);
+          console.log('DETAILS');
+          for (const r of rows.slice(0,300)) console.log(`${r.rule}\t${r.file}:${r.line}:${r.column}\t${r.message}`);
+          NODE
