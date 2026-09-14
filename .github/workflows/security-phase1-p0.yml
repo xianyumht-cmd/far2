@@ -1,0 +1,194 @@
+name: FAR2 security phase1 P0
+
+on:
+  push:
+    branches:
+      - fix/security-phase1-p0-20260914
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: ${{ !contains(github.event.head_commit.message, '[phase1-bot]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/security-phase1-p0-20260914
+          fetch-depth: 0
+
+      - name: Apply narrowly scoped P0 fixes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          admin_path = Path('core/src/controllers/admin.js')
+          admin = admin_path.read_text(encoding='utf-8')
+
+          proxy_marker = '    // ============ 微信登录代理 API ============'
+          next_marker = '    // 保存用户微信登录配置'
+          assert admin.count(proxy_marker) == 1, 'unexpected legacy proxy marker count'
+          proxy_start = admin.index(proxy_marker)
+          proxy_end = admin.index(next_marker, proxy_start)
+          admin = admin[:proxy_start] + admin[proxy_end:]
+
+          old_headers = "res.header('Access-Control-Allow-Headers', 'Content-Type, x-account-id, x-admin-token, x-proxy-api-key, x-proxy-api-url, x-proxy-app-id');"
+          new_headers = "res.header('Access-Control-Allow-Headers', 'Content-Type, x-account-id, x-admin-token');"
+          assert old_headers in admin, 'legacy proxy CORS headers not found'
+          admin = admin.replace(old_headers, new_headers, 1)
+
+          old_whitelist = "if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/proxy' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();"
+          new_whitelist = "if (req.path === '/login' || req.path === '/qr/create' || req.path === '/qr/check' || req.path === '/card-claim/status' || req.path === '/card-claim/claim' || req.path === '/game-version') return next();"
+          assert old_whitelist in admin, 'legacy proxy auth whitelist entry not found'
+          admin = admin.replace(old_whitelist, new_whitelist, 1)
+
+          if 'fetch(' not in admin:
+              admin = admin.replace("const fetch = require('node-fetch');\n", '', 1)
+
+          forbidden = ["app.post('/api/proxy'", 'x-proxy-api-url', 'x-proxy-api-key', 'x-proxy-app-id', 'WX_PROXY_API_URL', 'WX_PROXY_API_KEY']
+          for token in forbidden:
+              assert token not in admin, f'legacy proxy token remains: {token}'
+          admin_path.write_text(admin, encoding='utf-8')
+
+          user_store_path = Path('core/src/models/user-store.js')
+          user_store = user_store_path.read_text(encoding='utf-8')
+          start = user_store.index('function initDefaultAdmin() {')
+          end = user_store.index('\nfunction validateUser', start)
+          replacement = r'''function getBootstrapAdminPassword() {
+              const password = String(process.env.ADMIN_BOOTSTRAP_PASSWORD || '');
+              if (!password) {
+                  const error = new Error('No administrator account exists. Set ADMIN_BOOTSTRAP_PASSWORD to a strong password (12+ characters) and restart FAR2.');
+                  error.code = 'admin_bootstrap_password_required';
+                  throw error;
+              }
+
+              const validation = validatePasswordStrength(password);
+              if (password.length < 12 || !validation.valid) {
+                  const error = new Error('ADMIN_BOOTSTRAP_PASSWORD must be at least 12 characters and satisfy the configured password policy.');
+                  error.code = 'admin_bootstrap_password_weak';
+                  throw error;
+              }
+
+              return password;
+          }
+
+          function initDefaultAdmin() {
+              loadUsers();
+              const adminExists = users.some(user => user && user.role === 'admin');
+              if (adminExists) return;
+
+              if (users.some(user => user && user.username === 'admin')) {
+                  const error = new Error('Cannot bootstrap administrator: username "admin" already exists without the admin role.');
+                  error.code = 'admin_bootstrap_username_conflict';
+                  throw error;
+              }
+
+              const bootstrapPassword = getBootstrapAdminPassword();
+              users.push({
+                  username: 'admin',
+                  password: hashPassword(bootstrapPassword),
+                  role: 'admin',
+                  createdAt: Date.now()
+              });
+              saveUsers();
+              console.log('[用户系统] 已使用 ADMIN_BOOTSTRAP_PASSWORD 创建初始管理员账号 admin');
+          }
+          '''
+          user_store = user_store[:start] + replacement + user_store[end:]
+          assert "默认密码: admin" not in user_store
+          assert "const defaultPassword = 'admin'" not in user_store
+          assert 'ADMIN_BOOTSTRAP_PASSWORD' in user_store
+          user_store_path.write_text(user_store, encoding='utf-8')
+
+          persistence_path = Path('core/scripts/user-store-persistence-selftest.js')
+          persistence = persistence_path.read_text(encoding='utf-8')
+          old = """    try {\n        const userStore = require('../src/models/user-store');\n"""
+          new = """    const originalBootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD;\n    const bootstrapPassword = 'FAR2-Phase1-Selftest-9!';\n    process.env.ADMIN_BOOTSTRAP_PASSWORD = bootstrapPassword;\n\n    try {\n        const userStore = require('../src/models/user-store');\n"""
+          assert old in persistence, 'persistence selftest require anchor not found'
+          persistence = persistence.replace(old, new, 1)
+
+          old = """        assert.equal(users.users[0].username, 'admin');\n        assert.equal(listTempFiles(dataDir).length, 0, 'atomic writer must not leave temp files');\n\n        userStore.validateUser('admin', 'wrong-password', '127.0.0.10');\n"""
+          new = """        assert.equal(users.users[0].username, 'admin');\n        assert.equal(users.users[0].role, 'admin');\n        assert.notEqual(users.users[0].password, 'admin');\n        assert.equal(listTempFiles(dataDir).length, 0, 'atomic writer must not leave temp files');\n\n        const fixedDefaultLogin = userStore.validateUser('admin', 'admin', '127.0.0.8');\n        assert.equal(fixedDefaultLogin.error, 'invalid_credentials', 'legacy admin/admin login must be rejected');\n        const bootstrapLogin = userStore.validateUser('admin', bootstrapPassword, '127.0.0.9');\n        assert.equal(bootstrapLogin.role, 'admin', 'configured bootstrap credential must work');\n\n        userStore.validateUser('admin', 'wrong-password', '127.0.0.10');\n"""
+          assert old in persistence, 'persistence selftest admin assertions anchor not found'
+          persistence = persistence.replace(old, new, 1)
+
+          old = """    } finally {\n        Module._load = originalLoad;\n        fs.rmSync(root, { recursive: true, force: true });\n    }\n"""
+          new = """    } finally {\n        Module._load = originalLoad;\n        if (originalBootstrapPassword === undefined)\n            delete process.env.ADMIN_BOOTSTRAP_PASSWORD;\n        else\n            process.env.ADMIN_BOOTSTRAP_PASSWORD = originalBootstrapPassword;\n        fs.rmSync(root, { recursive: true, force: true });\n    }\n"""
+          assert old in persistence, 'persistence selftest cleanup anchor not found'
+          persistence = persistence.replace(old, new, 1)
+          persistence_path.write_text(persistence, encoding='utf-8')
+
+          security_test = r'''const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const root = path.resolve(__dirname, '..');
+          const admin = fs.readFileSync(path.join(root, 'src/controllers/admin.js'), 'utf8');
+          const userStore = fs.readFileSync(path.join(root, 'src/models/user-store.js'), 'utf8');
+
+          for (const token of [
+              "app.post('/api/proxy'",
+              "req.path === '/proxy'",
+              'x-proxy-api-url',
+              'x-proxy-api-key',
+              'x-proxy-app-id',
+              'WX_PROXY_API_URL',
+              'WX_PROXY_API_KEY',
+          ]) {
+              assert.equal(admin.includes(token), false, `retired proxy surface remains: ${token}`);
+          }
+
+          assert.equal(userStore.includes("const defaultPassword = 'admin'"), false, 'fixed admin/admin bootstrap must not return');
+          assert.equal(userStore.includes('默认密码: admin'), false, 'fixed admin password must never be logged');
+          assert.equal(userStore.includes('ADMIN_BOOTSTRAP_PASSWORD'), true, 'secure bootstrap password gate is required');
+          assert.equal(userStore.includes('admin_bootstrap_password_required'), true, 'missing bootstrap password must fail closed');
+          assert.equal(userStore.includes('password.length < 12'), true, 'bootstrap password must have a stronger minimum length');
+
+          console.log('security-phase1-selftest: PASS');
+          '''
+          Path('core/scripts/security-phase1-selftest.js').write_text(security_test, encoding='utf-8')
+
+          package_path = Path('core/package.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          package.setdefault('scripts', {})['security:phase1-selftest'] = 'node scripts/security-phase1-selftest.js && node scripts/user-store-persistence-selftest.js'
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+
+      - name: Syntax and regression verification
+        shell: bash
+        run: |
+          node --check core/src/controllers/admin.js
+          node --check core/src/models/user-store.js
+          node --check core/scripts/security-phase1-selftest.js
+          node --check core/scripts/user-store-persistence-selftest.js
+          node core/scripts/security-phase1-selftest.js
+          node core/scripts/user-store-persistence-selftest.js
+          node core/scripts/critical-json-fail-closed-selftest.js
+          node core/scripts/user-card-transaction-selftest.js
+          git diff --check
+
+      - name: Commit verified P0 fixes and remove temporary workflow
+        shell: bash
+        run: |
+          cat > docs/SECURITY_BOOTSTRAP.md <<'EOF'
+          # Secure administrator bootstrap
+
+          FAR2 no longer creates a fixed `admin / admin` credential on a fresh data directory.
+
+          On a new installation, set `ADMIN_BOOTSTRAP_PASSWORD` to a strong password of at least 12 characters that satisfies FAR2's password policy before starting the service. FAR2 creates the initial `admin` account only when no administrator account exists. Existing installations that already contain an administrator are not changed by this bootstrap gate.
+
+          Do not commit the bootstrap password to Git. Supply it through the deployment environment or secret-management mechanism used by the host.
+
+          The retired legacy WeChat `/api/proxy` path has also been removed. It must not be reintroduced as an unauthenticated arbitrary upstream proxy.
+          EOF
+
+          git rm .github/workflows/security-phase1-p0.yml
+          git config user.name "far2-security-phase1-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add core/src/controllers/admin.js core/src/models/user-store.js core/scripts/user-store-persistence-selftest.js core/scripts/security-phase1-selftest.js core/package.json docs/SECURITY_BOOTSTRAP.md
+          git diff --cached --check
+          git commit -m "fix(security): close phase1 P0 bootstrap and proxy risks [phase1-bot]"
+          git push origin HEAD:fix/security-phase1-p0-20260914
