@@ -1,4 +1,5 @@
 name: Phase4 Batch3 Apply
+# rerun after protobuf-aware regression initialization
 
 on:
   push:
