@@ -58,7 +58,7 @@ function sanitizeSnippet(text) {
 function collectNearbyIdentifiers(snippet) {
     const names = new Set();
     const patterns = [
-        /\b(?:food[_-]?id|foodId|item[_-]?id|itemId|count|num|number|amount|quantity|arg\d*|value\d*)\b/gi,
+        /\b(?:food[_-]?id|item[_-]?id|count|num|number|amount|quantity|arg\d*|value\d*)\b/gi,
         /\bAddFoodRequest\b/g,
         /\bDogService\b/g,
     ];
