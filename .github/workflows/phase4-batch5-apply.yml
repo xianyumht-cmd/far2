@@ -1,0 +1,55 @@
+name: Phase4 Batch5 Apply
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch5-core-unused-cleanup-20260915
+    paths:
+      - .github/workflows/phase4-batch5-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply exact cleanup patch
+        run: python3 .github/scripts/phase4-batch5-apply.py
+      - name: Verify repository
+        run: pnpm verify
+      - name: Diff integrity
+        shell: bash
+        run: |
+          git diff --check
+          test -z "$(git status --porcelain pnpm-lock.yaml)"
+          git status --short
+      - name: Commit verified product changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            core/scripts/qq-session-recovery-test.js \
+            core/src/controllers/admin.js \
+            core/src/controllers/catalog-api.js \
+            core/src/core/worker.js \
+            core/src/models/store.js \
+            core/src/models/user-store.js \
+            core/src/runtime/runtime-engine.js \
+            core/src/services/startup-crop-registry.js \
+            core/src/utils/crypto-wasm.js
+          git commit -m "chore(quality): remove unused core bindings"
+          git push origin HEAD:chore/phase4-batch5-core-unused-cleanup-20260915
