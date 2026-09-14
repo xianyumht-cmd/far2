@@ -4,7 +4,6 @@ const { ensureDataDir } = require('../config/runtime-paths');
 const {
     getAllPlants,
     getItemById,
-    getPlantByFruitId,
     isSeedItem,
 } = require('../config/gameConfig');
 const {

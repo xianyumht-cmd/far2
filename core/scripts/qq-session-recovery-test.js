@@ -70,7 +70,7 @@ async function main() {
   await waitEnter('\n现在关闭“这个账号”的 QQ经典农场窗口，关闭后按 Enter 开始检测离线状态。');
 
   process.stdout.write('等待该 Session 离线');
-  const offline = await waitUntil(() => {
+  await waitUntil(() => {
     const current = getBoundStatus(accountId).binding;
     if (!current) return null;
     if (current.status === 'offline' && current.needsRebind === true) return current;
