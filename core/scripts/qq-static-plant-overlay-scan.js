@@ -128,7 +128,7 @@ function sanitizeSnippet(value) {
     return String(value || '')
         .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
         .replace(/https?:\/\/[^\s"']+/gi, '[URL]')
-        .replace(/(?:authorization|token|ticket|session|openid|code)\s*[:=]\s*["']?[^\s,"'}]{12,}/gi, '$1=[MASKED]')
+        .replace(/(authorization|token|ticket|session|openid|code)\s*[:=]\s*["']?[^\s,"'}]{12,}/gi, '$1=[MASKED]')
         .replace(/[\w+/=-]{64,}/g, '[LONG_VALUE_MASKED]')
         .replace(/\s+/g, ' ')
         .trim()

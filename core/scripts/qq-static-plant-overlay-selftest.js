@@ -20,7 +20,7 @@ function main() {
     const folder = path.join(root, '1112386029_3_fixture');
     fs.mkdirSync(folder, { recursive: true });
 
-    write(folder, 'assets/no-extension-resource', 'const rows=[{seed_id:21037,size:2,name:"多格测试",land_level_need:88}];');
+    write(folder, 'assets/no-extension-resource', 'token=abcdefghijklmnop; const rows=[{seed_id:21037,size:2,name:"多格测试",land_level_need:88}];');
     write(folder, 'assets/plain.bin', Buffer.from('{"seed_id":21050,"size":0,"name":"普通测试"}', 'utf8'));
     write(folder, 'assets/utf16.bytes', Buffer.from('{"seed_id":21221,"size":2,"name":"UTF16测试"}', 'utf16le'));
     write(folder, 'assets/gzip.dat', zlib.gzipSync(Buffer.from('{"seed_id":21251,"size":0,"name":"GZIP测试"}', 'utf8')));
@@ -38,6 +38,12 @@ function main() {
     assert.equal(report.safety.qqCacheModified, false);
     assert.equal(report.safety.networkTouched, false);
     console.log('✅ full-cache read-only traversal PASS');
+
+    const serializedEvidence = JSON.stringify(report.interestingFiles);
+    assert.equal(serializedEvidence.includes('abcdefghijklmnop'), false);
+    assert.equal(serializedEvidence.includes('$1=[MASKED]'), false);
+    assert.equal(serializedEvidence.includes('token=[MASKED]'), true);
+    console.log('✅ snippet credential redaction preserves key and removes secret PASS');
 
     const byId = new Map(report.entries.map(row => [row.seedId, row]));
     assert.equal(byId.get(21037).proven, true);
