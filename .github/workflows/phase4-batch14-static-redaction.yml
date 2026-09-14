@@ -1,0 +1,163 @@
+name: Phase4 Batch14 Static Redaction
+
+on:
+  push:
+    branches:
+      - fix/phase4-batch14-static-redaction-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Prove current redaction bug
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const { scanFarmCache } = require('./core/scripts/qq-static-plant-overlay-scan');
+
+          const secret = 'abcdefghijklmnop';
+          const root = fs.mkdtempSync(path.join(os.tmpdir(), 'far2-redaction-redtest-'));
+          try {
+            const folder = path.join(root, '1112386029_3_fixture');
+            fs.mkdirSync(folder, { recursive: true });
+            fs.writeFileSync(
+              path.join(folder, 'plant-config.txt'),
+              `token=${secret}; const rows=[{seed_id:21037,size:2,name:"redaction-fixture"}];`,
+              'utf8',
+            );
+            const report = scanFarmCache({
+              miniAppRoot: root,
+              targets: [21037],
+              maxFolders: 1,
+              maxFiles: 10,
+              maxTotalBytes: 1024 * 1024,
+            });
+            const evidence = JSON.stringify(report.interestingFiles);
+            assert.equal(evidence.includes(secret), false, 'secret must already be masked');
+            assert.equal(evidence.includes('$1=[MASKED]'), true, 'old bug must reproduce before patch');
+            assert.equal(evidence.includes('token=[MASKED]'), false, 'old implementation must lose the field name');
+            console.log('RED TEST reproduced: secret masked but field name becomes literal $1');
+          } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+          }
+          NODE
+
+      - name: Apply exact product and regression fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function replaceOnce(file, before, after) {
+            const text = fs.readFileSync(file, 'utf8');
+            const count = text.split(before).length - 1;
+            if (count !== 1) throw new Error(`${file}: expected exactly one replacement target, got ${count}`);
+            fs.writeFileSync(file, text.replace(before, after), 'utf8');
+          }
+
+          replaceOnce(
+            'core/scripts/qq-static-plant-overlay-scan.js',
+            `.replace(/(?:authorization|token|ticket|session|openid|code)\\s*[:=]\\s*["']?[^\\s,"'}]{12,}/gi, '$1=[MASKED]')`,
+            `.replace(/(authorization|token|ticket|session|openid|code)\\s*[:=]\\s*["']?[^\\s,"'}]{12,}/gi, '$1=[MASKED]')`,
+          );
+
+          replaceOnce(
+            'core/scripts/qq-static-plant-overlay-selftest.js',
+            `write(folder, 'assets/no-extension-resource', 'const rows=[{seed_id:21037,size:2,name:"多格测试",land_level_need:88}];');`,
+            `write(folder, 'assets/no-extension-resource', 'token=abcdefghijklmnop; const rows=[{seed_id:21037,size:2,name:"多格测试",land_level_need:88}];');`,
+          );
+
+          replaceOnce(
+            'core/scripts/qq-static-plant-overlay-selftest.js',
+            `    assert.equal(report.safety.networkTouched, false);\n    console.log('✅ full-cache read-only traversal PASS');`,
+            `    assert.equal(report.safety.networkTouched, false);\n    console.log('✅ full-cache read-only traversal PASS');\n\n    const serializedEvidence = JSON.stringify(report.interestingFiles);\n    assert.equal(serializedEvidence.includes('abcdefghijklmnop'), false);\n    assert.equal(serializedEvidence.includes('$1=[MASKED]'), false);\n    assert.equal(serializedEvidence.includes('token=[MASKED]'), true);\n    console.log('✅ snippet credential redaction preserves key and removes secret PASS');`,
+          );
+
+          const packagePath = 'core/package.json';
+          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          const regression = String(pkg.scripts?.['test:regression'] || '');
+          if (!regression) throw new Error('missing test:regression');
+          if (regression.includes('static-plant-overlay:selftest')) throw new Error('static overlay selftest already in canonical regression');
+          const needle = 'pnpm startup:crop-registry-selftest && pnpm illustrated:proto-selftest';
+          if (!regression.includes(needle)) throw new Error('canonical regression insertion anchor missing');
+          pkg.scripts['test:regression'] = regression.replace(
+            needle,
+            'pnpm startup:crop-registry-selftest && pnpm static-plant-overlay:selftest && pnpm illustrated:proto-selftest',
+          );
+          fs.writeFileSync(packagePath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+          NODE
+
+          set +e
+          pnpm -C core exec eslint scripts/qq-static-plant-overlay-scan.js --format json > /tmp/batch14-lint.json
+          lint_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = JSON.parse(fs.readFileSync('/tmp/batch14-lint.json', 'utf8'));
+          const messages = rows.flatMap(row => row.messages || []).filter(m => m.ruleId);
+          const bad = messages.filter(m => m.ruleId === 'regexp/no-useless-dollar-replacements');
+          if (bad.length !== 0) throw new Error(`redaction replacement lint finding remains: ${JSON.stringify(bad)}`);
+          console.log('post-fix lint PASS: regexp/no-useless-dollar-replacements removed');
+          NODE
+          test "$lint_status" -ne 0
+
+          git diff --check -- \
+            core/scripts/qq-static-plant-overlay-scan.js \
+            core/scripts/qq-static-plant-overlay-selftest.js \
+            core/package.json
+
+      - name: Run focused regression
+        run: pnpm -C core static-plant-overlay:selftest
+
+      - name: Verify repository
+        run: pnpm verify
+
+      - name: Diff integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$|^core/scripts/qq-static-plant-overlay-scan\.js$|^core/scripts/qq-static-plant-overlay-selftest\.js$|^core/package\.json$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
+          git diff --check -- \
+            core/scripts/qq-static-plant-overlay-scan.js \
+            core/scripts/qq-static-plant-overlay-selftest.js \
+            core/package.json
+          git status --short
+
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            core/scripts/qq-static-plant-overlay-scan.js \
+            core/scripts/qq-static-plant-overlay-selftest.js \
+            core/package.json
+          git commit -m "fix(scan): preserve redacted credential field names"
+          git push origin HEAD:fix/phase4-batch14-static-redaction-20260915
