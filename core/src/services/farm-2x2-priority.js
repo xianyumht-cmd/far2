@@ -52,7 +52,7 @@ async function runPrioritized2x2Prepass(options = {}) {
         return emptyResult;
     }
     if (typeof getBagSeeds !== 'function' || typeof getAllLands !== 'function' || typeof plant2x2Seed !== 'function') {
-        throw new Error('2x2 prepass dependencies are incomplete');
+        throw new TypeError('2x2 prepass dependencies are incomplete');
     }
 
     let bagSeeds;

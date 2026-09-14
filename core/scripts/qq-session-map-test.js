@@ -37,7 +37,7 @@ function sanitize(text) {
   value = value.replace(/((?:code|ticket|token|auth_code|authcode|skey|p_skey|pt4_token|session|cookie)=)[^\s&"']+/gi, '$1<redacted>');
   value = value.replace(/--annotation=uin=(\d{5,12})/gi, (_m, u) => `--annotation=uin=${maskUin(u)}`);
   value = value.replace(/(?<!\d)(\d{8,12})(?!\d)/g, m => m === FARM_APP_ID ? m : maskUin(m));
-  value = value.replace(/[A-Za-z0-9_-]{40,}/g, '<long-value-redacted>');
+  value = value.replace(/[\w-]{40,}/g, '<long-value-redacted>');
   return value;
 }
 
@@ -103,17 +103,6 @@ function isMainQQ(row) {
     && !/--loadapp=/i.test(cmd);
 }
 
-function shortRow(row) {
-  if (!row) return null;
-  return {
-    pid: row.pid,
-    ppid: row.ppid,
-    name: row.name,
-    exe: sanitize(row.exe),
-    cmd: sanitize(row.cmd),
-  };
-}
-
 function printRow(prefix, row) {
   if (!row) return;
   console.log(`${prefix} PID=${row.pid} PPID=${row.ppid} NAME=${row.name}`);
@@ -151,7 +140,7 @@ function main() {
     if (directParent) printRow('PARENT', directParent);
     if (mainAncestor && (!directParent || mainAncestor.pid !== directParent.pid)) printRow('MAINQQ', mainAncestor);
     if (crash) printRow('UIN-SOURCE', crash);
-    console.log('ANCESTOR PIDS=' + ancestors.map(r => r.pid).join(' -> '));
+    console.log(`ANCESTOR PIDS=${ancestors.map(r => r.pid).join(' -> ')}`);
     console.log('---');
 
     mappings.push({
