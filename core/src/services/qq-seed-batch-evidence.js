@@ -69,12 +69,12 @@ function collectDirectSeedClues(text, seedId) {
                 if (!seedPattern.test(top)) continue;
 
                 const names = [];
-                for (const match of top.matchAll(/(?:["']?name["']?)\s*:\s*["']([^"'\\]{1,80})["']/gi)) {
+                for (const match of top.matchAll(/["']?name["']?\s*:\s*["']([^"'\\]{1,80})["']/gi)) {
                     const value = String(match[1] || '').trim();
                     if (value && !names.includes(value)) names.push(value);
                 }
                 const rawSizes = [];
-                for (const match of top.matchAll(/(?:["']?size["']?)\s*:\s*(-?\d+)/gi)) {
+                for (const match of top.matchAll(/["']?size["']?\s*:\s*(-?\d+)/gi)) {
                     const value = Number(match[1]);
                     if (Number.isFinite(value) && !rawSizes.includes(value)) rawSizes.push(value);
                 }

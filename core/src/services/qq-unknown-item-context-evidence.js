@@ -44,8 +44,8 @@ function standaloneIndices(text, targetId, limit = 80) {
 function sanitizeContext(text) {
     return String(text || '')
         .replace(/https?:\/\/[^\s"'`]+/gi, '<url>')
-        .replace(/\b[A-Fa-f0-9]{40,}\b/g, '<long-hex>')
-        .replace(/\b[A-Za-z0-9+/_=-]{64,}\b/g, '<long-token>')
+        .replace(/\b[A-F0-9]{40,}\b/gi, '<long-hex>')
+        .replace(/\b[\w+/=-]{64,}\b/g, '<long-token>')
         .replace(/[\r\n\t]+/g, ' ')
         .replace(/\s{2,}/g, ' ')
         .trim();
@@ -53,7 +53,7 @@ function sanitizeContext(text) {
 
 function nearbyKeys(text) {
     const keys = [];
-    for (const match of String(text || '').matchAll(/["']?([A-Za-z_$][\w$]{1,48})["']?\s*:/g)) {
+    for (const match of String(text || '').matchAll(/["']?([A-Z_$][\w$]{1,48})["']?\s*:/gi)) {
         const key = String(match[1] || '').trim();
         if (key && !keys.includes(key)) keys.push(key);
         if (keys.length >= 24) break;
