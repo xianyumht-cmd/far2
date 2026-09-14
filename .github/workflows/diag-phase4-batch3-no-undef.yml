@@ -1,0 +1,47 @@
+name: Diagnostic Phase4 Batch3 no-undef
+
+on:
+  push:
+    branches:
+      - diag/phase4-batch3-no-undef-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Print targeted ESLint findings
+        shell: bash
+        run: |
+          set +e
+          pnpm exec eslint core/src/services/friend.js core/src/services/mall.js --format json > /tmp/eslint.json
+          status=$?
+          node - <<'NODE'
+          const fs = require('fs')
+          const reports = JSON.parse(fs.readFileSync('/tmp/eslint.json', 'utf8'))
+          for (const report of reports) {
+            const messages = report.messages.filter(message => message.ruleId === 'no-undef')
+            if (!messages.length) continue
+            console.log(`FILE ${report.filePath}`)
+            for (const message of messages) {
+              console.log(`NO_UNDEF line=${message.line} column=${message.column} message=${message.message}`)
+            }
+          }
+          const total = reports.reduce((sum, report) => sum + report.messages.filter(message => message.ruleId === 'no-undef').length, 0)
+          console.log(`NO_UNDEF_TOTAL=${total}`)
+          NODE
+          exit 0
