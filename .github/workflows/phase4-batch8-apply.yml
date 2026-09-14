@@ -62,6 +62,7 @@ jobs:
           if (messages.length !== 0) throw new Error(`expected zero mystery-shop findings after fix, got ${messages.length}: ${JSON.stringify(messages)}`);
           console.log('post-fix PASS: mystery-shop has zero ESLint findings');
           NODE
+          git restore -- '*.cmd'
           mapfile -t changed < <(git diff --name-only)
           printf 'changed-before-verify: %s\n' "${changed[@]}"
           test "${#changed[@]}" -eq 1
