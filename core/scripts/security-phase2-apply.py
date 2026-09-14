@@ -1,0 +1,275 @@
+from pathlib import Path
+import json
+
+admin_path = Path('core/src/controllers/admin.js')
+admin = admin_path.read_text(encoding='utf-8')
+logger_require = "const { createModuleLogger } = require('../services/logger');\n"
+client_ip_require = "const { getTrustProxySetting, normalizeClientIp } = require('../services/client-ip');\n"
+assert logger_require in admin, 'admin logger require anchor not found'
+assert client_ip_require not in admin, 'client-ip helper already present unexpectedly'
+admin = admin.replace(logger_require, logger_require + client_ip_require, 1)
+old_trust = "    app.set('trust proxy', true);"
+new_trust = "    app.set('trust proxy', getTrustProxySetting());"
+assert admin.count(old_trust) == 1, 'unexpected trust proxy anchor count'
+admin = admin.replace(old_trust, new_trust, 1)
+get_ip_start = admin.index('    function getClientIp(req) {')
+tokens_start = admin.index('    const tokens = new Set();', get_ip_start)
+new_get_ip = "    function getClientIp(req) {\n        return normalizeClientIp(req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || 'unknown');\n    }\n\n"
+admin = admin[:get_ip_start] + new_get_ip + admin[tokens_start:]
+for forbidden in ["req.headers['cf-connecting-ip']", "req.headers['x-real-ip']", "req.headers['x-forwarded-for']", "app.set('trust proxy', true)"]:
+    assert forbidden not in admin, f'unsafe client IP trust remains: {forbidden}'
+assert "app.set('trust proxy', getTrustProxySetting())" in admin
+admin_path.write_text(admin, encoding='utf-8')
+
+client_ip = """const process = require('node:process');
+
+const FALSE_VALUES = new Set(['', 'false', '0', 'off', 'no']);
+const UNSAFE_TRUST_ALL_VALUES = new Set(['true', '1', 'on', 'yes', '*']);
+
+function createUnsafeTrustProxyError(value) {
+    const error = new Error(`Unsafe TRUST_PROXY value: ${value}. Configure explicit trusted proxy IPs, CIDRs, or Express named subnets instead.`);
+    error.code = 'unsafe_trust_proxy';
+    return error;
+}
+
+function getTrustProxySetting(value = process.env.TRUST_PROXY) {
+    const raw = String(value ?? '').trim();
+    const normalized = raw.toLowerCase();
+
+    if (FALSE_VALUES.has(normalized)) return false;
+    if (UNSAFE_TRUST_ALL_VALUES.has(normalized) || /^\\d+$/.test(normalized)) {
+        throw createUnsafeTrustProxyError(raw);
+    }
+
+    const entries = raw.split(',').map(entry => entry.trim()).filter(Boolean);
+    if (entries.length === 0) return false;
+
+    for (const entry of entries) {
+        const lowered = entry.toLowerCase();
+        if (UNSAFE_TRUST_ALL_VALUES.has(lowered) || /^\\d+$/.test(lowered)) {
+            throw createUnsafeTrustProxyError(entry);
+        }
+    }
+
+    return entries.length === 1 ? entries[0] : entries;
+}
+
+function normalizeClientIp(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return 'unknown';
+    if (raw.startsWith('::ffff:')) return raw.slice(7);
+    return raw;
+}
+
+module.exports = {
+    getTrustProxySetting,
+    normalizeClientIp,
+};
+"""
+Path('core/src/services/client-ip.js').write_text(client_ip, encoding='utf-8')
+
+user_store_path = Path('core/src/models/user-store.js')
+user_store = user_store_path.read_text(encoding='utf-8')
+constant_anchor = "const MAX_ATTEMPTS_PER_IP = 10;\n"
+constant_replacement = "const MAX_ATTEMPTS_PER_IP = 10;\nconst FAILED_ATTEMPT_RETENTION = LOCKOUT_DURATION;\nconst MAX_LOGIN_ATTEMPT_ENTRIES = 4096;\n"
+assert user_store.count(constant_anchor) == 1, 'login attempt constant anchor missing or duplicated'
+user_store = user_store.replace(constant_anchor, constant_replacement, 1)
+old_writer = "        writeJsonFileAtomic(LOGIN_ATTEMPTS_FILE, loginAttempts);"
+new_writer = "        pruneLoginAttempts();\n        writeJsonFileAtomic(LOGIN_ATTEMPTS_FILE, loginAttempts);"
+assert user_store.count(old_writer) == 1, 'login attempt writer anchor missing or duplicated'
+user_store = user_store.replace(old_writer, new_writer, 1)
+cleanup_start = user_store.index('function cleanExpiredAttempts() {')
+cleanup_end = user_store.index('\nfunction checkRateLimit', cleanup_start)
+cleanup_replacement = """function getAttemptTimestamp(attempt) {
+    if (!attempt || typeof attempt !== 'object') return 0;
+    const values = [attempt.lastAttempt, attempt.windowStart, attempt.firstAttempt]
+        .map(value => Number(value || 0))
+        .filter(value => Number.isFinite(value) && value > 0);
+    return values.length > 0 ? Math.max(...values) : 0;
+}
+
+function pruneLoginAttempts(now = Date.now()) {
+    let cleaned = false;
+
+    for (const key of Object.keys(loginAttempts)) {
+        const attempt = loginAttempts[key];
+        if (!attempt || typeof attempt !== 'object' || Array.isArray(attempt)) {
+            delete loginAttempts[key];
+            cleaned = true;
+            continue;
+        }
+
+        const lockedUntil = Number(attempt.lockedUntil || 0);
+        if (lockedUntil > 0 && lockedUntil <= now) {
+            delete loginAttempts[key];
+            cleaned = true;
+            continue;
+        }
+
+        if (key.startsWith('ip:')) {
+            const windowStart = Number(attempt.windowStart || 0);
+            if (!Number.isFinite(windowStart) || windowStart <= 0 || (now - windowStart) > RATE_LIMIT_WINDOW) {
+                delete loginAttempts[key];
+                cleaned = true;
+            }
+            continue;
+        }
+
+        if (key.startsWith('user:') && lockedUntil <= 0) {
+            const lastAttempt = getAttemptTimestamp(attempt);
+            if (!lastAttempt || (now - lastAttempt) > FAILED_ATTEMPT_RETENTION) {
+                delete loginAttempts[key];
+                cleaned = true;
+            }
+        }
+    }
+
+    const keys = Object.keys(loginAttempts);
+    if (keys.length > MAX_LOGIN_ATTEMPT_ENTRIES) {
+        const candidates = keys
+            .map(key => ({ key, attempt: loginAttempts[key] }))
+            .sort((left, right) => {
+                const leftLocked = Number(left.attempt?.lockedUntil || 0) > now ? 1 : 0;
+                const rightLocked = Number(right.attempt?.lockedUntil || 0) > now ? 1 : 0;
+                if (leftLocked !== rightLocked) return leftLocked - rightLocked;
+                return getAttemptTimestamp(left.attempt) - getAttemptTimestamp(right.attempt);
+            });
+        const excess = keys.length - MAX_LOGIN_ATTEMPT_ENTRIES;
+        for (let index = 0; index < excess; index++) {
+            delete loginAttempts[candidates[index].key];
+            cleaned = true;
+        }
+    }
+
+    return cleaned;
+}
+
+function cleanExpiredAttempts() {
+    if (pruneLoginAttempts()) saveLoginAttempts();
+}
+"""
+user_store = user_store[:cleanup_start] + cleanup_replacement + user_store[cleanup_end:]
+first_attempt_old = "        loginAttempts[userKey] = { count: 1, firstAttempt: now };"
+first_attempt_new = "        loginAttempts[userKey] = { count: 1, firstAttempt: now, lastAttempt: now };"
+assert user_store.count(first_attempt_old) == 1, 'failed-attempt creation anchor missing or duplicated'
+user_store = user_store.replace(first_attempt_old, first_attempt_new, 1)
+for required in ['FAILED_ATTEMPT_RETENTION', 'MAX_LOGIN_ATTEMPT_ENTRIES', 'pruneLoginAttempts', 'lastAttempt: now']:
+    assert required in user_store, f'missing login-attempt hardening token: {required}'
+user_store_path.write_text(user_store, encoding='utf-8')
+
+security_test = """const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const Module = require('node:module');
+const { getTrustProxySetting, normalizeClientIp } = require('../src/services/client-ip');
+
+const originalTrustProxy = process.env.TRUST_PROXY;
+delete process.env.TRUST_PROXY;
+assert.equal(getTrustProxySetting(), false);
+if (originalTrustProxy === undefined)
+    delete process.env.TRUST_PROXY;
+else
+    process.env.TRUST_PROXY = originalTrustProxy;
+assert.equal(getTrustProxySetting('false'), false);
+assert.equal(getTrustProxySetting('loopback'), 'loopback');
+assert.deepEqual(getTrustProxySetting('loopback, 10.0.0.0/8'), ['loopback', '10.0.0.0/8']);
+for (const unsafe of ['true', '1', '2', '*', 'yes']) {
+    assert.throws(() => getTrustProxySetting(unsafe), error => error && error.code === 'unsafe_trust_proxy');
+}
+assert.equal(normalizeClientIp('::ffff:203.0.113.4'), '203.0.113.4');
+assert.equal(normalizeClientIp('2001:db8::1'), '2001:db8::1');
+assert.equal(normalizeClientIp(''), 'unknown');
+
+const adminSource = fs.readFileSync(path.join(__dirname, '../src/controllers/admin.js'), 'utf8');
+assert.equal(adminSource.includes("app.set('trust proxy', true)"), false);
+assert.equal(adminSource.includes("req.headers['cf-connecting-ip']"), false);
+assert.equal(adminSource.includes("req.headers['x-real-ip']"), false);
+assert.equal(adminSource.includes("req.headers['x-forwarded-for']"), false);
+assert.equal(adminSource.includes("app.set('trust proxy', getTrustProxySetting())"), true);
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'far2-security-phase2-'));
+const dataDir = path.join(root, 'data');
+fs.mkdirSync(dataDir, { recursive: true });
+const originalLoad = Module._load;
+const originalBootstrapPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+process.env.ADMIN_BOOTSTRAP_PASSWORD = 'FAR2-Phase2-Selftest-9!';
+
+Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === '../config/runtime-paths' && parent && /[\\\\/]models[\\\\/]user-store\\.js$/.test(parent.filename || '')) {
+        return {
+            getDataFile(name) { return path.join(dataDir, name); },
+            ensureDataDir() { fs.mkdirSync(dataDir, { recursive: true }); return dataDir; },
+        };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+};
+
+try {
+    const userStore = require('../src/models/user-store');
+    const attemptsFile = path.join(dataDir, 'login-attempts.json');
+    const now = Date.now();
+    const stale = now - (16 * 60 * 1000);
+    const attempts = {
+        'user:fresh-user': { count: 1, firstAttempt: now, lastAttempt: now },
+    };
+    for (let index = 0; index < 250; index++) {
+        attempts[`user:stale-${index}`] = { count: 1, firstAttempt: stale, lastAttempt: stale };
+    }
+    fs.writeFileSync(attemptsFile, JSON.stringify(attempts), 'utf8');
+
+    const login = userStore.validateUser('admin', 'FAR2-Phase2-Selftest-9!', '198.51.100.10');
+    assert.equal(login.role, 'admin');
+    let persisted = JSON.parse(fs.readFileSync(attemptsFile, 'utf8'));
+    assert.ok(persisted['user:fresh-user'], 'fresh username attempt state must remain');
+    assert.equal(Object.keys(persisted).some(key => key.startsWith('user:stale-')), false, 'stale random usernames must expire');
+
+    const oversized = {};
+    for (let index = 0; index < 5000; index++) {
+        oversized[`user:burst-${index}`] = { count: 1, firstAttempt: now, lastAttempt: now + index };
+    }
+    fs.writeFileSync(attemptsFile, JSON.stringify(oversized), 'utf8');
+    const secondLogin = userStore.validateUser('admin', 'FAR2-Phase2-Selftest-9!', '198.51.100.11');
+    assert.equal(secondLogin.role, 'admin');
+    persisted = JSON.parse(fs.readFileSync(attemptsFile, 'utf8'));
+    assert.ok(Object.keys(persisted).length <= 4096, 'login-attempt state must be bounded');
+
+    console.log('security-phase2-selftest: PASS');
+} finally {
+    Module._load = originalLoad;
+    if (originalBootstrapPassword === undefined)
+        delete process.env.ADMIN_BOOTSTRAP_PASSWORD;
+    else
+        process.env.ADMIN_BOOTSTRAP_PASSWORD = originalBootstrapPassword;
+    fs.rmSync(root, { recursive: true, force: true });
+}
+"""
+Path('core/scripts/security-phase2-selftest.js').write_text(security_test, encoding='utf-8')
+
+package_path = Path('core/package.json')
+package = json.loads(package_path.read_text(encoding='utf-8'))
+package.setdefault('scripts', {})['security:phase2-selftest'] = 'node scripts/security-phase2-selftest.js && node scripts/security-phase1-selftest.js && node scripts/user-store-persistence-selftest.js'
+package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+compose_path = Path('docker-compose.yml')
+compose = compose_path.read_text(encoding='utf-8')
+compose_anchor = '      - ADMIN_BOOTSTRAP_PASSWORD=${ADMIN_BOOTSTRAP_PASSWORD:-}\n'
+assert compose_anchor in compose, 'compose bootstrap env anchor not found'
+trust_line = '      - TRUST_PROXY=${TRUST_PROXY:-}\n'
+assert trust_line not in compose, 'TRUST_PROXY already present unexpectedly'
+compose = compose.replace(compose_anchor, compose_anchor + trust_line, 1)
+compose_path.write_text(compose, encoding='utf-8')
+
+doc = """# Trusted proxy and login-attempt hardening
+
+FAR2 does not trust client-supplied forwarding headers by default. The login rate limiter uses Express `req.ip`, and Express is configured with proxy trust disabled unless `TRUST_PROXY` explicitly names trusted proxy IPs, CIDRs, or Express named subnets.
+
+Directly exposed FAR2: leave `TRUST_PROXY` unset.
+
+For a reverse proxy on loopback, use `TRUST_PROXY=loopback`. For an explicitly controlled proxy subnet, use a value such as `TRUST_PROXY=172.20.0.0/16`. Multiple entries may be comma-separated.
+
+FAR2 intentionally rejects trust-all values such as `true` and `*`, as well as numeric hop-count configurations. Configure the actual trusted proxy IP/CIDR instead. Do not rely on client-supplied `CF-Connecting-IP`, `X-Real-IP`, or `X-Forwarded-For` unless Express has verified the immediate proxy chain through this allowlist.
+
+Login-attempt persistence is bounded. Non-locked per-username failure records expire after the lockout retention window, malformed or stale records are pruned, and the persisted attempt map is capped at 4096 entries. Active lockouts are retained preferentially when pruning under pressure.
+"""
+Path('docs/SECURITY_PROXY_TRUST.md').write_text(doc, encoding='utf-8')
