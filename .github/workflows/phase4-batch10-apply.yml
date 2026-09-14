@@ -1,0 +1,118 @@
+name: Phase4 Batch10 Apply
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch10-lowrisk-fixes-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact Batch10 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            core/scripts/qq-runtime-plant-overlay-capture.js
+            core/src/services/code-manager.js
+            core/src/services/wechat-recovery-manager.js
+          )
+          core_files=(
+            scripts/qq-runtime-plant-overlay-capture.js
+            src/services/code-manager.js
+            src/services/wechat-recovery-manager.js
+          )
+
+          set +e
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/batch10-before.json
+          before_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const rows = JSON.parse(fs.readFileSync('/tmp/batch10-before.json', 'utf8'));
+          const messages = [];
+          for (const row of rows) {
+            const file = path.relative(process.cwd(), row.filePath).replaceAll('\\', '/');
+            for (const m of row.messages || []) if (m.ruleId) messages.push({ file, ...m });
+          }
+          const expected = new Map([
+            ['core/scripts/qq-runtime-plant-overlay-capture.js', 'unicorn/prefer-string-starts-ends-with'],
+            ['core/src/services/code-manager.js', 'regexp/no-useless-flag'],
+            ['core/src/services/wechat-recovery-manager.js', 'regexp/no-useless-flag'],
+          ]);
+          if (messages.length !== 3) throw new Error(`expected exactly 3 findings, got ${messages.length}: ${JSON.stringify(messages)}`);
+          for (const [file, rule] of expected) {
+            const matches = messages.filter(m => m.file === file);
+            if (matches.length !== 1) throw new Error(`expected one finding in ${file}, got ${matches.length}: ${JSON.stringify(matches)}`);
+            if (matches[0].ruleId !== rule) throw new Error(`unexpected rule in ${file}: ${matches[0].ruleId}`);
+            if (!matches[0].fix) throw new Error(`finding in ${file} has no ESLint fix`);
+          }
+          console.log('preflight PASS: exactly 3 expected autofixable findings');
+          NODE
+          test "$before_status" -ne 0
+
+          pnpm -C core exec eslint "${core_files[@]}" --fix
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/batch10-after.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = JSON.parse(fs.readFileSync('/tmp/batch10-after.json', 'utf8'));
+          const messages = rows.flatMap(row => row.messages || []).filter(m => m.ruleId);
+          if (messages.length !== 0) throw new Error(`expected zero targeted findings after fix, got ${messages.length}: ${JSON.stringify(messages)}`);
+          console.log('post-fix PASS: all three target files have zero ESLint findings');
+          NODE
+
+          mapfile -t product_changed < <(git diff --name-only | grep -vE '^[^/]+\.cmd$' || true)
+          printf 'product diff before verify:\n%s\n' "${product_changed[*]}"
+          test "${#product_changed[@]}" -eq 3
+          for file in "${files[@]}"; do
+            printf '%s\n' "${product_changed[@]}" | grep -Fxq "$file"
+            git diff --check -- "$file"
+          done
+
+      - name: Verify repository
+        run: pnpm verify
+
+      - name: Diff integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$|^core/scripts/qq-runtime-plant-overlay-capture\.js$|^core/src/services/code-manager\.js$|^core/src/services/wechat-recovery-manager\.js$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
+          git diff --check -- \
+            core/scripts/qq-runtime-plant-overlay-capture.js \
+            core/src/services/code-manager.js \
+            core/src/services/wechat-recovery-manager.js
+          git status --short
+
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            core/scripts/qq-runtime-plant-overlay-capture.js \
+            core/src/services/code-manager.js \
+            core/src/services/wechat-recovery-manager.js
+          git commit -m "chore(quality): clean three low-risk core lint findings"
+          git push origin HEAD:chore/phase4-batch10-lowrisk-fixes-20260915
