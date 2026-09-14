@@ -17,7 +17,7 @@ const MINIAPP_URI = 'tencent://ntqq-open/?&subCmd=miniapp&action=openQQMiniApp&a
 const MAX_PATCH_FOLDERS = 3;
 
 const SENSITIVE_RE = /(userpb\.UserService|Login|Auth|Account|Payment|PayService|Report|Telemetry|Track|Analytics)/i;
-const READ_METHOD_RE = /^(Get|List|Query|Fetch|Load|Preview|Search|Describe|Info|Detail|Profile|Overview|Config|Configs)/i;
+const READ_METHOD_RE = /^(Get|List|Query|Fetch|Load|Preview|Search|Describe|Info|Detail|Profile|Overview|Config)/i;
 const KNOWN_READ_METHODS = new Set([
     'gamepb.illustratedpb.IllustratedService.GetIllustratedListV2',
     'gamepb.activitypb.ActivityService.List',
@@ -109,7 +109,7 @@ function buildPayload() {
         `var FILE=${JSON.stringify(`/${CAPTURE_FILE}`)};`,
         `var KNOWN=${JSON.stringify(knownReads.reduce((acc, key) => { acc[key] = 1; return acc; }, {}))};`,
         "var SENSITIVE=/(userpb\\.UserService|Login|Auth|Account|Payment|PayService|Report|Telemetry|Track|Analytics)/i;",
-        "var READ=/^(Get|List|Query|Fetch|Load|Preview|Search|Describe|Info|Detail|Profile|Overview|Config|Configs)/i;",
+        "var READ=/^(Get|List|Query|Fetch|Load|Preview|Search|Describe|Info|Detail|Profile|Overview|Config)/i;",
         'function bytesOf(d){try{if(d instanceof ArrayBuffer)return new Uint8Array(d);if(ArrayBuffer.isView&&ArrayBuffer.isView(d))return new Uint8Array(d.buffer,d.byteOffset,d.byteLength);if(d&&d.data!==undefined)return bytesOf(d.data);}catch(e){}return null;}',
         'function vi(b,p){var v=0,m=1,i=p;while(i<b.length&&i<p+10){var x=b[i++];v+=(x&127)*m;if((x&128)===0)return{v:v,n:i};m*=128;}return null;}',
         'function fields(b){var o=[],p=0;while(p<b.length){var k=vi(b,p);if(!k)break;p=k.n;var f=Math.floor(k.v/8),w=k.v&7;if(w===0){var q=vi(b,p);if(!q)break;o.push({f:f,w:w,v:q.v});p=q.n;}else if(w===1){if(p+8>b.length)break;o.push({f:f,w:w,s:p,e:p+8});p+=8;}else if(w===2){var l=vi(b,p);if(!l)break;var s=l.n,e=s+l.v;if(e>b.length)break;o.push({f:f,w:w,s:s,e:e});p=e;}else if(w===5){if(p+4>b.length)break;o.push({f:f,w:w,s:p,e:p+4});p+=4;}else break;}return o;}',

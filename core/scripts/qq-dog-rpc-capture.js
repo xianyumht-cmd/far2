@@ -179,7 +179,7 @@ function parseCaptureLine(line) {
         const service = String(row.service || '');
         const method = String(row.method || '');
         if (!service || !method) return null;
-        if (!/(\.dogpb\.|\.itempb\.|\.shoppb\.)/i.test(service)) return null;
+        if (!/\.dogpb\.|\.itempb\.|\.shoppb\./i.test(service)) return null;
         return {
             t: String(row.t || ''),
             direction: 'out',
