@@ -29,7 +29,7 @@ jobs:
           admin = admin_path.read_text(encoding='utf-8')
 
           proxy_marker = '    // ============ 微信登录代理 API ============'
-          next_marker = '    // 保存用户微信登录配置'
+          next_marker = "    app.get('*', (req, res) => {"
           assert admin.count(proxy_marker) == 1, 'unexpected legacy proxy marker count'
           proxy_start = admin.index(proxy_marker)
           proxy_end = admin.index(next_marker, proxy_start)
