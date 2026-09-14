@@ -95,7 +95,7 @@ function loadUnknownTargets(registryPath = latestRegistryFile()) {
     const data = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
     const crops = Array.isArray(data.crops) ? data.crops : [];
     const rows = crops
-        .filter(row => Number(row.seedId) > 0 && Number(row.size) === 0 && /^proven/.test(String(row.identityConfidence || '')))
+        .filter(row => Number(row.seedId) > 0 && Number(row.size) === 0 && String(row.identityConfidence || '').startsWith('proven'))
         .map(row => ({
             seedId: Number(row.seedId),
             fruitId: Number(row.fruitId) || Number(row.seedId) + 20000,
