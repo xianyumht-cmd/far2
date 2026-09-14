@@ -59,32 +59,28 @@ jobs:
                   (r'\b(?:food[_-]?id|foodId|item[_-]?id|itemId|count|num|number|amount|quantity|arg\d*|value\d*)\b',
                    r'\b(?:food[_-]?id|item[_-]?id|count|num|number|amount|quantity|arg\d*|value\d*)\b'),
               ],
-              Path('core/scripts/qq-official-readonly-ui-capture.js'): [
-                  ('Overview|Config|Configs)', 'Overview|Config)'),
-                  ('Overview|Config|Configs)/i;', 'Overview|Config)/i;'),
-              ],
               Path('core/scripts/qq-dog-rpc-capture.js'): [
                   (r'/(\.dogpb\.|\.itempb\.|\.shoppb\.)/i.test(service)',
-                   r'/(?:\.dogpb\.|\.itempb\.|\.shoppb\.)/i.test(service)'),
+                   r'/\.dogpb\.|\.itempb\.|\.shoppb\./i.test(service)'),
               ],
           }
 
           for path, replacements in changes.items():
               text = path.read_text(encoding='utf-8')
-              if path.name == 'qq-official-readonly-ui-capture.js':
-                  # The same READ regex appears once in JS source and once inside the injected payload string.
-                  old = 'Overview|Config|Configs)'
+              for old, new in replacements:
                   count = text.count(old)
-                  if count != 2:
-                      raise SystemExit(f'{path}: expected 2 Config|Configs occurrences, got {count}')
-                  text = text.replace(old, 'Overview|Config)')
-              else:
-                  for old, new in replacements:
-                      count = text.count(old)
-                      if count != 1:
-                          raise SystemExit(f'{path}: expected exactly 1 occurrence of {old!r}, got {count}')
-                      text = text.replace(old, new)
+                  if count != 1:
+                      raise SystemExit(f'{path}: expected exactly 1 occurrence of {old!r}, got {count}')
+                  text = text.replace(old, new)
               path.write_text(text, encoding='utf-8')
+
+          path = Path('core/scripts/qq-official-readonly-ui-capture.js')
+          text = path.read_text(encoding='utf-8')
+          old = 'Overview|Config|Configs)'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'{path}: expected 2 Config|Configs occurrences, got {count}')
+          path.write_text(text.replace(old, 'Overview|Config)'), encoding='utf-8')
           PY
 
           set +e
