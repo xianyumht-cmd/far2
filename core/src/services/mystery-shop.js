@@ -62,7 +62,7 @@ function getGuardDir() {
 }
 
 function safeAccountId() {
-    return String(process.env.FARM_ACCOUNT_ID || 'unknown').replace(/[^0-9A-Za-z_.-]/g, '_');
+    return String(process.env.FARM_ACCOUNT_ID || 'unknown').replace(/[^\w.-]/g, '_');
 }
 
 function sha256(buf) {
@@ -71,10 +71,10 @@ function sha256(buf) {
 
 function sanitize(value) {
     return String(value == null ? '' : value)
-        .replace(/(authorization\s*[:=]\s*bearer\s+)[A-Za-z0-9._~+/=-]+/ig, '$1<REDACTED>')
-        .replace(/(provider[_-]?token\s*[:=]\s*)[A-Za-z0-9._~+/=-]{8,}/ig, '$1<REDACTED>')
-        .replace(/(\btoken\s*[:=]\s*)[A-Za-z0-9._~+/=-]{8,}/ig, '$1<REDACTED>')
-        .replace(/(\bcode\s*[:=]\s*)[A-Za-z0-9._~+/=-]{20,}/ig, '$1<REDACTED>')
+        .replace(/(authorization\s*[:=]\s*bearer\s+)[\w.~+/=-]+/gi, '$1<REDACTED>')
+        .replace(/(provider[_-]?token\s*[:=]\s*)[\w.~+/=-]{8,}/gi, '$1<REDACTED>')
+        .replace(/(\btoken\s*[:=]\s*)[\w.~+/=-]{8,}/gi, '$1<REDACTED>')
+        .replace(/(\bcode\s*[:=]\s*)[\w.~+/=-]{20,}/gi, '$1<REDACTED>')
         .slice(0, 1000);
 }
 
