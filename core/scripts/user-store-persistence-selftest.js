@@ -86,14 +86,14 @@ function main() {
 
         const originalRenameSync = fs.renameSync;
         let injectedWriteFailure = false;
-        fs.renameSync = function failUsersRename(src, dest) {
+        fs.renameSync = function failUsersRename(src, dest, ...args) {
             if (!injectedWriteFailure && path.resolve(dest) === path.resolve(usersFile)) {
                 injectedWriteFailure = true;
                 const error = new Error('selftest atomic rename failure');
                 error.code = 'SELFTEST_WRITE_FAILURE';
                 throw error;
             }
-            return originalRenameSync.apply(this, arguments);
+            return originalRenameSync.call(this, src, dest, ...args);
         };
         let writeFailure = null;
         try {
