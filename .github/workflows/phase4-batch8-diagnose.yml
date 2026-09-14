@@ -1,0 +1,86 @@
+name: Phase4 Batch8 Diagnose
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch8-diagnose-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Inventory Core ESLint debt
+        shell: bash
+        run: |
+          set +e
+          pnpm -C core exec eslint . --format json > core-lint.json
+          eslint_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const rows = JSON.parse(fs.readFileSync('core-lint.json', 'utf8'));
+          const messages = [];
+          for (const row of rows) {
+            const rel = path.relative(process.cwd(), row.filePath).replaceAll('\\', '/');
+            for (const m of row.messages || []) {
+              if (!m.ruleId) continue;
+              messages.push({
+                file: rel,
+                line: m.line,
+                column: m.column,
+                rule: m.ruleId,
+                message: m.message,
+                fixable: !!m.fix,
+              });
+            }
+          }
+          const byRule = new Map();
+          const byFile = new Map();
+          for (const m of messages) {
+            byRule.set(m.rule, (byRule.get(m.rule) || 0) + 1);
+            byFile.set(m.file, (byFile.get(m.file) || 0) + 1);
+          }
+          console.log(`CORE_TOTAL=${messages.length}`);
+          console.log('RULE_COUNTS');
+          for (const [rule, count] of [...byRule].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]))) {
+            console.log(`${count}\t${rule}`);
+          }
+          console.log('FILE_COUNTS');
+          for (const [file, count] of [...byFile].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]))) {
+            console.log(`${count}\t${file}`);
+          }
+          console.log('LOW_RISK_CANDIDATES');
+          const wanted = new Set([
+            'no-unused-vars',
+            'prefer-const',
+            'no-useless-catch',
+            'no-useless-escape',
+            'no-constant-binary-expression',
+            'no-self-compare',
+            'no-unneeded-ternary',
+            'object-shorthand',
+            'prefer-template',
+            'prefer-object-spread',
+          ]);
+          for (const m of messages.filter(m => wanted.has(m.rule))) {
+            console.log(`${m.rule}\t${m.file}:${m.line}:${m.column}\tfix=${m.fixable}\t${m.message}`);
+          }
+          console.log('ALL_NON_WEB_CORE_MESSAGES');
+          for (const m of messages) {
+            console.log(`${m.rule}\t${m.file}:${m.line}:${m.column}\tfix=${m.fixable}\t${m.message}`);
+          }
+          NODE
+          echo "eslint_exit=$eslint_status"
