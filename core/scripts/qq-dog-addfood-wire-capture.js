@@ -182,7 +182,7 @@ function readVarint(buf, start) {
     let pos = start;
     while (pos < buf.length && pos < start + 10) {
         const byte = buf[pos++];
-        value += (byte & 0x7f) * mul;
+        value += (byte & 0x7F) * mul;
         if ((byte & 0x80) === 0) return { value, next: pos };
         mul *= 128;
     }

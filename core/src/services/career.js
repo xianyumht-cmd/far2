@@ -28,7 +28,7 @@ function readVarint(buffer, offset) {
     let pos = offset;
     while (pos < buffer.length && shift <= 70n) {
         const byte = BigInt(buffer[pos]);
-        value |= (byte & 0x7fn) << shift;
+        value |= (byte & 0x7Fn) << shift;
         pos += 1;
         if ((byte & 0x80n) === 0n) return { value, next: pos, ok: true };
         shift += 7n;
@@ -86,7 +86,7 @@ function scanProtobufMessage(input) {
 function decodeText(bytes) {
     if (!bytes) return '';
     const text = Buffer.from(bytes).toString('utf8').replace(/\u0000/g, '').trim();
-    if (!text || text.includes('\ufffd')) return '';
+    if (!text || text.includes('\uFFFD')) return '';
     return text;
 }
 
