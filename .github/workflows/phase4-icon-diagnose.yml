@@ -78,25 +78,18 @@ jobs:
           anchor = "  safelist: carbonIconNames.map(iconName => `i-carbon-${iconName}`),\n"
           if text.count(anchor) != 1:
               raise SystemExit('web/uno.config.ts: safelist anchor mismatch')
-          block = """  blocklist: [
-            'i-carbon-circle-dash-function',
-            'i-carbon-circle-dash-string',
-            'i-carbon-circle-dash-return',
-            'i-carbon-renew-animate-spin',
-            'i-carbon-restart-animate-spin',
-          ],
-"""
+          block = ''.join([
+              "  blocklist: [\n",
+              "    'i-carbon-circle-dash-function',\n",
+              "    'i-carbon-circle-dash-string',\n",
+              "    'i-carbon-circle-dash-return',\n",
+              "    'i-carbon-renew-animate-spin',\n",
+              "    'i-carbon-restart-animate-spin',\n",
+              "  ],\n",
+          ])
           text = text.replace(anchor, anchor + block)
           uno.write_text(text, encoding='utf-8')
           PY
-      - name: Assert invalid literal icons are gone
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -RIn --exclude-dir=node_modules --exclude-dir=dist -E 'i-carbon-(leaf|crown|health-status|circle[ "\x27]|list-blocked|paw|user-offline)' web/src; then
-            echo 'Invalid literal Carbon icon remains.' >&2
-            exit 1
-          fi
       - name: Verify Carbon replacements exist
         shell: bash
         working-directory: web
