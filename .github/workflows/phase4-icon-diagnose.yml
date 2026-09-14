@@ -1,0 +1,55 @@
+name: Phase4 Icon Diagnose
+
+on:
+  push:
+    branches:
+      - chore/phase4-cleanup-batch2-icons-20260914
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Locate invalid icon requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== SOURCE OCCURRENCES ==='
+          for name in leaf crown health-status circle list-blocked paw user-offline circle-dash-function circle-dash-string circle-dash-return renew-animate-spin restart-animate-spin; do
+            echo "--- $name ---"
+            grep -RIn --exclude-dir=node_modules --exclude-dir=dist -- "i-carbon-$name\|carbon-$name" web/src web/uno.config.ts || true
+          done
+      - name: Inspect installed Carbon collection
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { icons } = require('@iconify-json/carbon')
+          const names = Object.keys(icons.icons)
+          const targets = ['leaf','crown','health-status','circle','list-blocked','paw','user-offline','circle-dash-function','circle-dash-string','circle-dash-return','renew-animate-spin','restart-animate-spin']
+          const score = (a,b) => {
+            let i = 0
+            while (i < a.length && i < b.length && a[i] === b[i]) i++
+            return Math.abs(a.length-b.length) - i * 2
+          }
+          console.log('=== COLLECTION CHECK ===')
+          for (const target of targets) {
+            const related = names
+              .filter(n => n.includes(target.split('-')[0]) || target.includes(n.split('-')[0]))
+              .sort((a,b) => score(a,target)-score(b,target) || a.localeCompare(b))
+              .slice(0,12)
+            console.log(JSON.stringify({ target, exists: Object.hasOwn(icons.icons, target), related }))
+          }
+          NODE
+      - name: Reproduce Web build warnings
+        run: pnpm -C web build
