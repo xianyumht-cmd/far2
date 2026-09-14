@@ -86,3 +86,13 @@ The persisted state machine is stored in:
 ```text
 core/data/update-state.json
 ```
+
+## Interrupted update recovery
+
+The Update Agent records its PID and start time. If FAR2 observes an active check/update/rollback state but the worker no longer exists (or exceeds the scheduled-task runtime ceiling), the state is no longer left permanently busy.
+
+- interruption before the source switch becomes `interrupted` and can be retried normally
+- interruption after a rollback point exists becomes `recovery_required`
+- the next `一键升级` first hard-resets to the recorded previous verified commit, reinstalls the frozen dependency graph, rebuilds the WebUI, verifies the restored SHA, and only then retries the normal update transaction
+- `检查更新` is blocked while recovery is required so it cannot hide an incomplete prior transaction
+- automatic recovery never deletes arbitrary untracked user files

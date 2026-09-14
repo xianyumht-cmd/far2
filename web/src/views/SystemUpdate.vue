@@ -49,6 +49,7 @@ const headers = computed(() => ({ 'x-admin-token': String(adminToken.value || ''
 const state = computed(() => status.value?.state || {})
 const capability = computed(() => status.value?.capability)
 const updateAvailable = computed(() => state.value.available === true || state.value.stage === 'update_available')
+const recoveryRequired = computed(() => state.value.phase === 'recovery_required')
 const operationActive = computed(() => Boolean(status.value?.busy || ['checking', 'updating', 'rolling_back', 'restart_pending'].includes(String(state.value.phase || ''))))
 const currentShortSha = computed(() => String(status.value?.currentSha || '').slice(0, 12) || '-')
 const targetShortSha = computed(() => String(state.value.targetSha || '').slice(0, 12) || '-')
@@ -79,6 +80,9 @@ function phaseLabel(value?: string) {
     updating: '正在升级',
     rolling_back: '正在回滚',
     rolled_back: '已回滚',
+    interrupted: '任务中断',
+    recovery_required: '需要恢复',
+    recovered: '已恢复',
     rollback_failed: '回滚失败',
     failed: '失败',
     restart_pending: '等待重启',
@@ -141,7 +145,8 @@ async function applyUpdate() {
   if (!capability.value?.supported)
     return
   const target = state.value.latestVersion || targetShortSha.value
-  if (!window.confirm(`确认升级 FAR2 到 ${target}？\n\n升级会执行完整 pnpm verify。失败会自动回滚；成功后 FAR2 服务会自动重启。`))
+  const recoveryNotice = recoveryRequired.value ? '检测到上次升级被意外中断，将先恢复上一个已验证版本，再重新升级。\n\n' : ''
+  if (!window.confirm(`${recoveryNotice}确认升级 FAR2 到 ${target}？\n\n升级会执行完整 pnpm verify。失败会自动回滚；成功后 FAR2 服务会自动重启。`))
     return
 
   loading.value = true
@@ -205,11 +210,11 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <div class="hero-actions">
-        <button class="btn secondary" :disabled="loading || operationActive" @click="checkUpdate">
+        <button class="btn secondary" :disabled="loading || operationActive || recoveryRequired" @click="checkUpdate">
           {{ action === 'check' ? '检查中…' : '检查更新' }}
         </button>
-        <button class="btn primary" :disabled="loading || operationActive || !capability?.supported || !updateAvailable" @click="applyUpdate">
-          {{ operationActive ? '升级进行中…' : '一键升级' }}
+        <button class="btn primary" :disabled="loading || operationActive || !capability?.supported || (!updateAvailable && !recoveryRequired)" @click="applyUpdate">
+          {{ recoveryRequired ? '恢复并重试升级' : operationActive ? '升级进行中…' : '一键升级' }}
         </button>
       </div>
     </section>
@@ -272,7 +277,7 @@ onBeforeUnmount(() => {
     <section class="card progress-card">
       <div class="card-title">
         <span>升级状态</span>
-        <span class="badge" :class="state.phase === 'failed' || state.phase === 'rollback_failed' ? 'danger' : operationActive ? 'update' : 'ok'">
+        <span class="badge" :class="['failed', 'rollback_failed', 'recovery_required', 'interrupted'].includes(String(state.phase || '')) ? 'danger' : operationActive ? 'update' : 'ok'">
           {{ phaseLabel(state.phase) }}
         </span>
       </div>
