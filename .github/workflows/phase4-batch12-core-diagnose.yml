@@ -1,0 +1,53 @@
+name: Phase4 Batch12 Core Diagnose
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch12-core-diagnose-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Inventory Core lint
+        shell: bash
+        run: |
+          set +e
+          pnpm -C core exec eslint . --format json > /tmp/core-lint.json
+          status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const rows = JSON.parse(fs.readFileSync('/tmp/core-lint.json', 'utf8'));
+          const msgs=[];
+          for (const row of rows) {
+            const file=path.relative(process.cwd(),row.filePath).replaceAll('\\','/');
+            for (const m of row.messages||[]) if(m.ruleId) msgs.push({file,rule:m.ruleId,fix:!!m.fix,line:m.line,column:m.column,message:m.message});
+          }
+          const byRule=new Map(), byFile=new Map();
+          for(const m of msgs){
+            const r=byRule.get(m.rule)||{total:0,fix:0}; r.total++; if(m.fix)r.fix++; byRule.set(m.rule,r);
+            const f=byFile.get(m.file)||{total:0,fix:0,rules:new Map()}; f.total++; if(m.fix)f.fix++; f.rules.set(m.rule,(f.rules.get(m.rule)||0)+1); byFile.set(m.file,f);
+          }
+          console.log(`CORE total=${msgs.length} fixable=${msgs.filter(x=>x.fix).length} files=${byFile.size}`);
+          console.log('=== RULES ===');
+          for(const [r,v] of [...byRule].sort((a,b)=>b[1].total-a[1].total||a[0].localeCompare(b[0]))) console.log(`${v.total} fix=${v.fix} ${r}`);
+          console.log('=== FILES ===');
+          for(const [f,v] of [...byFile].sort((a,b)=>b[1].total-a[1].total||a[0].localeCompare(b[0]))) console.log(`${v.total} fix=${v.fix} ${f} [${[...v.rules].map(([r,c])=>`${r}:${c}`).join(', ')}]`);
+          console.log('=== FIXABLE DETAIL ===');
+          for(const m of msgs.filter(x=>x.fix)) console.log(`${m.file}:${m.line}:${m.column} ${m.rule} :: ${m.message}`);
+          NODE
+          echo "eslint exit=$status"
