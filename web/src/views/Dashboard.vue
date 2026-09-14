@@ -578,7 +578,7 @@ useIntervalFn(updateCountdowns, 1000)
           </div>
           <div class="text-right">
             <div class="flex items-center justify-end gap-1.5 text-xs text-gray-500">
-              <div class="i-carbon-circle text-amber-500" />
+              <div class="i-carbon-circle-filled text-amber-500" />
               金豆豆
             </div>
             <div class="text-2xl text-amber-500 font-bold dark:text-amber-400">

@@ -1,6 +1,13 @@
 import { defineConfig, presetAttributify, presetIcons, presetUno, presetWebFonts } from 'unocss'
 
 export default defineConfig({
+  blocklist: [
+    'i-carbon-circle-dash-function',
+    'i-carbon-circle-dash-string',
+    'i-carbon-circle-dash-return',
+    'i-carbon-renew-animate-spin',
+    'i-carbon-restart-animate-spin',
+  ],
   content: {
     pipeline: {
       include: [

@@ -19,7 +19,7 @@ export const menuRoutes: MenuItem[] = [
     path: 'health',
     name: 'health',
     label: '健康',
-    icon: 'i-carbon-health-status',
+    icon: 'i-carbon-crop-health',
     component: () => import('@/views/HealthCenter.vue'),
   },
   {
