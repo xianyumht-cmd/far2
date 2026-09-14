@@ -242,7 +242,7 @@ function buildCropRegistrySnapshotV2(input = {}) {
 
 function persistSnapshot(snapshot) {
     const accountPart = String((snapshot && snapshot.accountId) || 'default')
-        .replace(/[^a-zA-Z0-9_.-]+/g, '_')
+        .replace(/[^\w.-]+/g, '_')
         .slice(0, 80) || 'default';
     const dir = path.join(ensureDataDir(), 'crop_registry');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
