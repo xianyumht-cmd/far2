@@ -86,7 +86,7 @@ function formatTaskProgress(task: any) {
         v-if="!currentAccountId"
         class="flex flex-col items-center justify-center gap-3 rounded-lg bg-gray-50 py-8 text-center text-gray-500 dark:bg-gray-900/40 dark:text-gray-400"
       >
-        <div class="i-carbon-user-offline text-3xl text-gray-400" />
+        <div class="i-carbon-user-profile text-3xl text-gray-400" />
         <div>
           <div class="text-sm text-gray-600 font-medium dark:text-gray-300">
             未登录账号

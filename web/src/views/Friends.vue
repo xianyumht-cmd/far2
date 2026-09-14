@@ -88,7 +88,7 @@ function openGidListModal() {
 
 const TABS = [
   { key: 'friends', label: '好友列表', icon: 'i-carbon-user-multiple' },
-  { key: 'blacklist', label: '好友黑名单', icon: 'i-carbon-list-blocked' },
+  { key: 'blacklist', label: '好友黑名单', icon: 'i-carbon-locked-and-blocked' },
   { key: 'visitors', label: '最近访客', icon: 'i-carbon-user-activity' },
 ] as const
 
@@ -614,7 +614,7 @@ async function handleBatchAddKnownFriendGids() {
     </div>
 
     <div v-else-if="!currentAccountId" class="flex flex-col items-center justify-center gap-4 rounded-lg bg-white p-12 text-center text-gray-500 shadow dark:bg-gray-800">
-      <div class="i-carbon-user-offline text-4xl text-gray-400" />
+      <div class="i-carbon-user-profile text-4xl text-gray-400" />
       <div>
         <div class="text-lg text-gray-700 font-medium dark:text-gray-300">
           未登录账号
@@ -919,7 +919,7 @@ async function handleBatchAddKnownFriendGids() {
         </div>
 
         <div v-if="blacklist.length === 0" class="rounded-lg bg-white p-8 text-center text-gray-500 shadow dark:bg-gray-800">
-          <div class="i-carbon-list-blocked mx-auto mb-3 text-4xl text-gray-300" />
+          <div class="i-carbon-locked-and-blocked mx-auto mb-3 text-4xl text-gray-300" />
           暂无黑名单好友
         </div>
 
