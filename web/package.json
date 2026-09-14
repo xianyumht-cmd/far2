@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "lint": "eslint \"src/**/*.{ts,vue}\" --fix",
-    "preview": "vite preview"
+    "lint": "eslint \"src/**/*.{ts,vue}\"",
+    "preview": "vite preview",
+    "lint:fix": "eslint \"src/**/*.{ts,vue}\" --fix",
+    "typecheck": "vue-tsc -b"
   },
   "dependencies": {
     "@vueuse/core": "^14.2.1",
