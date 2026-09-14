@@ -1,0 +1,88 @@
+name: Phase4 Batch10 Diagnose
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch10-diagnose-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Inventory remaining lint
+        shell: bash
+        run: |
+          set +e
+          pnpm -C core exec eslint . --format json > /tmp/core-lint.json
+          core_status=$?
+          pnpm -C web exec eslint . --format json > /tmp/web-lint.json
+          web_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          function summarize(label, file) {
+            const rows = JSON.parse(fs.readFileSync(file, 'utf8'));
+            const msgs = [];
+            for (const row of rows) {
+              const rel = path.relative(process.cwd(), row.filePath).replaceAll('\\', '/');
+              for (const m of row.messages || []) {
+                if (!m.ruleId) continue;
+                msgs.push({ file: rel, rule: m.ruleId, fix: !!m.fix, line: m.line, column: m.column, message: m.message });
+              }
+            }
+            const byRule = new Map();
+            const byFile = new Map();
+            for (const m of msgs) {
+              const r = byRule.get(m.rule) || { total: 0, fixable: 0 };
+              r.total += 1;
+              if (m.fix) r.fixable += 1;
+              byRule.set(m.rule, r);
+              const f = byFile.get(m.file) || { total: 0, fixable: 0, rules: new Map() };
+              f.total += 1;
+              if (m.fix) f.fixable += 1;
+              f.rules.set(m.rule, (f.rules.get(m.rule) || 0) + 1);
+              byFile.set(m.file, f);
+            }
+            console.log(`\n=== ${label} SUMMARY ===`);
+            console.log(`total=${msgs.length} fixable=${msgs.filter(m => m.fix).length} files=${byFile.size}`);
+            console.log('\nRULES');
+            for (const [rule, v] of [...byRule].sort((a,b) => b[1].total-a[1].total || a[0].localeCompare(b[0]))) {
+              console.log(`${String(v.total).padStart(4)}  fix=${String(v.fixable).padStart(4)}  ${rule}`);
+            }
+            console.log('\nTOP FILES');
+            for (const [fileName, v] of [...byFile].sort((a,b) => b[1].total-a[1].total || a[0].localeCompare(b[0])).slice(0, 40)) {
+              const rules = [...v.rules].sort((a,b)=>b[1]-a[1]).map(([r,c])=>`${r}:${c}`).join(', ');
+              console.log(`${String(v.total).padStart(4)}  fix=${String(v.fixable).padStart(4)}  ${fileName}  [${rules}]`);
+            }
+            console.log('\nALL-FIXABLE FILES <=20 FINDINGS');
+            for (const [fileName, v] of [...byFile].filter(([,v]) => v.total > 0 && v.total <= 20 && v.fixable === v.total).sort((a,b)=>a[1].total-b[1].total || a[0].localeCompare(b[0]))) {
+              const rules = [...v.rules].sort((a,b)=>b[1]-a[1]).map(([r,c])=>`${r}:${c}`).join(', ');
+              console.log(`${String(v.total).padStart(4)}  ${fileName}  [${rules}]`);
+            }
+            console.log('\nLOW-RISK DETAIL: files <=12 findings');
+            for (const [fileName, v] of [...byFile].filter(([,v]) => v.total > 0 && v.total <= 12).sort((a,b)=>a[1].total-b[1].total || a[0].localeCompare(b[0]))) {
+              console.log(`-- ${fileName} total=${v.total} fixable=${v.fixable}`);
+              for (const m of msgs.filter(x => x.file === fileName)) {
+                console.log(`  ${m.line}:${m.column} ${m.fix ? 'FIX' : 'NOFIX'} ${m.rule} :: ${m.message}`);
+              }
+            }
+          }
+
+          summarize('CORE', '/tmp/core-lint.json');
+          summarize('WEB', '/tmp/web-lint.json');
+          NODE
+          echo "core eslint exit=$core_status; web eslint exit=$web_status"
