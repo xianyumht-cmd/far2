@@ -476,7 +476,7 @@ function createCodeManager(options = {}) {
         }
         if (action === 'kickout_stop') {
             const kickReason = String(entry.reason || '未知');
-            if (/版本过低|客户端版本/i.test(kickReason)) return;
+            if (/版本过低|客户端版本/.test(kickReason)) return;
             triggerRefresh(id, `kickout:${kickReason}`);
         }
     }
