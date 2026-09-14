@@ -1,0 +1,130 @@
+name: Phase4 Batch16 Apply
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch16-script-regex-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact Batch16 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_files=(
+            scripts/qq-dog-addfood-source-scan.js
+            scripts/qq-official-readonly-ui-capture.js
+            scripts/qq-dog-rpc-capture.js
+          )
+          set +e
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/b16-before.json
+          before_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = JSON.parse(fs.readFileSync('/tmp/b16-before.json', 'utf8'));
+          const msgs = rows.flatMap(r => r.messages || []).filter(m => m.ruleId);
+          const counts = new Map();
+          for (const m of msgs) counts.set(m.ruleId, (counts.get(m.ruleId) || 0) + 1);
+          if (msgs.length !== 4) throw new Error(`expected exactly 4 findings, got ${msgs.length}: ${JSON.stringify(msgs)}`);
+          if (counts.size !== 2 || counts.get('regexp/no-dupe-disjunctions') !== 3 || counts.get('regexp/no-unused-capturing-group') !== 1) {
+            throw new Error(`unexpected rule set: ${JSON.stringify([...counts])}`);
+          }
+          if (msgs.some(m => m.fix)) throw new Error('Batch16 findings unexpectedly have automatic fixes');
+          console.log('preflight PASS: exactly 4 expected manual regexp findings');
+          NODE
+          test "$before_status" -ne 0
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          changes = {
+              Path('core/scripts/qq-dog-addfood-source-scan.js'): [
+                  (r'\b(?:food[_-]?id|foodId|item[_-]?id|itemId|count|num|number|amount|quantity|arg\d*|value\d*)\b',
+                   r'\b(?:food[_-]?id|item[_-]?id|count|num|number|amount|quantity|arg\d*|value\d*)\b'),
+              ],
+              Path('core/scripts/qq-official-readonly-ui-capture.js'): [
+                  ('Overview|Config|Configs)', 'Overview|Config)'),
+                  ('Overview|Config|Configs)/i;', 'Overview|Config)/i;'),
+              ],
+              Path('core/scripts/qq-dog-rpc-capture.js'): [
+                  (r'/(\.dogpb\.|\.itempb\.|\.shoppb\.)/i.test(service)',
+                   r'/(?:\.dogpb\.|\.itempb\.|\.shoppb\.)/i.test(service)'),
+              ],
+          }
+
+          for path, replacements in changes.items():
+              text = path.read_text(encoding='utf-8')
+              if path.name == 'qq-official-readonly-ui-capture.js':
+                  # The same READ regex appears once in JS source and once inside the injected payload string.
+                  old = 'Overview|Config|Configs)'
+                  count = text.count(old)
+                  if count != 2:
+                      raise SystemExit(f'{path}: expected 2 Config|Configs occurrences, got {count}')
+                  text = text.replace(old, 'Overview|Config)')
+              else:
+                  for old, new in replacements:
+                      count = text.count(old)
+                      if count != 1:
+                          raise SystemExit(f'{path}: expected exactly 1 occurrence of {old!r}, got {count}')
+                      text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+          PY
+
+          set +e
+          pnpm -C core exec eslint "${core_files[@]}" --format json > /tmp/b16-after.json
+          after_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = JSON.parse(fs.readFileSync('/tmp/b16-after.json', 'utf8'));
+          const msgs = rows.flatMap(r => r.messages || []).filter(m => m.ruleId);
+          if (msgs.length !== 0) throw new Error(`expected zero findings after Batch16, got ${JSON.stringify(msgs)}`);
+          console.log('post-fix PASS: all 4 targeted findings removed');
+          NODE
+          test "$after_status" -eq 0
+
+          mapfile -t changed < <(git diff --name-only | grep -vE '^[^/]+\.cmd$' || true)
+          test "${#changed[@]}" -eq 3
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'core/scripts/qq-dog-addfood-source-scan.js'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'core/scripts/qq-official-readonly-ui-capture.js'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'core/scripts/qq-dog-rpc-capture.js'
+          git diff --check -- core/scripts/qq-dog-addfood-source-scan.js core/scripts/qq-official-readonly-ui-capture.js core/scripts/qq-dog-rpc-capture.js
+      - name: Verify repository
+        run: pnpm verify
+      - name: Diff integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$|^core/scripts/qq-dog-addfood-source-scan\.js$|^core/scripts/qq-official-readonly-ui-capture\.js$|^core/scripts/qq-dog-rpc-capture\.js$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
+          git diff --check -- core/scripts/qq-dog-addfood-source-scan.js core/scripts/qq-official-readonly-ui-capture.js core/scripts/qq-dog-rpc-capture.js
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/scripts/qq-dog-addfood-source-scan.js core/scripts/qq-official-readonly-ui-capture.js core/scripts/qq-dog-rpc-capture.js
+          git commit -m "chore(quality): simplify diagnostic script regexes"
+          git push origin HEAD:chore/phase4-batch16-script-regex-20260915
