@@ -205,14 +205,14 @@ function parsePlantObjectText(text, seedId) {
     const seedPattern = new RegExp(`(?:["']?seed_id["']?|["']?seedId["']?)\\s*:\\s*${id}(?!\\d)`, 'i');
     if (!seedPattern.test(topLevel)) return null;
 
-    const rawSizes = uniqueNumericMatches(topLevel, /(?:["']?size["']?)\s*:\s*(-?\d+)/gi);
+    const rawSizes = uniqueNumericMatches(topLevel, /["']?size["']?\s*:\s*(-?\d+)/gi);
     if (rawSizes.length !== 1) return null;
     const rawSize = rawSizes[0];
     const plantSize = rawSize === 2 ? 2 : (rawSize === 0 || rawSize === 1 ? 1 : 0);
     if (![1, 2].includes(plantSize)) return null;
 
     const names = [];
-    for (const match of topLevel.matchAll(/(?:["']?name["']?)\s*:\s*["']([^"'\\]{1,80})["']/gi)) {
+    for (const match of topLevel.matchAll(/["']?name["']?\s*:\s*["']([^"'\\]{1,80})["']/gi)) {
         const value = String(match[1] || '').trim();
         if (value && !names.includes(value)) names.push(value);
     }
