@@ -6,6 +6,7 @@ on:
       - chore/phase4-batch6-literal-case-20260915
     paths:
       - .github/workflows/phase4-batch6-apply.yml
+      - .github/scripts/phase4-batch6-rule-fixes.cjs
 
 permissions:
   contents: write
