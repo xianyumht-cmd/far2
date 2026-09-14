@@ -75,9 +75,11 @@ jobs:
 
           uno = Path('web/uno.config.ts')
           text = uno.read_text(encoding='utf-8')
-          anchor = "  safelist: carbonIconNames.map(iconName => `i-carbon-${iconName}`),\n"
+          if 'blocklist:' in text:
+              raise SystemExit('web/uno.config.ts: blocklist already exists unexpectedly')
+          anchor = 'export default defineConfig({\n'
           if text.count(anchor) != 1:
-              raise SystemExit('web/uno.config.ts: safelist anchor mismatch')
+              raise SystemExit('web/uno.config.ts: defineConfig anchor mismatch')
           block = ''.join([
               "  blocklist: [\n",
               "    'i-carbon-circle-dash-function',\n",
@@ -87,7 +89,7 @@ jobs:
               "    'i-carbon-restart-animate-spin',\n",
               "  ],\n",
           ])
-          text = text.replace(anchor, anchor + block)
+          text = text.replace(anchor, anchor + block, 1)
           uno.write_text(text, encoding='utf-8')
           PY
       - name: Verify Carbon replacements exist
