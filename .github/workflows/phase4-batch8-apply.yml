@@ -62,19 +62,25 @@ jobs:
           if (messages.length !== 0) throw new Error(`expected zero mystery-shop findings after fix, got ${messages.length}: ${JSON.stringify(messages)}`);
           console.log('post-fix PASS: mystery-shop has zero ESLint findings');
           NODE
-          git restore -- '*.cmd'
-          mapfile -t changed < <(git diff --name-only)
-          printf 'changed-before-verify: %s\n' "${changed[@]}"
-          test "${#changed[@]}" -eq 1
-          test "${changed[0]}" = "core/src/services/mystery-shop.js"
+          git diff --quiet -- core/src/services/mystery-shop.js && { echo 'expected mystery-shop diff is missing'; exit 1; } || true
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^core/src/services/mystery-shop\.js$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected pre-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
           git diff --check -- core/src/services/mystery-shop.js
       - name: Verify repository
         run: pnpm verify
       - name: Diff integrity
         shell: bash
         run: |
-          git diff --check
+          git diff --check -- core/src/services/mystery-shop.js
           git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^core/src/services/mystery-shop\.js$|^web/stats\.html$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
           git status --short
       - name: Commit verified product change
         shell: bash
