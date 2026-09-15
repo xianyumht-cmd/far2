@@ -73,7 +73,7 @@ const remainingText = computed(() => formatDuration(remainingSeconds.value))
       : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'"
   >
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <div class="flex items-center gap-2 font-medium text-gray-700 dark:text-gray-200">
+      <div class="flex items-center gap-2 text-gray-700 font-medium dark:text-gray-200">
         <div class="i-carbon-data-vis-1" />
         护主犬状态
       </div>
@@ -93,7 +93,7 @@ const remainingText = computed(() => formatDuration(remainingSeconds.value))
     </div>
 
     <div v-if="probe.present && dogId" class="mt-2 flex flex-wrap items-center gap-2 text-sm">
-      <span class="rounded bg-violet-100 px-2 py-1 font-medium text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+      <span class="rounded bg-violet-100 px-2 py-1 text-violet-700 font-medium dark:bg-violet-900/40 dark:text-violet-300">
         {{ dogName || '已识别犬种 ID' }}（{{ dogId }}）
       </span>
       <span v-if="remainingSeconds" class="rounded bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
@@ -109,7 +109,7 @@ const remainingText = computed(() => formatDuration(remainingSeconds.value))
         <span
           v-for="(field, index) in probe.fields"
           :key="`dog-probe-${index}`"
-          class="rounded bg-white px-2 py-1 font-mono text-xs text-gray-600 shadow-sm dark:bg-gray-800 dark:text-gray-300"
+          class="rounded bg-white px-2 py-1 text-xs text-gray-600 font-mono shadow-sm dark:bg-gray-800 dark:text-gray-300"
         >
           f{{ field.field }}/w{{ field.wire }}
           <template v-if="field.varint !== undefined">={{ field.varint }}</template>

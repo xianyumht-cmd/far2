@@ -212,7 +212,7 @@ watch(() => props.show, (newVal) => {
         </div>
 
         <div v-if="activeTab === 'wx' && !editData" class="space-y-4">
-          <div class="rounded-lg border p-4 text-sm leading-6" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
+          <div class="border rounded-lg p-4 text-sm leading-6" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
             <div class="font-semibold">
               Windows 桌面微信 Resident Agent
             </div>
@@ -241,7 +241,7 @@ watch(() => props.show, (newVal) => {
 
         <div v-if="activeTab === 'manual'" class="space-y-4">
           <template v-if="editingWx">
-            <div class="rounded-lg border p-4 text-sm leading-6" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
+            <div class="border rounded-lg p-4 text-sm leading-6" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
               当前为 Windows 微信 Resident 账号。这里只修改备注，不显示或手工修改生产 Code。
             </div>
             <BaseInput
@@ -265,7 +265,7 @@ watch(() => props.show, (newVal) => {
               :rows="3"
             />
 
-            <div v-if="!editData" class="rounded-lg border px-3 py-2 text-sm" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
+            <div v-if="!editData" class="border rounded-lg px-3 py-2 text-sm" :style="{ borderColor: 'color-mix(in srgb, var(--theme-text) 12%, transparent)', color: 'var(--theme-text)' }">
               平台：QQ 小程序
             </div>
           </template>

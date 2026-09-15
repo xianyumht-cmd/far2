@@ -1105,7 +1105,17 @@ async function copyToken() {
 
 /* 自定义调整大小手柄样式 */
 .announcement-view-modal::-webkit-resizer {
-  background: linear-gradient(-45deg, transparent 50%, var(--theme-primary) 50%, var(--theme-primary) 60%, transparent 60%, transparent 70%, var(--theme-primary) 70%, var(--theme-primary) 80%, transparent 80%);
+  background: linear-gradient(
+    -45deg,
+    transparent 50%,
+    var(--theme-primary) 50%,
+    var(--theme-primary) 60%,
+    transparent 60%,
+    transparent 70%,
+    var(--theme-primary) 70%,
+    var(--theme-primary) 80%,
+    transparent 80%
+  );
   border-radius: 0 0 12px 0;
 }
 </style>

@@ -810,7 +810,7 @@ useIntervalFn(updateCountdowns, 1000)
             class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700"
           >
             <div class="mb-2 flex items-center justify-between">
-              <div class="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+              <div class="flex items-center gap-2 text-sm text-gray-700 font-medium dark:text-gray-300">
                 <div class="i-carbon-shopping-bag text-pink-500" />
                 <span>神秘商店</span>
               </div>
@@ -827,7 +827,7 @@ useIntervalFn(updateCountdowns, 1000)
                 <div class="text-[11px] text-gray-400">
                   今日购买
                 </div>
-                <div class="mt-0.5 text-sm font-bold text-pink-600 dark:text-pink-400">
+                <div class="mt-0.5 text-sm text-pink-600 font-bold dark:text-pink-400">
                   {{ mysteryShopTodayCount }} 次
                 </div>
               </div>
