@@ -43,7 +43,7 @@ function safeEqual(left, right) {
 
 function getBearerToken(req) {
     const raw = String(req.headers.authorization || '');
-    const match = raw.match(/^Bearer\s+(.+)$/i);
+    const match = raw.match(/^Bearer\s+(\S.*)$/i);
     return match ? match[1].trim() : '';
 }
 
