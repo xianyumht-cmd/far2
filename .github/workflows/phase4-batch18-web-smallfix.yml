@@ -1,0 +1,109 @@
+name: Phase4 Batch18 Web Small Fix
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch18-web-smallfix-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact Batch18 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            src/components/AccountModal.vue
+            src/components/FriendDogProbe.vue
+            src/views/Dashboard.vue
+            src/components/Sidebar.vue
+          )
+          set +e
+          pnpm -C web exec eslint "${files[@]}" --format json > /tmp/b18-before.json
+          before_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const rows = JSON.parse(fs.readFileSync('/tmp/b18-before.json', 'utf8'));
+          const actual = new Map();
+          let total = 0;
+          for (const row of rows) {
+            const file = path.basename(row.filePath);
+            for (const m of row.messages || []) {
+              if (!m.ruleId || !m.severity) continue;
+              total += 1;
+              if (!m.fix) throw new Error(`non-fixable finding in Batch18 target: ${file} ${m.ruleId}`);
+              const key = `${file}|${m.ruleId}`;
+              actual.set(key, (actual.get(key) || 0) + 1);
+            }
+          }
+          const expected = new Map([
+            ['AccountModal.vue|unocss/order', 3],
+            ['FriendDogProbe.vue|unocss/order', 3],
+            ['Dashboard.vue|unocss/order', 2],
+            ['Sidebar.vue|format/prettier', 1],
+          ]);
+          if (total !== 9 || actual.size !== expected.size) throw new Error(`expected 9 findings in 4 groups, got total=${total} groups=${JSON.stringify([...actual])}`);
+          for (const [key, count] of expected) if (actual.get(key) !== count) throw new Error(`unexpected count for ${key}: ${actual.get(key)} != ${count}`);
+          console.log('preflight PASS: exactly 9 expected fixable Web findings');
+          NODE
+          test "$before_status" -ne 0
+
+          pnpm -C web exec eslint "${files[@]}" --fix
+
+          set +e
+          pnpm -C web exec eslint "${files[@]}" --format json > /tmp/b18-after.json
+          after_status=$?
+          set -e
+          node <<'NODE'
+          const fs = require('node:fs');
+          const rows = JSON.parse(fs.readFileSync('/tmp/b18-after.json', 'utf8'));
+          const msgs = rows.flatMap(r => r.messages || []).filter(m => m.ruleId && m.severity);
+          if (msgs.length) throw new Error(`expected zero targeted findings after Batch18: ${JSON.stringify(msgs)}`);
+          console.log('post-fix PASS: targeted files are clean');
+          NODE
+          test "$after_status" -eq 0
+
+          mapfile -t changed < <(git diff --name-only)
+          test "${#changed[@]}" -eq 4
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'web/src/components/AccountModal.vue'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'web/src/components/FriendDogProbe.vue'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'web/src/views/Dashboard.vue'
+          printf '%s\n' "${changed[@]}" | grep -Fxq 'web/src/components/Sidebar.vue'
+          git diff --check -- web/src/components/AccountModal.vue web/src/components/FriendDogProbe.vue web/src/views/Dashboard.vue web/src/components/Sidebar.vue
+      - name: Verify repository
+        run: pnpm verify
+      - name: Diff integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '(^|/)[^/]+\.cmd$|^web/stats\.html$|^web/src/components/AccountModal\.vue$|^web/src/components/FriendDogProbe\.vue$|^web/src/views/Dashboard\.vue$|^web/src/components/Sidebar\.vue$' || true)
+          if (( ${#unexpected[@]} )); then
+            printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
+            exit 1
+          fi
+          git diff --check -- web/src/components/AccountModal.vue web/src/components/FriendDogProbe.vue web/src/views/Dashboard.vue web/src/components/Sidebar.vue
+      - name: Commit verified product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/components/AccountModal.vue web/src/components/FriendDogProbe.vue web/src/views/Dashboard.vue web/src/components/Sidebar.vue
+          git commit -m "chore(web): normalize small lint-only formatting"
+          git push origin HEAD:chore/phase4-batch18-web-smallfix-20260915
