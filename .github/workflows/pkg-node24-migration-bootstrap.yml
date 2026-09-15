@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   migrate-and-smoke:
-    if: github.event.head_commit.message == 'chore(pkg): bootstrap Node 24 packaging migration'
+    if: contains(github.event.head_commit.message, 'bootstrap Node 24 packaging migration')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
