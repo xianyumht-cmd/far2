@@ -228,7 +228,10 @@ async function attachHook() {
     });
     await script.load();
     const deadline = Date.now() + 3000;
-    while (!ready && !hookError && Date.now() < deadline) await sleep(30);
+    for (;;) {
+        if (ready || hookError || Date.now() >= deadline) break;
+        await sleep(30);
+    }
     if (!ready) {
         try { await script.unload(); } catch {}
         try { await session.detach(); } catch {}
