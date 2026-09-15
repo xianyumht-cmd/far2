@@ -1,0 +1,74 @@
+name: Batch 20 Lint Inventory
+
+on:
+  push:
+    branches:
+      - diag/phase4-batch20-lint-inventory-20260915
+    paths:
+      - .github/workflows/batch20-lint-inventory.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Inventory remaining lint debt
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+
+          const root = process.cwd()
+          async function lintWorkspace(workspace, targets) {
+            const workspaceRoot = path.join(root, workspace)
+            const req = createRequire(path.join(workspaceRoot, 'package.json'))
+            const eslintPath = req.resolve('eslint')
+            const { ESLint } = await import(`file://${eslintPath.replaceAll('\\', '/')}`)
+            const eslint = new ESLint({ cwd: workspaceRoot, fix: false })
+            return eslint.lintFiles(targets)
+          }
+
+          const reports = [
+            ...await lintWorkspace('core', ['.']),
+            ...await lintWorkspace('web', ['src/**/*.{ts,vue}']),
+          ]
+          const rows = []
+          const byRule = new Map()
+          const byFile = new Map()
+          for (const report of reports) {
+            const file = path.relative(root, report.filePath).replaceAll('\\', '/')
+            for (const m of report.messages || []) {
+              if (!m.severity) continue
+              const rule = m.ruleId || 'unknown-rule'
+              rows.push({ file, rule, line: m.line || 0, column: m.column || 0, message: m.message, fixable: Boolean(m.fix) })
+              byRule.set(rule, (byRule.get(rule) || 0) + 1)
+              byFile.set(file, (byFile.get(file) || 0) + 1)
+            }
+          }
+          const sortMap = map => [...map].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]))
+          console.log(`TOTAL ${rows.length}`)
+          console.log('\nTOP_RULES')
+          for (const [rule,count] of sortMap(byRule)) console.log(`${count}\t${rule}`)
+          console.log('\nTOP_FILES')
+          for (const [file,count] of sortMap(byFile).slice(0,60)) console.log(`${count}\t${file}`)
+
+          const bulk = new Set(['vue/singleline-html-element-content-newline','unocss/order','vue/html-indent'])
+          console.log('\nNON_BULK_FINDINGS')
+          for (const r of rows.filter(r => !bulk.has(r.rule)).sort((a,b) => a.rule.localeCompare(b.rule) || a.file.localeCompare(b.file) || a.line-b.line || a.column-b.column)) {
+            console.log(`${r.fixable ? 'FIX' : 'NOFIX'}\t${r.rule}\t${r.file}:${r.line}:${r.column}\t${r.message}`)
+          }
+          NODE
