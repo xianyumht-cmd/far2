@@ -85,7 +85,7 @@ function scanProtobufMessage(input) {
 
 function decodeText(bytes) {
     if (!bytes) return '';
-    const text = Buffer.from(bytes).toString('utf8').replace(/\u0000/g, '').trim();
+    const text = Buffer.from(bytes).toString('utf8').replaceAll('\0', '').trim();
     if (!text || text.includes('\uFFFD')) return '';
     return text;
 }

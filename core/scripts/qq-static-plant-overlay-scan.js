@@ -124,9 +124,22 @@ function countToken(text, token) {
     return count;
 }
 
+function replaceUnsafeControlChars(value) {
+    const source = String(value || '');
+    let output = '';
+    for (const char of source) {
+        const code = char.charCodeAt(0);
+        const unsafe = code <= 0x08
+            || code === 0x0B
+            || code === 0x0C
+            || (code >= 0x0E && code <= 0x1F);
+        output += unsafe ? ' ' : char;
+    }
+    return output;
+}
+
 function sanitizeSnippet(value) {
-    return String(value || '')
-        .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
+    return replaceUnsafeControlChars(value)
         .replace(/https?:\/\/[^\s"']+/gi, '[URL]')
         .replace(/(authorization|token|ticket|session|openid|code)\s*[:=]\s*["']?[^\s,"'}]{12,}/gi, '$1=[MASKED]')
         .replace(/[\w+/=-]{64,}/g, '[LONG_VALUE_MASKED]')
