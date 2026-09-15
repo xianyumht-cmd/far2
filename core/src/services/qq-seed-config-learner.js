@@ -351,11 +351,15 @@ function learnSeedConfigFromQqCache(seedId, options = {}) {
     let scannedFiles = 0;
     let scannedBytes = 0;
 
-    outer:
+    let budgetExhausted = false;
     for (const folder of folders) {
+        if (budgetExhausted) break;
         const files = listCandidateFiles(folder.path);
         for (const file of files) {
-            if (scannedFiles >= MAX_FILES || scannedBytes + file.size > MAX_TOTAL_BYTES) break outer;
+            if (scannedFiles >= MAX_FILES || scannedBytes + file.size > MAX_TOTAL_BYTES) {
+                budgetExhausted = true;
+                break;
+            }
             scannedFiles++;
             scannedBytes += file.size;
 
