@@ -1,0 +1,87 @@
+name: Phase 4 Bulk Lint Audit
+
+on:
+  push:
+    branches: [diag/phase4-bulk-lint-audit-20260915]
+    paths: [.github/workflows/phase4-bulk-lint-audit.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit remaining bulk findings
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+
+          const root = process.cwd()
+          async function lint(workspace, targets) {
+            const cwd = path.join(root, workspace)
+            const req = createRequire(path.join(cwd, 'package.json'))
+            const { ESLint } = await import(`file://${req.resolve('eslint').replaceAll('\\', '/')}`)
+            return new ESLint({ cwd, fix: false }).lintFiles(targets)
+          }
+
+          const targetRules = [
+            'vue/singleline-html-element-content-newline',
+            'unocss/order',
+            'vue/html-indent',
+          ]
+          const targetSet = new Set(targetRules)
+          const reports = [...await lint('core', ['.']), ...await lint('web', ['src/**/*.{ts,vue}'])]
+          const counts = new Map(targetRules.map(rule => [rule, { total: 0, fixable: 0 }]))
+          const byFile = new Map()
+          let allFindings = 0
+          let nonBulk = 0
+
+          for (const report of reports) {
+            const file = path.relative(root, report.filePath).replaceAll('\\', '/')
+            for (const message of report.messages || []) {
+              if (!message.severity) continue
+              allFindings++
+              if (!targetSet.has(message.ruleId)) {
+                nonBulk++
+                continue
+              }
+              const row = counts.get(message.ruleId)
+              row.total++
+              if (message.fix) row.fixable++
+              const fileRow = byFile.get(file) || { total: 0, fixable: 0, rules: new Map() }
+              fileRow.total++
+              if (message.fix) fileRow.fixable++
+              fileRow.rules.set(message.ruleId, (fileRow.rules.get(message.ruleId) || 0) + 1)
+              byFile.set(file, fileRow)
+            }
+          }
+
+          console.log(`ALL_FINDINGS ${allFindings}`)
+          console.log(`NON_BULK ${nonBulk}`)
+          console.log('RULE_COUNTS')
+          for (const rule of targetRules) {
+            const row = counts.get(rule)
+            console.log(`${row.total}\tfixable=${row.fixable}\t${rule}`)
+          }
+          console.log('TOP_FILES')
+          for (const [file, row] of [...byFile.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0])).slice(0, 60)) {
+            const rules = [...row.rules.entries()].sort((a, b) => b[1] - a[1]).map(([rule, count]) => `${rule}=${count}`).join(',')
+            console.log(`${row.total}\tfixable=${row.fixable}\t${file}\t${rules}`)
+          }
+
+          if (allFindings !== 521) throw new Error(`Expected 521 findings, got ${allFindings}`)
+          if (nonBulk !== 0) throw new Error(`Expected no non-bulk findings, got ${nonBulk}`)
+          NODE
