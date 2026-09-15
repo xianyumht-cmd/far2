@@ -464,29 +464,6 @@ async function loadStrategyData() {
   }
 }
 
-async function saveStrategySettings() {
-  if (!currentAccountId.value)
-    return
-  strategySaving.value = true
-  try {
-    const fullSettings = {
-      ...settings.value,
-      ...localStrategySettings.value,
-      automation: localAutomationSettings.value.automation,
-    }
-    const res = await settingStore.saveSettings(currentAccountId.value, fullSettings)
-    if (res.ok) {
-      showAlert('策略设置已保存', 'primary')
-    }
-    else {
-      showAlert(`保存失败: ${res.error}`, 'danger')
-    }
-  }
-  finally {
-    strategySaving.value = false
-  }
-}
-
 watch(currentAccountId, async () => {
   if (currentAccountId.value) {
     await loadStrategyData()
@@ -553,6 +530,29 @@ const localAutomationSettings = ref({
   fertilizerBuyNormalThresholdHours: 10,
   fertilizerBuyCheckIntervalMinutes: 30,
 })
+
+async function saveStrategySettings() {
+  if (!currentAccountId.value)
+    return
+  strategySaving.value = true
+  try {
+    const fullSettings = {
+      ...settings.value,
+      ...localStrategySettings.value,
+      automation: localAutomationSettings.value.automation,
+    }
+    const res = await settingStore.saveSettings(currentAccountId.value, fullSettings)
+    if (res.ok) {
+      showAlert('策略设置已保存', 'primary')
+    }
+    else {
+      showAlert(`保存失败: ${res.error}`, 'danger')
+    }
+  }
+  finally {
+    strategySaving.value = false
+  }
+}
 
 const fertilizerOptions = [
   { label: '普通 + 有机', value: 'both' },
