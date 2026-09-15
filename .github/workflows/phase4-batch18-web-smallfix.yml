@@ -79,6 +79,8 @@ jobs:
           test "$after_status" -eq 0
 
           mapfile -t changed < <(git diff --name-only)
+          printf 'changed after fix (%s):\n' "${#changed[@]}"
+          printf ' - %s\n' "${changed[@]}"
           test "${#changed[@]}" -eq 4
           printf '%s\n' "${changed[@]}" | grep -Fxq 'web/src/components/AccountModal.vue'
           printf '%s\n' "${changed[@]}" | grep -Fxq 'web/src/components/FriendDogProbe.vue'
