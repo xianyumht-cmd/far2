@@ -239,11 +239,18 @@ function scanFarmCache(options = {}) {
     let readFiles = 0;
     let scannedBytes = 0;
 
-    outer:
+    let budgetExhausted = false;
     for (const folder of folders) {
+        if (budgetExhausted) break;
         for (const file of listAllFiles(folder.path)) {
-            if (scannedFiles >= (Number(options.maxFiles) || MAX_FILES)) break outer;
-            if (scannedBytes + file.size > (Number(options.maxTotalBytes) || MAX_TOTAL_BYTES)) break outer;
+            if (scannedFiles >= (Number(options.maxFiles) || MAX_FILES)) {
+                budgetExhausted = true;
+                break;
+            }
+            if (scannedBytes + file.size > (Number(options.maxTotalBytes) || MAX_TOTAL_BYTES)) {
+                budgetExhausted = true;
+                break;
+            }
             scannedFiles++;
             scannedBytes += file.size;
 
