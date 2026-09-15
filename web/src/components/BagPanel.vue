@@ -622,7 +622,7 @@ useIntervalFn(loadBag, 60000)
       :message="confirmModal.message"
       :type="confirmModal.type"
       :loading="confirmModal.loading"
-      :confirm-text="'确认出售'"
+      confirm-text="确认出售"
       @confirm="handleConfirm"
       @cancel="handleCancel"
     />

@@ -309,22 +309,14 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
   left: 2px;
   right: 2px;
   height: 3px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.8), rgba(255,255,255,0.2));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.2));
   border-radius: 10px 10px 0 0;
   pointer-events: none;
 }
 
 .rainbow-progress-fill {
   height: 100%;
-  background: linear-gradient(
-    90deg,
-    #ff6b9d 0%,
-    #ff9f43 20%,
-    #ffd32a 40%,
-    #26de81 60%,
-    #45aaf2 80%,
-    #a55eea 100%
-  );
+  background: linear-gradient(90deg, #ff6b9d 0%, #ff9f43 20%, #ffd32a 40%, #26de81 60%, #45aaf2 80%, #a55eea 100%);
   border-radius: 10px;
   transition: width 1s linear;
   position: relative;
@@ -341,18 +333,14 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.4) 50%,
-    transparent 100%
-  );
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%);
   animation: shimmer 2s infinite;
   border-radius: 10px;
 }
 
 @keyframes cute-pulse {
-  0%, 100% {
+  0%,
+  100% {
     filter: brightness(1) saturate(1);
   }
   50% {
@@ -379,7 +367,7 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
   }
 
   .rainbow-progress-bar::before {
-    background: linear-gradient(90deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02));
   }
 
   .rainbow-progress-fill {
