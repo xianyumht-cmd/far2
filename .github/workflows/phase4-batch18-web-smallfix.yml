@@ -78,8 +78,8 @@ jobs:
           NODE
           test "$after_status" -eq 0
 
-          mapfile -t changed < <(git diff --name-only)
-          printf 'changed after fix (%s):\n' "${#changed[@]}"
+          mapfile -t changed < <(git diff --name-only | grep -vE '^[^/]+\.cmd$' || true)
+          printf 'non-runner-noise changes after fix (%s):\n' "${#changed[@]}"
           printf ' - %s\n' "${changed[@]}"
           test "${#changed[@]}" -eq 4
           printf '%s\n' "${changed[@]}" | grep -Fxq 'web/src/components/AccountModal.vue'
@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           git diff --exit-code -- pnpm-lock.yaml core/pnpm-lock.yaml web/pnpm-lock.yaml
-          mapfile -t unexpected < <(git diff --name-only | grep -vE '(^|/)[^/]+\.cmd$|^web/stats\.html$|^web/src/components/AccountModal\.vue$|^web/src/components/FriendDogProbe\.vue$|^web/src/views/Dashboard\.vue$|^web/src/components/Sidebar\.vue$' || true)
+          mapfile -t unexpected < <(git diff --name-only | grep -vE '^[^/]+\.cmd$|^web/stats\.html$|^web/src/components/AccountModal\.vue$|^web/src/components/FriendDogProbe\.vue$|^web/src/views/Dashboard\.vue$|^web/src/components/Sidebar\.vue$' || true)
           if (( ${#unexpected[@]} )); then
             printf 'unexpected post-verify diff: %s\n' "${unexpected[@]}"
             exit 1
