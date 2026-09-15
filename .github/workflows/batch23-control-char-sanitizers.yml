@@ -1,0 +1,111 @@
+name: Batch 23 Control Character Sanitizers
+
+on:
+  push:
+    branches: [fix/phase4-batch23-control-char-sanitizers-20260915]
+    paths: [.github/workflows/batch23-control-char-sanitizers.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/phase4-batch23-control-char-sanitizers-20260915
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact control-character rewrites
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          function replaceOnce(source, from, to, label) {
+            const first = source.indexOf(from)
+            if (first < 0) throw new Error(`Missing expected block: ${label}`)
+            if (source.indexOf(from, first + from.length) >= 0) throw new Error(`Expected unique block: ${label}`)
+            return source.slice(0, first) + to + source.slice(first + from.length)
+          }
+
+          const scanPath = 'core/scripts/qq-static-plant-overlay-scan.js'
+          let scan = fs.readFileSync(scanPath, 'utf8')
+          const oldSanitize = `function sanitizeSnippet(value) {\n    return String(value || '')\n        .replace(/[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f]/g, ' ')`
+          const newSanitize = `function replaceUnsafeControlChars(value) {\n    const source = String(value || '');\n    let output = '';\n    for (const char of source) {\n        const code = char.charCodeAt(0);\n        const unsafe = code <= 0x08\n            || code === 0x0B\n            || code === 0x0C\n            || (code >= 0x0E && code <= 0x1F);\n        output += unsafe ? ' ' : char;\n    }\n    return output;\n}\n\nfunction sanitizeSnippet(value) {\n    return replaceUnsafeControlChars(value)`
+          scan = replaceOnce(scan, oldSanitize, newSanitize, 'overlay scan control regex')
+          fs.writeFileSync(scanPath, scan)
+
+          const careerPath = 'core/src/services/career.js'
+          let career = fs.readFileSync(careerPath, 'utf8')
+          career = replaceOnce(
+            career,
+            "const text = Buffer.from(bytes).toString('utf8').replace(/\\u0000/g, '').trim();",
+            "const text = Buffer.from(bytes).toString('utf8').replaceAll('\\0', '').trim();",
+            'career NUL stripping regex',
+          )
+          fs.writeFileSync(careerPath, career)
+          console.log('Applied Batch 23 exact control-character rewrites')
+          NODE
+      - name: Verify sanitizer equivalence and lint target
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+
+          function oldUnsafeReplace(value) {
+            return String(value || '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ')
+          }
+          function newUnsafeReplace(value) {
+            const source = String(value || '')
+            let output = ''
+            for (const char of source) {
+              const code = char.charCodeAt(0)
+              const unsafe = code <= 0x08 || code === 0x0B || code === 0x0C || (code >= 0x0E && code <= 0x1F)
+              output += unsafe ? ' ' : char
+            }
+            return output
+          }
+          const allControls = Array.from({length: 32}, (_, i) => String.fromCharCode(i)).join('')
+          const cases = ['', 'plain text', `A${allControls}Z`, '中文😀\0tail', '\t\n\r preserved']
+          for (const value of cases) {
+            const before = oldUnsafeReplace(value)
+            const after = newUnsafeReplace(value)
+            if (before !== after) throw new Error(`Control sanitizer output changed for ${JSON.stringify(value)}`)
+          }
+          const nulCases = ['', 'abc', 'a\0b\0c', '\0\0', '中文\0😀']
+          for (const value of nulCases) {
+            const before = value.replace(/\u0000/g, '')
+            const after = value.replaceAll('\0', '')
+            if (before !== after) throw new Error(`NUL stripping output changed for ${JSON.stringify(value)}`)
+          }
+
+          const root=process.cwd()
+          async function lint(workspace,targets){const cwd=path.join(root,workspace);const req=createRequire(path.join(cwd,'package.json'));const {ESLint}=await import(`file://${req.resolve('eslint').replaceAll('\\','/')}`);return new ESLint({cwd,fix:false}).lintFiles(targets)}
+          const reports=[...await lint('core',['.']),...await lint('web',['src/**/*.{ts,vue}'])]
+          let total=0
+          const guarded = new Map([['no-control-regex',0],['regexp/control-character-escape',0],['unicorn/escape-case',0]])
+          for(const r of reports)for(const m of r.messages||[]){if(!m.severity)continue;total++;if(guarded.has(m.ruleId))guarded.set(m.ruleId,guarded.get(m.ruleId)+1)}
+          for(const [rule,count] of guarded) if(count!==0) throw new Error(`Expected ${rule}=0, got ${count}`)
+          if(total!==540) throw new Error(`Expected total lint findings 540, got ${total}`)
+          console.log('Batch 23 target PASS: total 540; control-regex/escape findings 0')
+          NODE
+      - name: Verify repository
+        run: pnpm verify
+      - name: Commit audited changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/scripts/qq-static-plant-overlay-scan.js core/src/services/career.js
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "fix(core): remove control-character regex lint debt"
+          git push origin HEAD:fix/phase4-batch23-control-char-sanitizers-20260915
