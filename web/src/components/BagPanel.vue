@@ -475,7 +475,7 @@ useIntervalFn(loadBag, 60000)
       </div>
 
       <div v-if="lastUseResult" class="mb-4 border border-emerald-200 rounded-lg bg-emerald-50 p-3 text-sm dark:border-emerald-800 dark:bg-emerald-900/20">
-        <div class="font-medium text-emerald-700 dark:text-emerald-300">
+        <div class="text-emerald-700 font-medium dark:text-emerald-300">
           已使用 {{ lastUseResult.itemName }} x{{ lastUseResult.usedCount }}
         </div>
         <div v-if="lastUseResult.rewards.length" class="mt-2 flex flex-wrap gap-2">
@@ -591,7 +591,7 @@ useIntervalFn(loadBag, 60000)
           min="1"
           :max="Math.max(1, Number(useModal.item?.count || 1))"
           step="1"
-          class="mt-2 w-full border border-gray-300 rounded-lg bg-white px-3 py-2 text-gray-900 outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 focus:border-blue-500"
+          class="mt-2 w-full border border-gray-300 rounded-lg bg-white px-3 py-2 text-gray-900 outline-none dark:border-gray-600 focus:border-blue-500 dark:bg-gray-700 dark:text-gray-100"
           @blur="normalizeUseCount"
         >
         <div class="mt-2 text-xs text-gray-400">
@@ -606,7 +606,7 @@ useIntervalFn(loadBag, 60000)
             取消
           </button>
           <button
-            class="rounded-lg bg-green-600 px-4 py-2 text-sm text-white font-medium disabled:opacity-60 hover:bg-green-700"
+            class="rounded-lg bg-green-600 px-4 py-2 text-sm text-white font-medium hover:bg-green-700 disabled:opacity-60"
             :disabled="useModal.loading"
             @click="handleUseConfirm"
           >

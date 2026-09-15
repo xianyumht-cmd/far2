@@ -149,10 +149,10 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-4">
-    <div v-if="actionMessage" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+    <div v-if="actionMessage" class="border border-emerald-200 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
       {{ actionMessage }}
     </div>
-    <div v-if="actionError" class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+    <div v-if="actionError" class="border border-red-200 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
       {{ actionError }}
     </div>
 
@@ -234,7 +234,7 @@ onUnmounted(() => {
           暂无土地数据
         </div>
 
-        <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        <div v-else class="grid grid-cols-2 gap-4 lg:grid-cols-6 md:grid-cols-4 sm:grid-cols-3">
           <LandCard
             v-for="land in lands"
             :key="land.id"

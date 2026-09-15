@@ -685,7 +685,7 @@ async function handleBatchAddKnownFriendGids() {
             </div>
           </div>
 
-          <div class="mt-4 grid gap-3 lg:grid-cols-2">
+          <div class="grid mt-4 gap-3 lg:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs text-gray-500 dark:text-gray-400">访客检测入库冷却(秒)</label>
               <input

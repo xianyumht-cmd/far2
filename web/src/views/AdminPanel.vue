@@ -870,7 +870,7 @@ onMounted(() => {
           </div>
 
           <!-- 卡密领取功能开关 -->
-          <div class="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="flex items-center justify-between border border-gray-200 rounded-lg bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
             <div>
               <h4 class="text-sm text-gray-900 font-medium dark:text-white">
                 卡密领取功能
@@ -1396,7 +1396,7 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          <div class="overflow-hidden border border-gray-200 rounded-lg bg-white dark:border-gray-700 dark:bg-gray-800">
             <div class="overflow-x-auto">
               <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead class="bg-gray-50 dark:bg-gray-900">
