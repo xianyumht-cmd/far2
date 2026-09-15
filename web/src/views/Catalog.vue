@@ -346,8 +346,9 @@ async function loadShops() {
     shops.value = res.data.data
     const list = shops.value?.shops || []
     const preferred = list.find(shop => shop.shopType === 2) || list[0]
-    if (preferred)
+    if (preferred) {
       await loadShopInfo(preferred.shopId)
+    }
     else {
       selectedShopId.value = 0
       shopInfo.value = null

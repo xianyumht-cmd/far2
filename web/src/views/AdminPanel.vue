@@ -2,10 +2,10 @@
 import type { Card, UserCard } from '@/stores/user'
 import { computed, onMounted, ref, watch } from 'vue'
 import api from '@/api'
+import ConfirmModal from '@/components/ConfirmModal.vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSwitch from '@/components/ui/BaseSwitch.vue'
-import ConfirmModal from '@/components/ConfirmModal.vue'
 import { useToastStore } from '@/stores/toast'
 import { useUserStore } from '@/stores/user'
 
@@ -142,7 +142,8 @@ async function fetchCardClaimStatus() {
 }
 
 async function toggleCardClaimStatus(enabled: boolean | undefined) {
-  if (enabled === undefined) return
+  if (enabled === undefined)
+    return
   cardClaimLoading.value = true
   try {
     const res = await api.post('/api/admin/card-claim/status', { enabled })
@@ -287,8 +288,9 @@ async function copyCode(code: string) {
 
 async function copySelectedCards() {
   const codes = Array.from(selectedCards.value)
-  if (codes.length === 0) return
-  
+  if (codes.length === 0)
+    return
+
   try {
     const text = codes.join('\n')
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -625,13 +627,14 @@ function getEventLabel(event: string): string {
 }
 
 function getEventClass(event: string): string {
-  return event === 'login_success' 
-    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+  return event === 'login_success'
+    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
     : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
 }
 
 function getErrorTypeLabel(errorType: string | null): string {
-  if (!errorType) return '-'
+  if (!errorType)
+    return '-'
   const labels: Record<string, string> = {
     rate_limit: '速率限制',
     locked: '账户锁定',
@@ -641,8 +644,9 @@ function getErrorTypeLabel(errorType: string | null): string {
 }
 
 function parseBrowser(userAgent: string): string {
-  if (!userAgent || userAgent === 'unknown') return '未知'
-  
+  if (!userAgent || userAgent === 'unknown')
+    return '未知'
+
   if (userAgent.includes('Edg/')) {
     const match = userAgent.match(/Edg\/([\d.]+)/)
     return `Edge ${match ? match[1] : ''}`
@@ -662,7 +666,7 @@ function parseBrowser(userAgent: string): string {
   if (userAgent.includes('MSIE') || userAgent.includes('Trident/')) {
     return 'IE'
   }
-  
+
   return '其他'
 }
 
