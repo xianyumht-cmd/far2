@@ -1,0 +1,110 @@
+name: Batch 21 Safe Ordering Fixes
+
+on:
+  push:
+    branches: [chore/phase4-batch21-safe-ordering-20260915]
+    paths: [.github/workflows/batch21-safe-ordering.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: chore/phase4-batch21-safe-ordering-20260915
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact audited Batch 21 changes
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+
+          function replaceOnce(source, from, to, label) {
+            const first = source.indexOf(from)
+            if (first < 0) throw new Error(`Missing expected block: ${label}`)
+            if (source.indexOf(from, first + from.length) >= 0) throw new Error(`Expected unique block: ${label}`)
+            return source.slice(0, first) + to + source.slice(first + from.length)
+          }
+
+          // Friends.vue: move the two refs before the computed/function users.
+          const friendsPath = 'web/src/views/Friends.vue'
+          let friends = fs.readFileSync(friendsPath, 'utf8')
+          const friendsDecl = "const showGidListModal = ref(false)\nconst gidSearchKeyword = ref('')\n"
+          friends = replaceOnce(friends, friendsDecl, '', 'Friends late GID refs')
+          const friendsAnchor = "const blacklistGidSet = computed(() => new Set(blacklist.value.map(item => Number(item.gid))))\n\n"
+          friends = replaceOnce(friends, friendsAnchor, friendsAnchor + friendsDecl + '\n', 'Friends GID ref insertion anchor')
+          fs.writeFileSync(friendsPath, friends)
+
+          // Settings.vue: move saveStrategySettings below localAutomationSettings so the ref is defined first.
+          const settingsPath = 'web/src/views/Settings.vue'
+          let settings = fs.readFileSync(settingsPath, 'utf8')
+          const saveStart = settings.indexOf('async function saveStrategySettings() {')
+          const watchAnchor = '\nwatch(currentAccountId, async () => {'
+          const saveEnd = settings.indexOf(watchAnchor, saveStart)
+          if (saveStart < 0 || saveEnd < 0) throw new Error('Could not locate saveStrategySettings block')
+          const saveBlock = settings.slice(saveStart, saveEnd).trimEnd() + '\n\n'
+          settings = settings.slice(0, saveStart) + settings.slice(saveEnd + 1)
+          const fertilizerAnchor = 'const fertilizerOptions = ['
+          const fertilizerIndex = settings.indexOf(fertilizerAnchor)
+          if (fertilizerIndex < 0) throw new Error('Could not locate Settings insertion anchor')
+          settings = settings.slice(0, fertilizerIndex) + saveBlock + settings.slice(fertilizerIndex)
+          fs.writeFileSync(settingsPath, settings)
+
+          // WxLoginModal.vue: remove a success-path debug log; no behavior/state change.
+          const wxPath = 'web/src/components/WxLoginModal.vue'
+          let wx = fs.readFileSync(wxPath, 'utf8')
+          wx = replaceOnce(wx, "        console.log('登录成功！Code:', result.code)\n", '', 'WxLoginModal success debug log')
+          fs.writeFileSync(wxPath, wx)
+
+          console.log('Applied Batch 21 exact safe ordering/debug-log changes')
+          NODE
+      - name: Confirm only intended non-bulk rules disappeared
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+          const root=process.cwd()
+          async function lint(workspace,targets){
+            const cwd=path.join(root,workspace)
+            const req=createRequire(path.join(cwd,'package.json'))
+            const { ESLint }=await import(`file://${req.resolve('eslint').replaceAll('\\','/')}`)
+            return new ESLint({cwd,fix:false}).lintFiles(targets)
+          }
+          const reports=[...await lint('core',['.']),...await lint('web',['src/**/*.{ts,vue}'])]
+          let total=0
+          let noUseBefore=0
+          let noConsole=0
+          for(const r of reports) for(const m of r.messages||[]){
+            if(!m.severity)continue
+            total++
+            if(m.ruleId==='ts/no-use-before-define')noUseBefore++
+            if(m.ruleId==='no-console')noConsole++
+          }
+          if(noUseBefore!==0) throw new Error(`Expected ts/no-use-before-define=0, got ${noUseBefore}`)
+          if(noConsole!==0) throw new Error(`Expected no-console=0, got ${noConsole}`)
+          if(total!==548) throw new Error(`Expected total lint findings 548 after Batch 21, got ${total}`)
+          console.log('Batch 21 lint target PASS: total 548; ts/no-use-before-define 0; no-console 0')
+          NODE
+      - name: Verify repository
+        run: pnpm verify
+      - name: Commit audited changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/views/Friends.vue web/src/views/Settings.vue web/src/components/WxLoginModal.vue
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "chore(web): clear batch 21 ordering lint debt"
+          git push origin HEAD:chore/phase4-batch21-safe-ordering-20260915
