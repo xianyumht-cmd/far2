@@ -1,0 +1,35 @@
+name: Runtime Docker Node24 Diagnose
+
+on:
+  push:
+    branches:
+      - chore/runtime-docker-node24-diagnose-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  docker-node24:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prepare Node 24 Dockerfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(grep -c '^FROM node:20-alpine' core/Dockerfile)" -eq 3
+          cp core/Dockerfile /tmp/Dockerfile.node24
+          sed -i 's/^FROM node:20-alpine/FROM node:24-alpine/g' /tmp/Dockerfile.node24
+          test "$(grep -c '^FROM node:24-alpine' /tmp/Dockerfile.node24)" -eq 3
+          ! grep -q '^FROM node:20-alpine' /tmp/Dockerfile.node24
+      - name: Build Node 24 image
+        run: docker build --pull -f /tmp/Dockerfile.node24 -t far2-node24-diagnose .
+      - name: Verify final runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(docker run --rm --entrypoint node far2-node24-diagnose --version)"
+          echo "runtime=$version"
+          [[ "$version" == v24.* ]]
+          docker run --rm --entrypoint sh far2-node24-diagnose -c 'test -f /app/core/client.js && test -f /app/web/dist/index.html && test -d /app/core/node_modules'
