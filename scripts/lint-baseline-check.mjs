@@ -5,13 +5,35 @@ import process from 'node:process';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const baselinePath = path.join(repoRoot, '.quality', 'eslint-baseline.json');
-const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+
+function getPnpmInvocation() {
+    const lifecycleExecPath = String(process.env.npm_execpath || '').trim();
+    if (lifecycleExecPath && /\.(?:c?js|mjs)$/i.test(lifecycleExecPath)) {
+        return {
+            command: process.execPath,
+            prefixArgs: [lifecycleExecPath],
+            shell: false,
+        };
+    }
+
+    return {
+        command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
+        prefixArgs: [],
+        shell: process.platform === 'win32',
+    };
+}
 
 function runEslint(workspace, targets) {
+    const pnpm = getPnpmInvocation();
     const result = spawnSync(
-        pnpmCommand,
-        ['-C', workspace, 'exec', 'eslint', ...targets, '--format', 'json'],
-        { cwd: repoRoot, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
+        pnpm.command,
+        [...pnpm.prefixArgs, '-C', workspace, 'exec', 'eslint', ...targets, '--format', 'json'],
+        {
+            cwd: repoRoot,
+            encoding: 'utf8',
+            maxBuffer: 50 * 1024 * 1024,
+            shell: pnpm.shell,
+        },
     );
     if (result.error) throw result.error;
     if (result.status !== 0 && result.status !== 1) {
