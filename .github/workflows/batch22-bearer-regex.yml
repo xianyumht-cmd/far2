@@ -1,0 +1,105 @@
+name: Batch 22 Bearer Regex Hardening
+
+on:
+  push:
+    branches: [fix/phase4-batch22-bearer-regex-20260915]
+    paths: [.github/workflows/batch22-bearer-regex.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/phase4-batch22-bearer-regex-20260915
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Replace exactly two ambiguous bearer regexes
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+          const files = [
+            'core/src/services/isolated-code-agent.js',
+            'core/src/services/wechat-code-agent.js',
+          ]
+          const from = "const match = raw.match(/^Bearer\\s+(.+)$/i);"
+          const to = "const match = raw.match(/^Bearer\\s+(\\S.*)$/i);"
+          let count = 0
+          for (const file of files) {
+            let source = fs.readFileSync(file, 'utf8')
+            const matches = source.split(from).length - 1
+            if (matches !== 1) throw new Error(`${file}: expected one bearer regex, found ${matches}`)
+            source = source.replace(from, to)
+            fs.writeFileSync(file, source)
+            count += matches
+          }
+          if (count !== 2) throw new Error(`Expected exactly two replacements, got ${count}`)
+          console.log('Replaced exactly two bearer regexes with non-overlapping token start')
+          NODE
+      - name: Verify lint target and parser behavior
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+          const root=process.cwd()
+          const core=path.join(root,'core')
+          const req=createRequire(path.join(core,'package.json'))
+          const { ESLint }=await import(`file://${req.resolve('eslint').replaceAll('\\','/')}`)
+          const results=await new ESLint({cwd:core,fix:false}).lintFiles(['src/services/isolated-code-agent.js','src/services/wechat-code-agent.js'])
+          const superLinear=results.flatMap(r=>r.messages.filter(m=>m.ruleId==='regexp/no-super-linear-backtracking'))
+          if(superLinear.length) throw new Error(`Expected no super-linear bearer findings, got ${superLinear.length}`)
+
+          const oldParse = raw => {
+            const match = raw.match(/^Bearer\s+(.+)$/i)
+            return match ? match[1].trim() : ''
+          }
+          const newParse = raw => {
+            const match = raw.match(/^Bearer\s+(\S.*)$/i)
+            return match ? match[1].trim() : ''
+          }
+          const cases = [
+            '', 'Bearer', 'Bearer ', 'Bearer    ', 'Bearer token', 'bearer   token',
+            'Bearer token   ', 'Bearer abc.def-123', 'Basic token', ' Bearer token',
+          ]
+          for(const value of cases){
+            const before=oldParse(value), after=newParse(value)
+            if(before!==after) throw new Error(`Parser output changed for ${JSON.stringify(value)}: ${JSON.stringify(before)} != ${JSON.stringify(after)}`)
+          }
+          console.log('Bearer parser compatibility checks PASS; super-linear findings 0')
+          NODE
+      - name: Confirm repository lint total
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+          const root=process.cwd()
+          async function lint(workspace,targets){const cwd=path.join(root,workspace);const req=createRequire(path.join(cwd,'package.json'));const {ESLint}=await import(`file://${req.resolve('eslint').replaceAll('\\','/')}`);return new ESLint({cwd,fix:false}).lintFiles(targets)}
+          const reports=[...await lint('core',['.']),...await lint('web',['src/**/*.{ts,vue}'])]
+          let total=0
+          for(const r of reports)for(const m of r.messages||[])if(m.severity)total++
+          if(total!==546) throw new Error(`Expected total lint findings 546, got ${total}`)
+          console.log('Batch 22 lint target PASS: total 546')
+          NODE
+      - name: Verify repository
+        run: pnpm verify
+      - name: Commit audited changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/src/services/isolated-code-agent.js core/src/services/wechat-code-agent.js
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "fix(security): harden bearer token regex parsing"
+          git push origin HEAD:fix/phase4-batch22-bearer-regex-20260915
