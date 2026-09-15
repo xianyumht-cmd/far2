@@ -456,7 +456,10 @@ async function attachWmpfHook(frida) {
     });
     await script.load();
     const deadline = Date.now() + 3000;
-    while (!hookReady && !hookError && Date.now() < deadline) await sleep(30);
+    for (;;) {
+        if (hookReady || hookError || Date.now() >= deadline) break;
+        await sleep(30);
+    }
     if (!hookReady) {
         try { await script.unload(); } catch {}
         try { await session.detach(); } catch {}

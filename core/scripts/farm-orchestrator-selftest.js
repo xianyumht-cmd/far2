@@ -117,10 +117,11 @@ async function main() {
 
     let releaseCheck;
     const gate = new Promise((resolve) => { releaseCheck = resolve; });
-    let entered = false;
+    let resolveEntered;
+    const entered = new Promise((resolve) => { resolveEntered = resolve; });
     const busyOrchestrator = createFarmOrchestrator({
         getAllLands: async () => {
-            entered = true;
+            resolveEntered();
             await gate;
             return { lands: [] };
         },
@@ -132,7 +133,7 @@ async function main() {
     });
 
     const firstCheck = busyOrchestrator.checkFarm();
-    while (!entered) await new Promise((resolve) => setImmediate(resolve));
+    await entered;
     assert.equal(busyOrchestrator.isChecking(), true);
     assert.equal(await busyOrchestrator.checkFarm(), false, 'concurrent check must remain fail-fast');
     releaseCheck();
