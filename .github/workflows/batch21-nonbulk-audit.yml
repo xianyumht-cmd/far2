@@ -1,0 +1,58 @@
+name: Batch 21 Non-Bulk Lint Audit
+
+on:
+  push:
+    branches: [diag/phase4-batch21-nonbulk-audit-20260915]
+    paths: [.github/workflows/batch21-nonbulk-audit.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit all remaining non-bulk findings
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+          const root=process.cwd()
+          async function lint(workspace,targets){
+            const cwd=path.join(root,workspace)
+            const req=createRequire(path.join(cwd,'package.json'))
+            const { ESLint }=await import(`file://${req.resolve('eslint').replaceAll('\\','/')}`)
+            return new ESLint({cwd,fix:false}).lintFiles(targets)
+          }
+          const reports=[...await lint('core',['.']),...await lint('web',['src/**/*.{ts,vue}'])]
+          const bulk=new Set(['vue/singleline-html-element-content-newline','unocss/order','vue/html-indent'])
+          const rows=[]
+          for(const r of reports){
+            const file=path.relative(root,r.filePath).replaceAll('\\','/')
+            const lines=fs.readFileSync(r.filePath,'utf8').split(/\r?\n/)
+            for(const m of r.messages||[]){
+              if(!m.severity||bulk.has(m.ruleId))continue
+              rows.push({file,rule:m.ruleId||'unknown',line:m.line||0,column:m.column||0,message:m.message,fixable:Boolean(m.fix),source:(lines[(m.line||1)-1]||'').trim()})
+            }
+          }
+          rows.sort((a,b)=>a.rule.localeCompare(b.rule)||a.file.localeCompare(b.file)||a.line-b.line||a.column-b.column)
+          console.log(`NON_BULK_TOTAL ${rows.length}`)
+          const counts=new Map()
+          for(const r of rows)counts.set(r.rule,(counts.get(r.rule)||0)+1)
+          console.log('RULE_COUNTS')
+          for(const [rule,count] of [...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])))console.log(`${count}\t${rule}`)
+          console.log('FINDINGS')
+          for(const r of rows)console.log(`${r.fixable?'FIX':'NOFIX'}\t${r.rule}\t${r.file}:${r.line}:${r.column}\t${r.message}\tSRC=${r.source}`)
+          NODE
