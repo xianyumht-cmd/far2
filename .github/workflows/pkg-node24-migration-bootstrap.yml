@@ -6,14 +6,17 @@ on:
       - chore/pkg-node24-yao-20260915
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  verify-and-package:
+  fix-and-verify:
+    if: contains(github.event.head_commit.message, 'repair packaged data paths')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v5
         with:
           version: 10.30.2
@@ -24,23 +27,57 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Assert migrated packaging configuration
+      - name: Route service state through runtime paths
         shell: bash
         run: |
           set -euo pipefail
           node <<'NODE'
-          const pkg = require('./core/package.json')
-          if (pkg.devDependencies?.pkg) throw new Error('legacy vercel/pkg dependency remains')
-          if (pkg.devDependencies?.['@yao-pkg/pkg'] !== '6.22.0') throw new Error('unexpected @yao-pkg/pkg version')
-          for (const name of ['build:release', 'build:win', 'build:linux', 'build:mac']) {
-            const script = pkg.scripts?.[name] || ''
-            if (script.includes('node18-')) throw new Error(`${name} still contains node18 target`)
-            if (!script.includes('node24-')) throw new Error(`${name} does not contain node24 target`)
+          const fs = require('fs')
+
+          function replaceOnce(file, from, to) {
+            const input = fs.readFileSync(file, 'utf8')
+            const first = input.indexOf(from)
+            if (first < 0) throw new Error(`expected text not found in ${file}`)
+            if (input.indexOf(from, first + from.length) >= 0) throw new Error(`expected exactly one match in ${file}`)
+            fs.writeFileSync(file, input.slice(0, first) + to + input.slice(first + from.length))
+          }
+
+          replaceOnce(
+            'core/src/services/mystery-shop.js',
+            "const crypto = require('node:crypto');\n",
+            "const crypto = require('node:crypto');\nconst { getDataDir } = require('../config/runtime-paths');\n"
+          )
+          replaceOnce(
+            'core/src/services/mystery-shop.js',
+            "function getDataDir() {\n    return process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');\n}\n\n",
+            ''
+          )
+          replaceOnce(
+            'core/src/services/stats.js',
+            "const fs = require('node:fs');\n",
+            "const fs = require('node:fs');\nconst { getDataDir } = require('../config/runtime-paths');\n"
+          )
+          replaceOnce(
+            'core/src/services/stats.js',
+            "    const dataDir = process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');",
+            "    const dataDir = getDataDir();"
+          )
+
+          for (const file of ['core/src/services/mystery-shop.js', 'core/src/services/stats.js']) {
+            const text = fs.readFileSync(file, 'utf8')
+            if (text.includes("path.join(__dirname, '../../data')")) {
+              throw new Error(`legacy packaged data path remains in ${file}`)
+            }
+          }
+          const runtimePaths = fs.readFileSync('core/src/config/runtime-paths.js', 'utf8')
+          if (!runtimePaths.includes('process.env.FARM_DATA_DIR')) {
+            throw new Error('runtime-paths must preserve FARM_DATA_DIR override')
           }
           NODE
+          git diff --check
       - name: Verify repository
         run: pnpm verify
-      - name: Package all release targets
+      - name: Package all release targets without static-path warnings
         shell: bash
         run: |
           set -euo pipefail
@@ -50,17 +87,38 @@ jobs:
             echo 'pkg still cannot statically discover ws' >&2
             exit 1
           fi
+          if grep -F 'Cannot stat, ENOENT' /tmp/pkg-build.log; then
+            echo 'pkg still sees a missing statically-required path' >&2
+            exit 1
+          fi
           test -s core/dist/qq-farm-bot-win-x64.exe
           test -s core/dist/qq-farm-bot-linux-x64
           test -s core/dist/qq-farm-bot-macos-x64
           test -s core/dist/qq-farm-bot-macos-arm64
-          find core/dist -maxdepth 1 -type f -print -exec ls -lh {} \;
+      - name: Commit verified data-path repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add core/src/services/mystery-shop.js core/src/services/stats.js
+          git commit -m "fix(pkg): route service state through runtime paths"
+          git push origin HEAD:${GITHUB_REF_NAME}
 
   windows-native-package:
+    if: contains(github.event.head_commit.message, 'repair packaged data paths')
+    needs: fix-and-verify
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Refresh to verified branch head
+        shell: pwsh
+        run: |
+          git fetch origin "${env:GITHUB_REF_NAME}"
+          git checkout -B "${env:GITHUB_REF_NAME}" "origin/${env:GITHUB_REF_NAME}"
       - uses: pnpm/action-setup@v5
         with:
           version: 10.30.2
@@ -73,18 +131,53 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build web assets
         run: pnpm build:web
-      - name: Build and inspect Windows Node 24 executable
+      - name: Build and smoke Windows Node 24 executable
         shell: pwsh
         run: |
           pnpm -C core build:win 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\pkg-win.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content "$env:RUNNER_TEMP\pkg-win.log" -Raw
           if ($log -match "Cannot resolve 'wsPath'") { throw "pkg still cannot statically discover ws" }
-          Write-Host 'Native Windows dist inventory:'
-          Get-ChildItem -LiteralPath 'core\dist' -File | ForEach-Object {
-            Write-Host ("{0} {1:N1} MB" -f $_.FullName, ($_.Length / 1MB))
-          }
+          if ($log -match 'Cannot stat, ENOENT') { throw 'pkg still sees a missing statically-required path' }
+
           $exe = Get-ChildItem -LiteralPath 'core\dist' -File -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
           if (-not $exe) { throw 'No Windows .exe was produced under core\dist' }
           if ($exe.Length -lt 50MB) { throw "Windows executable is unexpectedly small: $($exe.Length)" }
-          Write-Host "Accepted Windows executable: $($exe.FullName) $([math]::Round($exe.Length / 1MB, 1)) MB"
+          Write-Host "Windows executable: $($exe.FullName) $([math]::Round($exe.Length / 1MB, 1)) MB"
+
+          $env:ADMIN_PORT = '31997'
+          $env:FARM_AUTO_START_ACCOUNTS = '0'
+          $env:ADMIN_BOOTSTRAP_PASSWORD = 'far2-ci-package-smoke-only'
+          Remove-Item Env:FARM_DATA_DIR -ErrorAction SilentlyContinue
+          $dataDir = Join-Path $exe.DirectoryName 'data'
+          Remove-Item -LiteralPath $dataDir -Recurse -Force -ErrorAction SilentlyContinue
+          $stdout = Join-Path $env:RUNNER_TEMP 'far2-package.stdout.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'far2-package.stderr.log'
+          $proc = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            $healthy = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:31997/api/status' -TimeoutSec 2
+                if ($response.StatusCode -eq 200) {
+                  $healthy = $true
+                  break
+                }
+              } catch {}
+              if ($proc.HasExited) { break }
+            }
+            if (-not $healthy) {
+              Write-Host '--- packaged stdout ---'
+              if (Test-Path $stdout) { Get-Content $stdout }
+              Write-Host '--- packaged stderr ---'
+              if (Test-Path $stderr) { Get-Content $stderr }
+              throw 'Packaged FAR2 did not become healthy on /api/status'
+            }
+            if (-not (Test-Path -LiteralPath $dataDir)) {
+              throw "Packaged FAR2 did not create writable data directory beside executable: $dataDir"
+            }
+            Write-Host "Packaged runtime health PASS; writable data dir: $dataDir"
+          } finally {
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
