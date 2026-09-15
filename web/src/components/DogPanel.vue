@@ -154,10 +154,10 @@ onMounted(refresh)
   <div class="space-y-4">
     <div class="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between dark:bg-gray-800">
       <div>
-        <div class="flex items-center gap-2 font-semibold text-gray-800 dark:text-gray-100">
+        <div class="flex items-center gap-2 text-gray-800 font-semibold dark:text-gray-100">
           <div class="i-carbon-pet-image-o text-lg" />
           护主犬状态
-          <span class="rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
+          <span class="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700 font-medium dark:bg-blue-950/30 dark:text-blue-300">
             手动单次
           </span>
         </div>
@@ -166,7 +166,7 @@ onMounted(refresh)
         </div>
       </div>
       <button
-        class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700"
+        class="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 transition disabled:cursor-not-allowed dark:border-gray-700 hover:bg-gray-50 dark:text-gray-200 disabled:opacity-50 dark:hover:bg-gray-700"
         :disabled="loading || feedingFoodId !== null || !accountRunning"
         @click="refresh"
       >
@@ -174,13 +174,13 @@ onMounted(refresh)
       </button>
     </div>
 
-    <div v-if="errorText" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+    <div v-if="errorText" class="border border-amber-200 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
       {{ errorText }}
     </div>
 
     <div
       v-if="actionText"
-      class="rounded-lg border px-4 py-3 text-sm"
+      class="border rounded-lg px-4 py-3 text-sm"
       :class="actionWarn
         ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300'
         : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300'"
@@ -191,63 +191,95 @@ onMounted(refresh)
     <template v-if="overview">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">护主犬数量</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ dogs.length }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            护主犬数量
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ dogs.length }}
+          </div>
         </div>
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">犬币 / coin</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ overview.coin }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            犬币 / coin
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ overview.coin }}
+          </div>
         </div>
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">保护时间</div>
-          <div class="mt-1 text-sm font-semibold text-gray-800 dark:text-gray-100">{{ formatTimeValue(overview.protectTime) }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            保护时间
+          </div>
+          <div class="mt-1 text-sm text-gray-800 font-semibold dark:text-gray-100">
+            {{ formatTimeValue(overview.protectTime) }}
+          </div>
         </div>
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">同气礼包可领</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            同气礼包可领
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
             {{ overview.claimableGiftCount === null ? '字段未返回' : overview.claimableGiftCount }}
           </div>
-          <div class="mt-1 text-[11px] text-gray-400">仅显示，不提供领取按钮</div>
+          <div class="mt-1 text-[11px] text-gray-400">
+            仅显示，不提供领取按钮
+          </div>
         </div>
       </div>
 
       <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-        <div class="mb-3 font-semibold text-gray-800 dark:text-gray-100">护主犬</div>
+        <div class="mb-3 text-gray-800 font-semibold dark:text-gray-100">
+          护主犬
+        </div>
         <div v-if="dogs.length === 0" class="rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 dark:bg-gray-900/30 dark:text-gray-400">
           GetDogInfo 当前没有返回狗狗条目。
         </div>
         <div v-else class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <div v-for="dog in dogs" :key="dog.id" class="rounded-lg border border-gray-100 p-4 dark:border-gray-700">
+          <div v-for="dog in dogs" :key="dog.id" class="border border-gray-100 rounded-lg p-4 dark:border-gray-700">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <div class="font-medium text-gray-800 dark:text-gray-100">护主犬 #{{ dog.id }}</div>
-                <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">等级 Lv{{ dog.level }}</div>
+                <div class="text-gray-800 font-medium dark:text-gray-100">
+                  护主犬 #{{ dog.id }}
+                </div>
+                <div class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  等级 Lv{{ dog.level }}
+                </div>
               </div>
               <span class="rounded bg-blue-50 px-2 py-1 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
                 {{ dogStatusText(dog) }}
               </span>
             </div>
-            <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <div class="grid grid-cols-2 mt-3 gap-2 text-xs text-gray-500 dark:text-gray-400">
               <div>status: {{ dog.status }}</div>
               <div>active: {{ dog.active }}</div>
-              <div class="col-span-2">有效期: {{ formatTimeValue(dog.expireTime) }}</div>
+              <div class="col-span-2">
+                有效期: {{ formatTimeValue(dog.expireTime) }}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-        <div class="mb-1 font-semibold text-gray-800 dark:text-gray-100">狗粮</div>
+        <div class="mb-1 text-gray-800 font-semibold dark:text-gray-100">
+          狗粮
+        </div>
         <div class="mb-3 text-xs text-gray-500 dark:text-gray-400">
           仅 90004 / 90005 / 90006 且服务器当前库存大于 0 时开放“喂 1 份”；field 2 仍保持未知语义并固定使用官方实机值 1。
         </div>
-        <div v-if="foods.length === 0" class="text-sm text-gray-500 dark:text-gray-400">当前没有返回狗粮数据。</div>
-        <div v-else class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div v-for="food in foods" :key="`${food.id}-${food.duration}`" class="rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/30">
+        <div v-if="foods.length === 0" class="text-sm text-gray-500 dark:text-gray-400">
+          当前没有返回狗粮数据。
+        </div>
+        <div v-else class="grid gap-3 lg:grid-cols-3 sm:grid-cols-2">
+          <div v-for="food in foods" :key="`${food.id}-${food.duration}`" class="border border-gray-100 rounded-lg bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/30">
             <div class="flex items-start justify-between gap-2">
               <div>
-                <div class="font-medium text-gray-800 dark:text-gray-100">{{ food.name || `狗粮 #${food.id}` }} ×{{ food.count }}</div>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">ID {{ food.id }} · 持续 {{ formatTimeValue(food.duration) }}</div>
+                <div class="text-gray-800 font-medium dark:text-gray-100">
+                  {{ food.name || `狗粮 #${food.id}` }} ×{{ food.count }}
+                </div>
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  ID {{ food.id }} · 持续 {{ formatTimeValue(food.duration) }}
+                </div>
               </div>
               <span
                 class="rounded px-2 py-0.5 text-[11px]"
@@ -258,10 +290,12 @@ onMounted(refresh)
                 {{ food.writeSupported ? '已识别' : '只读' }}
               </span>
             </div>
-            <div v-if="food.description" class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ food.description }}</div>
+            <div v-if="food.description" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {{ food.description }}
+            </div>
             <button
               v-if="food.writeSupported && overview.protocol?.foodWriteSupported"
-              class="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              class="mt-3 w-full rounded-lg bg-blue-600 px-3 py-2 text-sm text-white font-medium transition disabled:cursor-not-allowed hover:bg-blue-700 disabled:opacity-50"
               :disabled="feedingFoodId !== null || food.count <= 0"
               @click="feedOnce(food)"
             >
