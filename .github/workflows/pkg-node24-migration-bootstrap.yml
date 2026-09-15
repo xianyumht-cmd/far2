@@ -1,0 +1,71 @@
+name: Package Node 24 Migration Bootstrap
+
+on:
+  push:
+    branches:
+      - chore/pkg-node24-yao-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-smoke:
+    if: github.event.head_commit.message == 'chore(pkg): bootstrap Node 24 packaging migration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install current lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Migrate pkg dependency and targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir core remove pkg
+          pnpm --dir core add --save-dev --save-exact @yao-pkg/pkg@6.22.0
+          node <<'NODE'
+          const fs = require('fs')
+          const path = 'core/package.json'
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))
+          for (const name of ['build:release', 'build:win', 'build:linux', 'build:mac']) {
+            const value = pkg.scripts?.[name]
+            if (!value || !value.includes('node18-')) {
+              throw new Error(`expected ${name} to contain a node18 target`)
+            }
+            pkg.scripts[name] = value.replaceAll('node18-', 'node24-')
+          }
+          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`)
+          NODE
+          pnpm install --frozen-lockfile
+      - name: Verify repository
+        run: pnpm verify
+      - name: Smoke package all existing release targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf core/dist
+          pnpm -C core build:release
+          find core/dist -maxdepth 1 -type f -print -exec ls -lh {} \;
+          count="$(find core/dist -maxdepth 1 -type f -size +1M | wc -l)"
+          test "$count" -ge 4
+      - name: Commit verified migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add core/package.json pnpm-lock.yaml
+          git commit -m "chore(pkg): migrate release packaging to Node 24"
+          git push origin HEAD:${GITHUB_REF_NAME}
