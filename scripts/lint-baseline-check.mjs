@@ -1,39 +1,30 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const baselinePath = path.join(repoRoot, '.quality', 'eslint-baseline.json');
 
-function getPnpmInvocation() {
-    const lifecycleExecPath = String(process.env.npm_execpath || '').trim();
-    if (lifecycleExecPath && /\.(?:c?js|mjs)$/i.test(lifecycleExecPath)) {
-        return {
-            command: process.execPath,
-            prefixArgs: [lifecycleExecPath],
-            shell: false,
-        };
+function resolveEslintBin(workspace) {
+    const workspaceRoot = path.join(repoRoot, workspace);
+    const workspaceRequire = createRequire(path.join(workspaceRoot, 'package.json'));
+    const eslintMainPath = workspaceRequire.resolve('eslint');
+    const eslintPackageRoot = path.resolve(path.dirname(eslintMainPath), '..');
+    const eslintBinPath = path.join(eslintPackageRoot, 'bin', 'eslint.js');
+    if (!fs.existsSync(eslintBinPath)) {
+        throw new Error(`Could not resolve ESLint CLI for ${workspace}: ${eslintBinPath}`);
     }
-
-    return {
-        command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-        prefixArgs: [],
-        shell: process.platform === 'win32',
-    };
+    return eslintBinPath;
 }
 
 function runEslint(workspace, targets) {
-    const pnpm = getPnpmInvocation();
+    const workspaceRoot = path.join(repoRoot, workspace);
     const result = spawnSync(
-        pnpm.command,
-        [...pnpm.prefixArgs, '-C', workspace, 'exec', 'eslint', ...targets, '--format', 'json'],
-        {
-            cwd: repoRoot,
-            encoding: 'utf8',
-            maxBuffer: 50 * 1024 * 1024,
-            shell: pnpm.shell,
-        },
+        process.execPath,
+        [resolveEslintBin(workspace), ...targets, '--format', 'json'],
+        { cwd: workspaceRoot, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
     );
     if (result.error) throw result.error;
     if (result.status !== 0 && result.status !== 1) {
