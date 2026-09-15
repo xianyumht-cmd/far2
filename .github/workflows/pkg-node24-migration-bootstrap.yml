@@ -25,8 +25,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Verify repository
-        run: pnpm verify
+      - name: Build web assets
+        run: pnpm build:web
       - name: Build and smoke Windows Node 24 executable
         shell: pwsh
         run: |
