@@ -1,4 +1,4 @@
-name: Package Node 24 Migration Bootstrap
+name: Package Node 24 Migration Validation
 
 on:
   push:
@@ -6,17 +6,15 @@ on:
       - chore/pkg-node24-yao-20260915
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  migrate-and-smoke:
-    if: contains(github.event.head_commit.message, 'bootstrap Node 24 packaging migration')
+  verify-and-package:
+    if: contains(github.event.head_commit.message, 'validate Node 24 packaging migration')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
       - uses: pnpm/action-setup@v5
         with:
           version: 10.30.2
@@ -25,47 +23,65 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - name: Install current lockfile
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Migrate pkg dependency and targets
+      - name: Assert migrated packaging configuration
         shell: bash
         run: |
           set -euo pipefail
-          pnpm --dir core remove pkg
-          pnpm --dir core add --save-dev --save-exact @yao-pkg/pkg@6.22.0
           node <<'NODE'
-          const fs = require('fs')
-          const path = 'core/package.json'
-          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))
+          const pkg = require('./core/package.json')
+          if (pkg.devDependencies?.pkg) throw new Error('legacy vercel/pkg dependency remains')
+          if (pkg.devDependencies?.['@yao-pkg/pkg'] !== '6.22.0') throw new Error('unexpected @yao-pkg/pkg version')
           for (const name of ['build:release', 'build:win', 'build:linux', 'build:mac']) {
-            const value = pkg.scripts?.[name]
-            if (!value || !value.includes('node18-')) {
-              throw new Error(`expected ${name} to contain a node18 target`)
-            }
-            pkg.scripts[name] = value.replaceAll('node18-', 'node24-')
+            const script = pkg.scripts?.[name] || ''
+            if (script.includes('node18-')) throw new Error(`${name} still contains node18 target`)
+            if (!script.includes('node24-')) throw new Error(`${name} does not contain node24 target`)
           }
-          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`)
           NODE
-          pnpm install --frozen-lockfile
       - name: Verify repository
         run: pnpm verify
-      - name: Smoke package all existing release targets
+      - name: Package all release targets
         shell: bash
         run: |
           set -euo pipefail
           rm -rf core/dist
-          pnpm -C core build:release
+          pnpm -C core build:release 2>&1 | tee /tmp/pkg-build.log
+          if grep -F "Cannot resolve 'wsPath'" /tmp/pkg-build.log; then
+            echo 'pkg still cannot statically discover ws' >&2
+            exit 1
+          fi
+          test -s core/dist/qq-farm-bot-win-x64.exe
+          test -s core/dist/qq-farm-bot-linux-x64
+          test -s core/dist/qq-farm-bot-macos-x64
+          test -s core/dist/qq-farm-bot-macos-arm64
           find core/dist -maxdepth 1 -type f -print -exec ls -lh {} \;
-          count="$(find core/dist -maxdepth 1 -type f -size +1M | wc -l)"
-          test "$count" -ge 4
-      - name: Commit verified migration
-        shell: bash
+
+  windows-native-package:
+    if: contains(github.event.head_commit.message, 'validate Node 24 packaging migration')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build web assets
+        run: pnpm build:web
+      - name: Build Windows Node 24 executable
+        shell: pwsh
         run: |
-          set -euo pipefail
-          git status --short
-          git diff --check
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add core/package.json pnpm-lock.yaml
-          git commit -m "chore(pkg): migrate release packaging to Node 24"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          pnpm -C core build:win 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\pkg-win.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content "$env:RUNNER_TEMP\pkg-win.log" -Raw
+          if ($log -match "Cannot resolve 'wsPath'") { throw "pkg still cannot statically discover ws" }
+          $exe = Get-Item "core\dist\qq-farm-bot-win-x64.exe"
+          if ($exe.Length -lt 50MB) { throw "Windows executable is unexpectedly small: $($exe.Length)" }
+          Write-Host "Windows executable: $($exe.FullName) $([math]::Round($exe.Length / 1MB, 1)) MB"
