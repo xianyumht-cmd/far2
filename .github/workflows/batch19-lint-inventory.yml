@@ -1,0 +1,79 @@
+name: Batch 19 Lint Inventory
+
+on:
+  push:
+    branches:
+      - diag/phase4-batch19-lint-inventory-20260915
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Capture current ESLint JSON
+        shell: bash
+        run: |
+          set +e
+          pnpm -C core exec eslint . --format json > /tmp/core-eslint.json
+          core_rc=$?
+          pnpm -C web exec eslint 'src/**/*.{ts,vue}' --format json > /tmp/web-eslint.json
+          web_rc=$?
+          set -e
+          test "$core_rc" -le 1
+          test "$web_rc" -le 1
+      - name: Summarize remaining debt
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const path = require('path')
+          const root = process.cwd()
+          const reports = [
+            ...JSON.parse(fs.readFileSync('/tmp/core-eslint.json', 'utf8')),
+            ...JSON.parse(fs.readFileSync('/tmp/web-eslint.json', 'utf8')),
+          ]
+          const byRule = new Map()
+          const byFile = new Map()
+          const rows = []
+          for (const report of reports) {
+            const file = path.relative(root, report.filePath).replaceAll('\\', '/')
+            for (const message of report.messages || []) {
+              if (!message.severity) continue
+              const rule = message.ruleId || 'unknown-rule'
+              byRule.set(rule, (byRule.get(rule) || 0) + 1)
+              byFile.set(file, (byFile.get(file) || 0) + 1)
+              rows.push({ file, rule, line: message.line || 0, column: message.column || 0, message: message.message })
+            }
+          }
+          const top = map => [...map].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]))
+          console.log(`TOTAL ${rows.length}`)
+          console.log('\nTOP_RULES')
+          for (const [name,count] of top(byRule).slice(0,40)) console.log(`${count}\t${name}`)
+          console.log('\nTOP_FILES')
+          for (const [name,count] of top(byFile).slice(0,50)) console.log(`${count}\t${name}`)
+          console.log('\nLOW_RISK_CANDIDATES')
+          const safe = new Set([
+            'style/quote-props','style/object-curly-spacing','style/comma-dangle','style/semi','style/quotes',
+            'style/space-before-function-paren','style/keyword-spacing','style/key-spacing','style/comma-spacing',
+            'style/brace-style','style/operator-linebreak','style/member-delimiter-style','style/arrow-parens',
+            'regexp/no-useless-escape','regexp/prefer-character-class','no-useless-escape','no-extra-semi',
+            'unused-imports/no-unused-imports','no-unused-vars','antfu/top-level-function'
+          ])
+          for (const row of rows.filter(r => safe.has(r.rule)).slice(0,200)) {
+            console.log(`${row.file}:${row.line}:${row.column}\t${row.rule}\t${row.message}`)
+          }
+          NODE
