@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   verify-and-package:
-    if: contains(github.event.head_commit.message, 'validate Node 24 packaging migration')
+    if: contains(github.event.head_commit.message, 'Node 24 package')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -58,7 +58,7 @@ jobs:
           find core/dist -maxdepth 1 -type f -print -exec ls -lh {} \;
 
   windows-native-package:
-    if: contains(github.event.head_commit.message, 'validate Node 24 packaging migration')
+    if: contains(github.event.head_commit.message, 'Node 24 package')
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -75,13 +75,18 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build web assets
         run: pnpm build:web
-      - name: Build Windows Node 24 executable
+      - name: Build and inspect Windows Node 24 executable
         shell: pwsh
         run: |
           pnpm -C core build:win 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\pkg-win.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $log = Get-Content "$env:RUNNER_TEMP\pkg-win.log" -Raw
           if ($log -match "Cannot resolve 'wsPath'") { throw "pkg still cannot statically discover ws" }
-          $exe = Get-Item "core\dist\qq-farm-bot-win-x64.exe"
+          Write-Host 'Native Windows dist inventory:'
+          Get-ChildItem -LiteralPath 'core\dist' -File | ForEach-Object {
+            Write-Host ("{0} {1:N1} MB" -f $_.FullName, ($_.Length / 1MB))
+          }
+          $exe = Get-ChildItem -LiteralPath 'core\dist' -File -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $exe) { throw 'No Windows .exe was produced under core\dist' }
           if ($exe.Length -lt 50MB) { throw "Windows executable is unexpectedly small: $($exe.Length)" }
-          Write-Host "Windows executable: $($exe.FullName) $([math]::Round($exe.Length / 1MB, 1)) MB"
+          Write-Host "Accepted Windows executable: $($exe.FullName) $([math]::Round($exe.Length / 1MB, 1)) MB"
