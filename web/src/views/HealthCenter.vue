@@ -227,13 +227,13 @@ useIntervalFn(() => refresh(true), 10000)
 
     <div
       v-if="error"
-      class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
+      class="border border-red-200 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300"
     >
       {{ error }}
     </div>
 
     <template v-if="data">
-      <div class="rounded-xl border p-5" :class="panelClass(data.overall.state)">
+      <div class="border rounded-xl p-5" :class="panelClass(data.overall.state)">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="flex items-center gap-3">
             <span class="h-3 w-3 rounded-full" :class="dotClass(data.overall.state)" />
@@ -253,35 +253,53 @@ useIntervalFn(() => refresh(true), 10000)
       </div>
 
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">账号</div>
-          <div class="mt-1 text-2xl font-bold">{{ data.summary.accounts }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            账号
+          </div>
+          <div class="mt-1 text-2xl font-bold">
+            {{ data.summary.accounts }}
+          </div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">Worker 运行</div>
-          <div class="mt-1 text-2xl font-bold">{{ data.summary.running }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            Worker 运行
+          </div>
+          <div class="mt-1 text-2xl font-bold">
+            {{ data.summary.running }}
+          </div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">Farm 在线</div>
-          <div class="mt-1 text-2xl font-bold">{{ data.summary.connected }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            Farm 在线
+          </div>
+          <div class="mt-1 text-2xl font-bold">
+            {{ data.summary.connected }}
+          </div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">Code 恢复可用</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            Code 恢复可用
+          </div>
           <div class="mt-1 text-2xl font-bold">
             {{ data.summary.codeReady }}<span class="ml-1 text-sm text-gray-400">/ {{ data.codeManager.configuredCount }}</span>
           </div>
         </div>
-        <div class="col-span-2 rounded-xl border border-gray-200 bg-white p-4 lg:col-span-1 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">好友池已导入</div>
-          <div class="mt-1 text-2xl font-bold">{{ data.summary.friendReady }}</div>
+        <div class="col-span-2 border border-gray-200 rounded-xl bg-white p-4 lg:col-span-1 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            好友池已导入
+          </div>
+          <div class="mt-1 text-2xl font-bold">
+            {{ data.summary.friendReady }}
+          </div>
         </div>
       </div>
 
-      <div v-if="data.accounts.length === 0" class="rounded-xl border border-dashed border-gray-300 py-16 text-center text-gray-500 dark:border-gray-700">
+      <div v-if="data.accounts.length === 0" class="border border-gray-300 rounded-xl border-dashed py-16 text-center text-gray-500 dark:border-gray-700">
         当前没有可查看的账号。
       </div>
 
-      <div v-for="account in data.accounts" :key="account.accountId" class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div v-for="account in data.accounts" :key="account.accountId" class="border border-gray-200 rounded-xl bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div class="flex flex-col gap-3 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700">
           <div class="min-w-0">
             <div class="flex flex-wrap items-center gap-2">
@@ -304,8 +322,8 @@ useIntervalFn(() => refresh(true), 10000)
           </div>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-4 md:grid-cols-2">
-          <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+        <div class="grid grid-cols-1 mt-4 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div class="border border-gray-200 rounded-lg p-4 dark:border-gray-700">
             <div class="mb-3 flex items-center justify-between">
               <div class="flex items-center gap-2 text-sm font-semibold">
                 <div class="i-carbon-application-web" />
@@ -321,7 +339,7 @@ useIntervalFn(() => refresh(true), 10000)
             </div>
           </div>
 
-          <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+          <div class="border border-gray-200 rounded-lg p-4 dark:border-gray-700">
             <div class="mb-3 flex items-center justify-between">
               <div class="flex items-center gap-2 text-sm font-semibold">
                 <div class="i-carbon-sprout" />
@@ -337,7 +355,7 @@ useIntervalFn(() => refresh(true), 10000)
             </div>
           </div>
 
-          <div class="rounded-lg border p-4" :class="panelClass(codeTone(account))">
+          <div class="border rounded-lg p-4" :class="panelClass(codeTone(account))">
             <div class="mb-3 flex items-center justify-between">
               <div class="flex items-center gap-2 text-sm font-semibold">
                 <div class="i-carbon-renew" />
@@ -365,7 +383,7 @@ useIntervalFn(() => refresh(true), 10000)
             </div>
           </div>
 
-          <div class="rounded-lg border p-4" :class="panelClass(friendTone(account))">
+          <div class="border rounded-lg p-4" :class="panelClass(friendTone(account))">
             <div class="mb-3 flex items-center justify-between">
               <div class="flex items-center gap-2 text-sm font-semibold">
                 <div class="i-carbon-user-multiple" />
@@ -377,12 +395,20 @@ useIntervalFn(() => refresh(true), 10000)
             </div>
             <div class="flex gap-5">
               <div>
-                <div class="text-xs text-gray-500">GID</div>
-                <div class="text-xl font-bold">{{ account.friends.gidCount ?? '--' }}</div>
+                <div class="text-xs text-gray-500">
+                  GID
+                </div>
+                <div class="text-xl font-bold">
+                  {{ account.friends.gidCount ?? '--' }}
+                </div>
               </div>
               <div>
-                <div class="text-xs text-gray-500">openId</div>
-                <div class="text-xl font-bold">{{ account.friends.openIdCount ?? '--' }}</div>
+                <div class="text-xs text-gray-500">
+                  openId
+                </div>
+                <div class="text-xl font-bold">
+                  {{ account.friends.openIdCount ?? '--' }}
+                </div>
               </div>
             </div>
             <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
