@@ -46,19 +46,32 @@ jobs:
             for(const f of fixes){const [a,b]=f.range;if(b>last)throw new Error(`overlap ${file}`);s=s.slice(0,a)+f.text+s.slice(b);last=a}
             fs.writeFileSync(file,s)
           }
+          function collect(results, rule) {
+            return results.flatMap(r=>r.messages.filter(m=>m.ruleId===rule).map(m=>({filePath:r.filePath,m})))
+          }
           const results=await eslint.lintFiles(targets), counts=new Map(), byFile=new Map()
           for(const r of results)for(const m of r.messages){if(!selected.has(m.ruleId))continue;if(!m.fix?.range)throw new Error(`not fixable ${r.filePath}:${m.line} ${m.ruleId}`);counts.set(m.ruleId,(counts.get(m.ruleId)||0)+1);const a=byFile.get(r.filePath)||[];a.push({range:m.fix.range,text:m.fix.text});byFile.set(r.filePath,a)}
           for(const [rule,n] of expected)if((counts.get(rule)||0)!==n)throw new Error(`expected ${n} ${rule}, got ${counts.get(rule)||0}`)
           if([...counts.values()].reduce((a,b)=>a+b,0)!==18)throw new Error('expected 18 primary fixes')
           for(const [file,fixes] of byFile)apply(file,fixes)
+
           const [admin]=await eslint.lintFiles(['src/views/AdminPanel.vue'])
-          const follow=admin.messages.filter(m=>m.ruleId==='style/no-trailing-spaces')
-          if(follow.length!==4||follow.some(m=>!m.fix?.range))throw new Error(`expected 4 follow-up trailing-space fixes, got ${follow.length}`)
-          apply(admin.filePath,follow.map(m=>({range:m.fix.range,text:m.fix.text})))
+          const trailing=admin.messages.filter(m=>m.ruleId==='style/no-trailing-spaces')
+          if(trailing.length!==4||trailing.some(m=>!m.fix?.range))throw new Error(`expected 4 follow-up trailing-space fixes, got ${trailing.length}`)
+          apply(admin.filePath,trailing.map(m=>({range:m.fix.range,text:m.fix.text})))
+
+          const indented=await eslint.lintFiles(targets)
+          const indent=collect(indented,'style/indent')
+          if(indent.length!==5||indent.some(x=>!x.m.fix?.range))throw new Error(`expected 5 generated style/indent fixes, got ${indent.length}`)
+          const indentByFile=new Map()
+          for(const {filePath,m} of indent){const a=indentByFile.get(filePath)||[];a.push({range:m.fix.range,text:m.fix.text});indentByFile.set(filePath,a)}
+          for(const [file,fixes] of indentByFile)apply(file,fixes)
+
           const after=await eslint.lintFiles(targets)
-          const leftovers=after.flatMap(r=>r.messages.filter(m=>selected.has(m.ruleId)).map(m=>`${r.filePath}:${m.line}:${m.column} ${m.ruleId}`))
-          if(leftovers.length)throw new Error(`selected leftovers:\n${leftovers.join('\n')}`)
-          console.log('Batch 20: 18 primary + 4 generated whitespace fixes applied; selected findings 0')
+          const guarded=new Set([...selected,'style/indent'])
+          const leftovers=after.flatMap(r=>r.messages.filter(m=>guarded.has(m.ruleId)).map(m=>`${r.filePath}:${m.line}:${m.column} ${m.ruleId}`))
+          if(leftovers.length)throw new Error(`guarded leftovers:\n${leftovers.join('\n')}`)
+          console.log('Batch 20: 18 primary + 4 trailing-space + 5 indentation fixes applied; guarded findings 0')
           NODE
       - name: Verify repository
         run: pnpm verify
