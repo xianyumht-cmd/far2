@@ -22,7 +22,7 @@ const settingStore = useSettingStore()
 const farmStore = useFarmStore()
 
 const activeTab = ref<'account' | 'strategy' | 'automation' | 'user'>(
-  (localStorage.getItem('settings-active-tab') as 'account' | 'strategy' | 'automation' | 'user') || 'account'
+  (localStorage.getItem('settings-active-tab') as 'account' | 'strategy' | 'automation' | 'user') || 'account',
 )
 
 watch(activeTab, (newTab) => {
@@ -359,7 +359,7 @@ watchEffect(() => {
 })
 
 const preferredSeedOptions = computed(() => {
-  const options: { label: string; value: number; disabled?: boolean }[] = [{ label: '自动选择', value: 0, disabled: false }]
+  const options: { label: string, value: number, disabled?: boolean }[] = [{ label: '自动选择', value: 0, disabled: false }]
   if (seeds.value) {
     options.push(...seeds.value.map(seed => ({
       label: `${seed.requiredLevel}级 ${seed.name} (${seed.price}金)`,

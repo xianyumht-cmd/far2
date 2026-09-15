@@ -57,11 +57,11 @@ function handleOperate(opType: string) {
     return
 
   const confirmMap: Record<string, string> = {
-    harvest: '确定要收获所有成熟作物吗？',
-    clear: '确定要一键除草/除虫吗？',
-    plant: '确定要一键种植吗？（根据当前策略配置）',
-    upgrade: '确定要升级所有当前可升级的土地吗？（可能消耗金币）',
-    all: '确定要一键全收吗？（包含收获、除草、种植等）',
+    'harvest': '确定要收获所有成熟作物吗？',
+    'clear': '确定要一键除草/除虫吗？',
+    'plant': '确定要一键种植吗？（根据当前策略配置）',
+    'upgrade': '确定要升级所有当前可升级的土地吗？（可能消耗金币）',
+    'all': '确定要一键全收吗？（包含收获、除草、种植等）',
     'remove-all': '确定要铲除当前所有已种植作物吗？此操作不可恢复。',
   }
 
@@ -81,10 +81,10 @@ function handleLandOperate(action: 'remove' | 'fertilize-normal' | 'fertilize-or
   const plantName = String(land.plantName || '').trim()
   const label = plantName ? `土地 #${landId}（${plantName}）` : `土地 #${landId}`
   const messages: Record<string, string> = {
-    remove: `确定铲除${label}当前作物吗？此操作不可恢复。`,
+    'remove': `确定铲除${label}当前作物吗？此操作不可恢复。`,
     'fertilize-normal': `确定对${label}使用 1 次普通肥吗？`,
     'fertilize-organic': `确定对${label}使用 1 次有机肥吗？`,
-    upgrade: `确定升级土地 #${landId} 吗？仅服务器当前仍判定满足升级条件时才会执行。`,
+    'upgrade': `确定升级土地 #${landId} 吗？仅服务器当前仍判定满足升级条件时才会执行。`,
   }
 
   confirmConfig.value = {

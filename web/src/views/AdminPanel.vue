@@ -13,7 +13,7 @@ const userStore = useUserStore()
 const toast = useToastStore()
 
 const activeTab = ref<'card' | 'user' | 'log' | 'system'>(
-  (localStorage.getItem('admin-active-tab') as 'card' | 'user' | 'log' | 'system') || 'card'
+  (localStorage.getItem('admin-active-tab') as 'card' | 'user' | 'log' | 'system') || 'card',
 )
 
 watch(activeTab, (newTab) => {
@@ -633,9 +633,9 @@ function getEventClass(event: string): string {
 function getErrorTypeLabel(errorType: string | null): string {
   if (!errorType) return '-'
   const labels: Record<string, string> = {
-    'rate_limit': '速率限制',
-    'locked': '账户锁定',
-    'invalid_credentials': '凭证错误',
+    rate_limit: '速率限制',
+    locked: '账户锁定',
+    invalid_credentials: '凭证错误',
   }
   return labels[errorType] || errorType
 }

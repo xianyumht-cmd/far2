@@ -25,7 +25,7 @@ interface CareerPlayer {
 interface CareerOverview {
   player: CareerPlayer
   items: CareerItem[]
-  levelStats: Array<{ id: number; count: number; name: string; image: string; level: number }>
+  levelStats: Array<{ id: number, count: number, name: string, image: string, level: number }>
   meta: {
     achievedLevels: number
     statsTotal: number
