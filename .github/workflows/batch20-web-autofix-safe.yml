@@ -2,10 +2,8 @@ name: Batch 20 Audited Web Autofixes
 
 on:
   push:
-    branches:
-      - chore/phase4-batch20-web-autofix-safe-20260915
-    paths:
-      - .github/workflows/batch20-web-autofix-safe.yml
+    branches: [chore/phase4-batch20-web-autofix-safe-20260915]
+    paths: [.github/workflows/batch20-web-autofix-safe.yml]
 
 permissions:
   contents: write
@@ -27,102 +25,40 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Apply exactly 18 audited frontend autofixes
+      - run: pnpm install --frozen-lockfile
+      - name: Apply audited fixes
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs'
           import path from 'node:path'
           import { createRequire } from 'node:module'
-
-          const repoRoot = process.cwd()
-          const webRoot = path.join(repoRoot, 'web')
-          const req = createRequire(path.join(webRoot, 'package.json'))
-          const eslintPath = req.resolve('eslint')
-          const { ESLint } = await import(`file://${eslintPath.replaceAll('\\', '/')}`)
-          const eslint = new ESLint({ cwd: webRoot, fix: false })
-
-          const targets = [
-            'src/views/AdminPanel.vue',
-            'src/components/LandCard.vue',
-            'src/views/CodeManager.vue',
-            'src/views/Catalog.vue',
-            'src/components/BagPanel.vue',
-          ]
-          const expected = new Map([
-            ['antfu/if-newline', 4],
-            ['format/prettier', 5],
-            ['perfectionist/sort-imports', 1],
-            ['style/eol-last', 1],
-            ['style/no-trailing-spaces', 5],
-            ['antfu/curly', 1],
-            ['vue/no-useless-v-bind', 1],
-          ])
-          const allowed = new Set(expected.keys())
-          const results = await eslint.lintFiles(targets)
-          const counts = new Map()
-          const fixesByFile = new Map()
-          for (const result of results) {
-            for (const m of result.messages) {
-              if (!allowed.has(m.ruleId)) continue
-              if (!m.fix?.range || typeof m.fix.text !== 'string') {
-                throw new Error(`Selected finding is not safely autofixable: ${result.filePath}:${m.line}:${m.column} ${m.ruleId}`)
-              }
-              counts.set(m.ruleId, (counts.get(m.ruleId) || 0) + 1)
-              const list = fixesByFile.get(result.filePath) || []
-              list.push({ range: m.fix.range, text: m.fix.text, ruleId: m.ruleId })
-              fixesByFile.set(result.filePath, list)
-            }
+          const root=process.cwd(), web=path.join(root,'web')
+          const req=createRequire(path.join(web,'package.json'))
+          const { ESLint }=await import(`file://${req.resolve('eslint').replaceAll('\\','/')}`)
+          const eslint=new ESLint({cwd:web,fix:false})
+          const targets=['src/views/AdminPanel.vue','src/components/LandCard.vue','src/views/CodeManager.vue','src/views/Catalog.vue','src/components/BagPanel.vue']
+          const expected=new Map([['antfu/if-newline',4],['format/prettier',5],['perfectionist/sort-imports',1],['style/eol-last',1],['style/no-trailing-spaces',5],['antfu/curly',1],['vue/no-useless-v-bind',1]])
+          const selected=new Set(expected.keys())
+          function apply(file, fixes) {
+            let s=fs.readFileSync(file,'utf8')
+            fixes.sort((a,b)=>b.range[0]-a.range[0]||b.range[1]-a.range[1])
+            let last=Infinity
+            for(const f of fixes){const [a,b]=f.range;if(b>last)throw new Error(`overlap ${file}`);s=s.slice(0,a)+f.text+s.slice(b);last=a}
+            fs.writeFileSync(file,s)
           }
-          for (const [rule, expectedCount] of expected) {
-            const actual = counts.get(rule) || 0
-            if (actual !== expectedCount) throw new Error(`Expected ${expectedCount} ${rule} findings, found ${actual}; refusing to edit`)
-          }
-          const total = [...counts.values()].reduce((a,b) => a + b, 0)
-          if (total !== 18) throw new Error(`Expected exactly 18 selected fixes, found ${total}`)
-
-          for (const [filePath, fixes] of fixesByFile) {
-            let source = fs.readFileSync(filePath, 'utf8')
-            fixes.sort((a,b) => b.range[0] - a.range[0] || b.range[1] - a.range[1])
-            let lastStart = Infinity
-            for (const fix of fixes) {
-              const [start,end] = fix.range
-              if (end > lastStart) throw new Error(`Overlapping selected fixes in ${filePath}`)
-              source = source.slice(0,start) + fix.text + source.slice(end)
-              lastStart = start
-            }
-            fs.writeFileSync(filePath, source)
-            console.log(`${path.relative(repoRoot,filePath)}: applied ${fixes.length}`)
-          }
-          console.log(`Applied exactly ${total} audited frontend autofixes`)
-          NODE
-      - name: Confirm selected findings are gone
-        run: |
-          node --input-type=module <<'NODE'
-          import path from 'node:path'
-          import { createRequire } from 'node:module'
-          const repoRoot = process.cwd()
-          const webRoot = path.join(repoRoot, 'web')
-          const req = createRequire(path.join(webRoot, 'package.json'))
-          const eslintPath = req.resolve('eslint')
-          const { ESLint } = await import(`file://${eslintPath.replaceAll('\\', '/')}`)
-          const eslint = new ESLint({ cwd: webRoot, fix: false })
-          const targets = [
-            'src/views/AdminPanel.vue',
-            'src/components/LandCard.vue',
-            'src/views/CodeManager.vue',
-            'src/views/Catalog.vue',
-            'src/components/BagPanel.vue',
-          ]
-          const selected = new Set([
-            'antfu/if-newline','format/prettier','perfectionist/sort-imports','style/eol-last',
-            'style/no-trailing-spaces','antfu/curly','vue/no-useless-v-bind',
-          ])
-          const results = await eslint.lintFiles(targets)
-          const leftovers = results.flatMap(r => r.messages.filter(m => selected.has(m.ruleId)).map(m => `${r.filePath}:${m.line}:${m.column} ${m.ruleId}`))
-          if (leftovers.length) throw new Error(`Selected findings remain:\n${leftovers.join('\n')}`)
-          console.log('Batch 20 selected findings: 0 remaining')
+          const results=await eslint.lintFiles(targets), counts=new Map(), byFile=new Map()
+          for(const r of results)for(const m of r.messages){if(!selected.has(m.ruleId))continue;if(!m.fix?.range)throw new Error(`not fixable ${r.filePath}:${m.line} ${m.ruleId}`);counts.set(m.ruleId,(counts.get(m.ruleId)||0)+1);const a=byFile.get(r.filePath)||[];a.push({range:m.fix.range,text:m.fix.text});byFile.set(r.filePath,a)}
+          for(const [rule,n] of expected)if((counts.get(rule)||0)!==n)throw new Error(`expected ${n} ${rule}, got ${counts.get(rule)||0}`)
+          if([...counts.values()].reduce((a,b)=>a+b,0)!==18)throw new Error('expected 18 primary fixes')
+          for(const [file,fixes] of byFile)apply(file,fixes)
+          const [admin]=await eslint.lintFiles(['src/views/AdminPanel.vue'])
+          const follow=admin.messages.filter(m=>m.ruleId==='style/no-trailing-spaces')
+          if(follow.length!==4||follow.some(m=>!m.fix?.range))throw new Error(`expected 4 follow-up trailing-space fixes, got ${follow.length}`)
+          apply(admin.filePath,follow.map(m=>({range:m.fix.range,text:m.fix.text})))
+          const after=await eslint.lintFiles(targets)
+          const leftovers=after.flatMap(r=>r.messages.filter(m=>selected.has(m.ruleId)).map(m=>`${r.filePath}:${m.line}:${m.column} ${m.ruleId}`))
+          if(leftovers.length)throw new Error(`selected leftovers:\n${leftovers.join('\n')}`)
+          console.log('Batch 20: 18 primary + 4 generated whitespace fixes applied; selected findings 0')
           NODE
       - name: Verify repository
         run: pnpm verify
