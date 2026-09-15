@@ -45,7 +45,7 @@ interface ActivityEntry {
   parentId: number
   type: number
   title: string
-  payload: { raw: string; json: unknown; keys: string[] }
+  payload: { raw: string, json: unknown, keys: string[] }
   startTime: number
   endTime: number
   sort: number
@@ -53,7 +53,7 @@ interface ActivityEntry {
   status: number
   enabled: boolean
   activeByTime: boolean
-  capabilities: { randomShop: boolean; exchangeShop: boolean; draw: boolean }
+  capabilities: { randomShop: boolean, exchangeShop: boolean, draw: boolean }
   randomShop: null | {
     items: RandomShopItem[]
     nextRefreshTime: number
