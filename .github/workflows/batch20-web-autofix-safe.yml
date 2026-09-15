@@ -1,0 +1,137 @@
+name: Batch 20 Audited Web Autofixes
+
+on:
+  push:
+    branches:
+      - chore/phase4-batch20-web-autofix-safe-20260915
+    paths:
+      - .github/workflows/batch20-web-autofix-safe.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: chore/phase4-batch20-web-autofix-safe-20260915
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Apply exactly 18 audited frontend autofixes
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+
+          const repoRoot = process.cwd()
+          const webRoot = path.join(repoRoot, 'web')
+          const req = createRequire(path.join(webRoot, 'package.json'))
+          const eslintPath = req.resolve('eslint')
+          const { ESLint } = await import(`file://${eslintPath.replaceAll('\\', '/')}`)
+          const eslint = new ESLint({ cwd: webRoot, fix: false })
+
+          const targets = [
+            'src/views/AdminPanel.vue',
+            'src/components/LandCard.vue',
+            'src/views/CodeManager.vue',
+            'src/views/Catalog.vue',
+            'src/components/BagPanel.vue',
+          ]
+          const expected = new Map([
+            ['antfu/if-newline', 4],
+            ['format/prettier', 5],
+            ['perfectionist/sort-imports', 1],
+            ['style/eol-last', 1],
+            ['style/no-trailing-spaces', 5],
+            ['antfu/curly', 1],
+            ['vue/no-useless-v-bind', 1],
+          ])
+          const allowed = new Set(expected.keys())
+          const results = await eslint.lintFiles(targets)
+          const counts = new Map()
+          const fixesByFile = new Map()
+          for (const result of results) {
+            for (const m of result.messages) {
+              if (!allowed.has(m.ruleId)) continue
+              if (!m.fix?.range || typeof m.fix.text !== 'string') {
+                throw new Error(`Selected finding is not safely autofixable: ${result.filePath}:${m.line}:${m.column} ${m.ruleId}`)
+              }
+              counts.set(m.ruleId, (counts.get(m.ruleId) || 0) + 1)
+              const list = fixesByFile.get(result.filePath) || []
+              list.push({ range: m.fix.range, text: m.fix.text, ruleId: m.ruleId })
+              fixesByFile.set(result.filePath, list)
+            }
+          }
+          for (const [rule, expectedCount] of expected) {
+            const actual = counts.get(rule) || 0
+            if (actual !== expectedCount) throw new Error(`Expected ${expectedCount} ${rule} findings, found ${actual}; refusing to edit`)
+          }
+          const total = [...counts.values()].reduce((a,b) => a + b, 0)
+          if (total !== 18) throw new Error(`Expected exactly 18 selected fixes, found ${total}`)
+
+          for (const [filePath, fixes] of fixesByFile) {
+            let source = fs.readFileSync(filePath, 'utf8')
+            fixes.sort((a,b) => b.range[0] - a.range[0] || b.range[1] - a.range[1])
+            let lastStart = Infinity
+            for (const fix of fixes) {
+              const [start,end] = fix.range
+              if (end > lastStart) throw new Error(`Overlapping selected fixes in ${filePath}`)
+              source = source.slice(0,start) + fix.text + source.slice(end)
+              lastStart = start
+            }
+            fs.writeFileSync(filePath, source)
+            console.log(`${path.relative(repoRoot,filePath)}: applied ${fixes.length}`)
+          }
+          console.log(`Applied exactly ${total} audited frontend autofixes`)
+          NODE
+      - name: Confirm selected findings are gone
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+          const repoRoot = process.cwd()
+          const webRoot = path.join(repoRoot, 'web')
+          const req = createRequire(path.join(webRoot, 'package.json'))
+          const eslintPath = req.resolve('eslint')
+          const { ESLint } = await import(`file://${eslintPath.replaceAll('\\', '/')}`)
+          const eslint = new ESLint({ cwd: webRoot, fix: false })
+          const targets = [
+            'src/views/AdminPanel.vue',
+            'src/components/LandCard.vue',
+            'src/views/CodeManager.vue',
+            'src/views/Catalog.vue',
+            'src/components/BagPanel.vue',
+          ]
+          const selected = new Set([
+            'antfu/if-newline','format/prettier','perfectionist/sort-imports','style/eol-last',
+            'style/no-trailing-spaces','antfu/curly','vue/no-useless-v-bind',
+          ])
+          const results = await eslint.lintFiles(targets)
+          const leftovers = results.flatMap(r => r.messages.filter(m => selected.has(m.ruleId)).map(m => `${r.filePath}:${m.line}:${m.column} ${m.ruleId}`))
+          if (leftovers.length) throw new Error(`Selected findings remain:\n${leftovers.join('\n')}`)
+          console.log('Batch 20 selected findings: 0 remaining')
+          NODE
+      - name: Verify repository
+        run: pnpm verify
+      - name: Commit audited fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/views/AdminPanel.vue web/src/components/LandCard.vue web/src/views/CodeManager.vue web/src/views/Catalog.vue web/src/components/BagPanel.vue
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "chore(web): clear batch 20 safe lint debt"
+          git push origin HEAD:chore/phase4-batch20-web-autofix-safe-20260915
