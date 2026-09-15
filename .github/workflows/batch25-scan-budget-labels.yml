@@ -1,0 +1,141 @@
+name: Batch 25 Scan Budget Label Cleanup
+
+on:
+  push:
+    branches: [fix/phase4-batch25-scan-budget-labels-20260915]
+    paths: [.github/workflows/batch25-scan-budget-labels.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/phase4-batch25-scan-budget-labels-20260915
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact audited label rewrites
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs')
+
+          function replaceOnce(source, from, to, label) {
+            const first = source.indexOf(from)
+            if (first < 0) throw new Error(`Missing expected block: ${label}`)
+            if (source.indexOf(from, first + from.length) >= 0) throw new Error(`Expected unique block: ${label}`)
+            return source.slice(0, first) + to + source.slice(first + from.length)
+          }
+
+          const twoLimitFiles = [
+            'core/scripts/qq-static-plant-overlay-scan.js',
+            'core/src/services/qq-item-identity-evidence.js',
+            'core/src/services/qq-seed-batch-evidence.js',
+            'core/src/services/qq-unknown-item-context-evidence.js',
+          ]
+
+          for (const file of twoLimitFiles) {
+            let source = fs.readFileSync(file, 'utf8')
+            source = replaceOnce(
+              source,
+              "    outer:\n    for (const folder of folders) {\n",
+              "    let budgetExhausted = false;\n    for (const folder of folders) {\n        if (budgetExhausted) break;\n",
+              `${file} outer label`,
+            )
+            source = replaceOnce(
+              source,
+              "            if (scannedFiles >= (Number(options.maxFiles) || MAX_FILES)) break outer;\n",
+              "            if (scannedFiles >= (Number(options.maxFiles) || MAX_FILES)) {\n                budgetExhausted = true;\n                break;\n            }\n",
+              `${file} file budget`,
+            )
+            source = replaceOnce(
+              source,
+              "            if (scannedBytes + file.size > (Number(options.maxTotalBytes) || MAX_TOTAL_BYTES)) break outer;\n",
+              "            if (scannedBytes + file.size > (Number(options.maxTotalBytes) || MAX_TOTAL_BYTES)) {\n                budgetExhausted = true;\n                break;\n            }\n",
+              `${file} byte budget`,
+            )
+            fs.writeFileSync(file, source)
+          }
+
+          const learnerPath = 'core/src/services/qq-seed-config-learner.js'
+          let learner = fs.readFileSync(learnerPath, 'utf8')
+          learner = replaceOnce(
+            learner,
+            "    outer:\n    for (const folder of folders) {\n",
+            "    let budgetExhausted = false;\n    for (const folder of folders) {\n        if (budgetExhausted) break;\n",
+            'learner outer label',
+          )
+          learner = replaceOnce(
+            learner,
+            "            if (scannedFiles >= MAX_FILES || scannedBytes + file.size > MAX_TOTAL_BYTES) break outer;\n",
+            "            if (scannedFiles >= MAX_FILES || scannedBytes + file.size > MAX_TOTAL_BYTES) {\n                budgetExhausted = true;\n                break;\n            }\n",
+            'learner scan budget',
+          )
+          fs.writeFileSync(learnerPath, learner)
+
+          console.log('Applied Batch 25 scan budget label rewrites')
+          NODE
+      - name: Validate label target and scan-stop structure
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+
+          const files = [
+            'core/scripts/qq-static-plant-overlay-scan.js',
+            'core/src/services/qq-item-identity-evidence.js',
+            'core/src/services/qq-seed-batch-evidence.js',
+            'core/src/services/qq-seed-config-learner.js',
+            'core/src/services/qq-unknown-item-context-evidence.js',
+          ]
+          for (const file of files) {
+            const source = fs.readFileSync(file, 'utf8')
+            if (source.includes('break outer')) throw new Error(`${file} still contains break outer`)
+            if (/^\s*outer:/m.test(source)) throw new Error(`${file} still contains outer label`)
+            if (!source.includes('budgetExhausted = true')) throw new Error(`${file} missing budget stop flag`)
+          }
+
+          const root = process.cwd()
+          async function lint(workspace, targets) {
+            const cwd = path.join(root, workspace)
+            const req = createRequire(path.join(cwd, 'package.json'))
+            const { ESLint } = await import(`file://${req.resolve('eslint').replaceAll('\\', '/')}`)
+            return new ESLint({ cwd, fix: false }).lintFiles(targets)
+          }
+          const reports = [...await lint('core', ['.']), ...await lint('web', ['src/**/*.{ts,vue}'])]
+          let total = 0
+          let noLabels = 0
+          for (const report of reports) {
+            for (const message of report.messages || []) {
+              if (!message.severity) continue
+              total++
+              if (message.ruleId === 'no-labels') noLabels++
+            }
+          }
+          if (noLabels !== 0) throw new Error(`Expected no-labels=0, got ${noLabels}`)
+          if (total !== 521) throw new Error(`Expected total lint findings 521 after Batch 25, got ${total}`)
+          console.log('Batch 25 lint target PASS: total 521; no-labels 0')
+          NODE
+      - name: Verify repository
+        run: pnpm verify
+      - name: Commit audited changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add core/scripts/qq-static-plant-overlay-scan.js core/src/services/qq-item-identity-evidence.js core/src/services/qq-seed-batch-evidence.js core/src/services/qq-seed-config-learner.js core/src/services/qq-unknown-item-context-evidence.js
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m "fix(core): remove scan budget loop labels"
+          git push origin HEAD:fix/phase4-batch25-scan-budget-labels-20260915
