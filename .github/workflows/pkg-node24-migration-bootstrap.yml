@@ -6,119 +6,15 @@ on:
       - chore/pkg-node24-yao-20260915
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  fix-and-verify:
-    if: contains(github.event.head_commit.message, 'repair packaged data paths')
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v5
-        with:
-          version: 10.30.2
-          run_install: false
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Route service state through runtime paths
-        shell: bash
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const fs = require('fs')
-
-          function replaceOnce(file, from, to) {
-            const input = fs.readFileSync(file, 'utf8')
-            const first = input.indexOf(from)
-            if (first < 0) throw new Error(`expected text not found in ${file}`)
-            if (input.indexOf(from, first + from.length) >= 0) throw new Error(`expected exactly one match in ${file}`)
-            fs.writeFileSync(file, input.slice(0, first) + to + input.slice(first + from.length))
-          }
-
-          replaceOnce(
-            'core/src/services/mystery-shop.js',
-            "const crypto = require('node:crypto');\n",
-            "const crypto = require('node:crypto');\nconst { getDataDir } = require('../config/runtime-paths');\n"
-          )
-          replaceOnce(
-            'core/src/services/mystery-shop.js',
-            "function getDataDir() {\n    return process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');\n}\n\n",
-            ''
-          )
-          replaceOnce(
-            'core/src/services/stats.js',
-            "const fs = require('node:fs');\n",
-            "const fs = require('node:fs');\nconst { getDataDir } = require('../config/runtime-paths');\n"
-          )
-          replaceOnce(
-            'core/src/services/stats.js',
-            "    const dataDir = process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');",
-            "    const dataDir = getDataDir();"
-          )
-
-          for (const file of ['core/src/services/mystery-shop.js', 'core/src/services/stats.js']) {
-            const text = fs.readFileSync(file, 'utf8')
-            if (text.includes("path.join(__dirname, '../../data')")) {
-              throw new Error(`legacy packaged data path remains in ${file}`)
-            }
-          }
-          const runtimePaths = fs.readFileSync('core/src/config/runtime-paths.js', 'utf8')
-          if (!runtimePaths.includes('process.env.FARM_DATA_DIR')) {
-            throw new Error('runtime-paths must preserve FARM_DATA_DIR override')
-          }
-          NODE
-          git diff --check
-      - name: Verify repository
-        run: pnpm verify
-      - name: Package all release targets without static-path warnings
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf core/dist
-          pnpm -C core build:release 2>&1 | tee /tmp/pkg-build.log
-          if grep -F "Cannot resolve 'wsPath'" /tmp/pkg-build.log; then
-            echo 'pkg still cannot statically discover ws' >&2
-            exit 1
-          fi
-          if grep -F 'Cannot stat, ENOENT' /tmp/pkg-build.log; then
-            echo 'pkg still sees a missing statically-required path' >&2
-            exit 1
-          fi
-          test -s core/dist/qq-farm-bot-win-x64.exe
-          test -s core/dist/qq-farm-bot-linux-x64
-          test -s core/dist/qq-farm-bot-macos-x64
-          test -s core/dist/qq-farm-bot-macos-arm64
-      - name: Commit verified data-path repair
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add core/src/services/mystery-shop.js core/src/services/stats.js
-          git commit -m "fix(pkg): route service state through runtime paths"
-          git push origin HEAD:${GITHUB_REF_NAME}
-
-  windows-native-package:
-    if: contains(github.event.head_commit.message, 'repair packaged data paths')
-    needs: fix-and-verify
+  windows-runtime-smoke:
+    if: contains(github.event.head_commit.message, 'retry packaged runtime smoke')
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - name: Refresh to verified branch head
-        shell: pwsh
-        run: |
-          git fetch origin "${env:GITHUB_REF_NAME}"
-          git checkout -B "${env:GITHUB_REF_NAME}" "origin/${env:GITHUB_REF_NAME}"
       - uses: pnpm/action-setup@v5
         with:
           version: 10.30.2
@@ -129,8 +25,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build web assets
-        run: pnpm build:web
+      - name: Verify repository
+        run: pnpm verify
       - name: Build and smoke Windows Node 24 executable
         shell: pwsh
         run: |
@@ -159,8 +55,8 @@ jobs:
             for ($i = 0; $i -lt 30; $i++) {
               Start-Sleep -Seconds 1
               try {
-                $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:31997/api/status' -TimeoutSec 2
-                if ($response.StatusCode -eq 200) {
+                $response = Invoke-RestMethod -Uri 'http://127.0.0.1:31997/api/ping' -TimeoutSec 2
+                if ($response.ok -eq $true -and $response.data.ok -eq $true) {
                   $healthy = $true
                   break
                 }
@@ -172,7 +68,7 @@ jobs:
               if (Test-Path $stdout) { Get-Content $stdout }
               Write-Host '--- packaged stderr ---'
               if (Test-Path $stderr) { Get-Content $stderr }
-              throw 'Packaged FAR2 did not become healthy on /api/status'
+              throw 'Packaged FAR2 did not become healthy on public /api/ping'
             }
             if (-not (Test-Path -LiteralPath $dataDir)) {
               throw "Packaged FAR2 did not create writable data directory beside executable: $dataDir"
