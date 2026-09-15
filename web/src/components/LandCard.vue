@@ -215,9 +215,9 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
 
     <div
       v-if="mutationDetail.active"
-      class="mb-1 w-full rounded border border-pink-200 bg-pink-50/80 px-1.5 py-1 text-[10px] dark:border-pink-900/50 dark:bg-pink-950/20"
+      class="mb-1 w-full border border-pink-200 rounded bg-pink-50/80 px-1.5 py-1 text-[10px] dark:border-pink-900/50 dark:bg-pink-950/20"
     >
-      <div class="mb-0.5 font-semibold text-pink-700 dark:text-pink-300">
+      <div class="mb-0.5 text-pink-700 font-semibold dark:text-pink-300">
         变异
       </div>
       <div class="flex flex-wrap justify-center gap-1">
@@ -250,7 +250,7 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
     <div v-if="canOperatePlant || canUpgrade" class="mt-auto w-full border-t border-black/5 pt-2 dark:border-white/10">
       <div v-if="canOperatePlant" class="grid grid-cols-3 gap-1">
         <button
-          class="rounded border border-red-200 bg-red-50 px-1 py-1 text-[10px] text-red-600 disabled:opacity-40 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300"
+          class="border border-red-200 rounded bg-red-50 px-1 py-1 text-[10px] text-red-600 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-300 disabled:opacity-40"
           :disabled="operating"
           title="铲除当前土地作物"
           @click.stop="operate('remove')"
@@ -258,7 +258,7 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
           铲除
         </button>
         <button
-          class="rounded border border-blue-200 bg-blue-50 px-1 py-1 text-[10px] text-blue-600 disabled:opacity-40 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-300"
+          class="border border-blue-200 rounded bg-blue-50 px-1 py-1 text-[10px] text-blue-600 dark:border-blue-900/50 dark:bg-blue-950/20 dark:text-blue-300 disabled:opacity-40"
           :disabled="operating"
           title="使用 1 次普通肥"
           @click.stop="operate('fertilize-normal')"
@@ -266,7 +266,7 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
           普肥
         </button>
         <button
-          class="rounded border border-green-200 bg-green-50 px-1 py-1 text-[10px] text-green-600 disabled:opacity-40 dark:border-green-900/50 dark:bg-green-950/20 dark:text-green-300"
+          class="border border-green-200 rounded bg-green-50 px-1 py-1 text-[10px] text-green-600 dark:border-green-900/50 dark:bg-green-950/20 dark:text-green-300 disabled:opacity-40"
           :disabled="operating"
           title="使用 1 次有机肥"
           @click.stop="operate('fertilize-organic')"
@@ -276,7 +276,7 @@ function operate(action: 'remove' | 'fertilize-normal' | 'fertilize-organic' | '
       </div>
       <button
         v-if="canUpgrade"
-        class="mt-1 w-full rounded border border-violet-200 bg-violet-50 px-1 py-1 text-[10px] text-violet-600 disabled:opacity-40 dark:border-violet-900/50 dark:bg-violet-950/20 dark:text-violet-300"
+        class="mt-1 w-full border border-violet-200 rounded bg-violet-50 px-1 py-1 text-[10px] text-violet-600 dark:border-violet-900/50 dark:bg-violet-950/20 dark:text-violet-300 disabled:opacity-40"
         :disabled="operating"
         title="升级当前土地"
         @click.stop="operate('upgrade')"
