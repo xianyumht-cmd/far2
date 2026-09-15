@@ -47,6 +47,9 @@ const knownFriendGidSet = computed(() => new Set(knownFriendGids.value.map(Numbe
 const friendGidSet = computed(() => new Set(friends.value.map(f => Number(f.gid))))
 const blacklistGidSet = computed(() => new Set(blacklist.value.map(item => Number(item.gid))))
 
+const showGidListModal = ref(false)
+const gidSearchKeyword = ref('')
+
 const filteredKnownFriendGids = computed(() => {
   const keyword = gidSearchKeyword.value.trim().toLowerCase()
   const list = knownFriendGids.value.map(gid => ({
@@ -107,8 +110,6 @@ const localKnownFriendGidSyncCooldownSec = ref(300)
 const localFriendsListCacheTtlSec = ref(60)
 const showBatchAddGidModal = ref(false)
 const batchGidInput = ref('')
-const showGidListModal = ref(false)
-const gidSearchKeyword = ref('')
 
 const interactFilter = ref('all')
 const interactFilters = [
