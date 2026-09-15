@@ -85,10 +85,10 @@ onMounted(refresh)
   <div class="space-y-4">
     <div class="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between dark:bg-gray-800">
       <div>
-        <div class="flex items-center gap-2 font-semibold text-gray-800 dark:text-gray-100">
+        <div class="flex items-center gap-2 text-gray-800 font-semibold dark:text-gray-100">
           <div class="i-carbon-user-avatar-filled-alt text-lg" />
           头像框库存
-          <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+          <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 font-medium dark:bg-emerald-950/30 dark:text-emerald-300">
             只读
           </span>
         </div>
@@ -97,7 +97,7 @@ onMounted(refresh)
         </div>
       </div>
       <button
-        class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700"
+        class="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 transition disabled:cursor-not-allowed dark:border-gray-700 hover:bg-gray-50 dark:text-gray-200 disabled:opacity-50 dark:hover:bg-gray-700"
         :disabled="loading || !accountRunning"
         @click="refresh"
       >
@@ -105,38 +105,56 @@ onMounted(refresh)
       </button>
     </div>
 
-    <div v-if="errorText" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+    <div v-if="errorText" class="border border-amber-200 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
       {{ errorText }}
     </div>
 
     <template v-if="overview">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">已拥有种类</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ overview.totalKinds }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            已拥有种类
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ overview.totalKinds }}
+          </div>
         </div>
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">库存总数</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ overview.totalCount }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            库存总数
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ overview.totalCount }}
+          </div>
         </div>
         <div class="col-span-2 rounded-lg bg-white p-4 shadow md:col-span-1 dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">当前佩戴</div>
-          <div class="mt-1 text-sm font-semibold text-amber-600 dark:text-amber-300">待协议确认</div>
-          <div class="mt-1 text-[11px] text-gray-400">equip_avatar_frames 内部结构尚无可靠实机定义，不猜。</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            当前佩戴
+          </div>
+          <div class="mt-1 text-sm text-amber-600 font-semibold dark:text-amber-300">
+            待协议确认
+          </div>
+          <div class="mt-1 text-[11px] text-gray-400">
+            equip_avatar_frames 内部结构尚无可靠实机定义，不猜。
+          </div>
         </div>
       </div>
 
       <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
         <div class="mb-3 flex items-center justify-between gap-3">
-          <div class="font-semibold text-gray-800 dark:text-gray-100">已拥有头像框</div>
-          <div class="text-xs text-gray-400">来源：ItemService.Bag / itemType=10</div>
+          <div class="text-gray-800 font-semibold dark:text-gray-100">
+            已拥有头像框
+          </div>
+          <div class="text-xs text-gray-400">
+            来源：ItemService.Bag / itemType=10
+          </div>
         </div>
 
         <div v-if="frames.length === 0" class="rounded-lg bg-gray-50 px-4 py-8 text-center text-sm text-gray-500 dark:bg-gray-900/30 dark:text-gray-400">
           当前背包没有返回 type=10 的已拥有头像框。
         </div>
-        <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          <div v-for="frame in frames" :key="frame.id" class="rounded-lg border border-gray-100 p-3 text-center dark:border-gray-700">
+        <div v-else class="grid grid-cols-2 gap-3 lg:grid-cols-4 sm:grid-cols-3 xl:grid-cols-5">
+          <div v-for="frame in frames" :key="frame.id" class="border border-gray-100 rounded-lg p-3 text-center dark:border-gray-700">
             <img
               v-if="frame.image && !imageErrors[frame.id]"
               :src="frame.image"
@@ -144,12 +162,18 @@ onMounted(refresh)
               class="mx-auto h-16 w-16 object-contain"
               @error="onImageError(frame.id)"
             >
-            <div v-else class="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-lg font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+            <div v-else class="mx-auto h-16 w-16 flex items-center justify-center rounded-full bg-gray-100 text-lg text-gray-500 font-bold dark:bg-gray-700 dark:text-gray-300">
               {{ frame.name.charAt(0) || '?' }}
             </div>
-            <div class="mt-2 truncate text-sm font-medium text-gray-800 dark:text-gray-100" :title="frame.name">{{ frame.name }}</div>
-            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">ID {{ frame.id }}</div>
-            <div class="mt-1 inline-flex rounded bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">×{{ frame.count }}</div>
+            <div class="mt-2 truncate text-sm text-gray-800 font-medium dark:text-gray-100" :title="frame.name">
+              {{ frame.name }}
+            </div>
+            <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              ID {{ frame.id }}
+            </div>
+            <div class="mt-1 inline-flex rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700 font-medium dark:bg-blue-950/30 dark:text-blue-300">
+              ×{{ frame.count }}
+            </div>
           </div>
         </div>
       </div>
