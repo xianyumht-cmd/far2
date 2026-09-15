@@ -2,6 +2,7 @@ const { Buffer } = require('node:buffer');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { getDataDir } = require('../config/runtime-paths');
 
 /**
  * FAR2 神秘商店动态自动购买 - 正式版 v1
@@ -51,10 +52,6 @@ function writeLog(tag, message, meta) {
 
 function getStatsModule() {
     return require('./stats');
-}
-
-function getDataDir() {
-    return process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');
 }
 
 function getGuardDir() {

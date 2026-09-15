@@ -1,9 +1,10 @@
 const process = require('node:process');
 const path = require('node:path');
 const fs = require('node:fs');
+const { getDataDir } = require('../config/runtime-paths');
 
 function getStatsFilePath(accountId) {
-    const dataDir = process.env.FARM_DATA_DIR || path.join(__dirname, '../../data');
+    const dataDir = getDataDir();
     return path.join(dataDir, 'stats', `${accountId}.json`);
 }
 

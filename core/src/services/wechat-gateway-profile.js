@@ -4,7 +4,7 @@ const process = require('node:process');
 const { CONFIG } = require('../config/config');
 
 const wsPath = require.resolve('ws');
-const OriginalWebSocket = require(wsPath);
+const OriginalWebSocket = require('ws');
 
 const FARM_GATEWAY_HOST = 'gate-obt.nqf.qq.com';
 const FARM_GATEWAY_PATH = '/prod/ws';
