@@ -282,10 +282,10 @@ onMounted(refresh)
   <div class="space-y-4">
     <div class="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between dark:bg-gray-800">
       <div>
-        <div class="flex flex-wrap items-center gap-2 font-semibold text-gray-800 dark:text-gray-100">
+        <div class="flex flex-wrap items-center gap-2 text-gray-800 font-semibold dark:text-gray-100">
           <div class="i-carbon-events text-lg" />
           活动中心
-          <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+          <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 font-medium dark:bg-emerald-950/30 dark:text-emerald-300">
             深度只读发现
           </span>
         </div>
@@ -295,11 +295,11 @@ onMounted(refresh)
       </div>
       <div class="flex items-center gap-2">
         <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          <input v-model="showAll" type="checkbox" class="rounded border-gray-300">
+          <input v-model="showAll" type="checkbox" class="border-gray-300 rounded">
           显示隐藏/未启用
         </label>
         <button
-          class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700"
+          class="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 transition disabled:cursor-not-allowed dark:border-gray-700 hover:bg-gray-50 dark:text-gray-200 disabled:opacity-50 dark:hover:bg-gray-700"
           :disabled="loading || !accountRunning"
           @click="refresh"
         >
@@ -308,27 +308,67 @@ onMounted(refresh)
       </div>
     </div>
 
-    <div v-if="errorText" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+    <div v-if="errorText" class="border border-amber-200 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
       {{ errorText }}
     </div>
 
     <template v-if="overview">
       <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800"><div class="text-xs text-gray-500">全部</div><div class="mt-1 text-xl font-semibold">{{ overview.summary.total }}</div></div>
-        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800"><div class="text-xs text-gray-500">可见</div><div class="mt-1 text-xl font-semibold">{{ overview.summary.visible }}</div></div>
-        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800"><div class="text-xs text-gray-500">进行中</div><div class="mt-1 text-xl font-semibold">{{ overview.summary.active }}</div></div>
-        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800"><div class="text-xs text-gray-500">随机商店</div><div class="mt-1 text-xl font-semibold">{{ overview.summary.withRandomShop }}</div></div>
-        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800"><div class="text-xs text-gray-500">兑换商店</div><div class="mt-1 text-xl font-semibold">{{ overview.summary.withExchangeShop }}</div></div>
-        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800"><div class="text-xs text-gray-500">抽奖</div><div class="mt-1 text-xl font-semibold">{{ overview.summary.withDraw }}</div></div>
+        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            全部
+          </div><div class="mt-1 text-xl font-semibold">
+            {{ overview.summary.total }}
+          </div>
+        </div>
+        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            可见
+          </div><div class="mt-1 text-xl font-semibold">
+            {{ overview.summary.visible }}
+          </div>
+        </div>
+        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            进行中
+          </div><div class="mt-1 text-xl font-semibold">
+            {{ overview.summary.active }}
+          </div>
+        </div>
+        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            随机商店
+          </div><div class="mt-1 text-xl font-semibold">
+            {{ overview.summary.withRandomShop }}
+          </div>
+        </div>
+        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            兑换商店
+          </div><div class="mt-1 text-xl font-semibold">
+            {{ overview.summary.withExchangeShop }}
+          </div>
+        </div>
+        <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            抽奖
+          </div><div class="mt-1 text-xl font-semibold">
+            {{ overview.summary.withDraw }}
+          </div>
+        </div>
       </div>
 
-      <section v-if="overview.discovery" class="rounded-lg border border-indigo-200 bg-indigo-50/60 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/15">
+      <section v-if="overview.discovery" class="border border-indigo-200 rounded-lg bg-indigo-50/60 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/15">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div class="font-medium text-indigo-800 dark:text-indigo-200">结构发现结果</div>
+            <div class="text-indigo-800 font-medium dark:text-indigo-200">
+              结构发现结果
+            </div>
             <div class="mt-1 text-xs text-indigo-700/80 dark:text-indigo-300/80">
               {{ overview.discovery.source }} · GetGroup {{ overview.discovery.groupSummary.loaded }}/{{ overview.discovery.groupSummary.requested }} 成功
-              <template v-if="overview.discovery.groupSummary.failed"> · {{ overview.discovery.groupSummary.failed }} 失败</template>
+              <template v-if="overview.discovery.groupSummary.failed">
+                · {{ overview.discovery.groupSummary.failed }} 失败
+              </template>
               · 60 秒缓存
             </div>
           </div>
@@ -344,10 +384,10 @@ onMounted(refresh)
           疑似种子/活动奖励 ID：{{ discoverySeedIds.join(', ') }}
         </div>
 
-        <div v-if="discoveryNodes.length" class="mt-3 grid gap-2 xl:grid-cols-2">
+        <div v-if="discoveryNodes.length" class="grid mt-3 gap-2 xl:grid-cols-2">
           <div v-for="node in discoveryNodes" :key="`discovery-${node.id}`" class="rounded-lg bg-white/90 p-3 text-xs dark:bg-gray-800/90">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="font-medium text-gray-800 dark:text-gray-100">{{ node.title || `节点 #${node.id}` }}</span>
+              <span class="text-gray-800 font-medium dark:text-gray-100">{{ node.title || `节点 #${node.id}` }}</span>
               <span class="text-gray-400">#{{ node.id }} · type {{ node.type }}</span>
               <span v-for="cap in node.capabilities" :key="`${node.id}-${cap}`" class="rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300">{{ cap }}</span>
             </div>
@@ -359,22 +399,24 @@ onMounted(refresh)
             <div v-if="node.seedLikeItemIds.length" class="mt-2 text-emerald-700 dark:text-emerald-300">
               seed-like: {{ node.seedLikeItemIds.join(', ') }}
             </div>
-            <button class="mt-2 text-indigo-600 hover:underline dark:text-indigo-300" @click="toggleDiscovery(node.id)">
+            <button class="mt-2 text-indigo-600 dark:text-indigo-300 hover:underline" @click="toggleDiscovery(node.id)">
               {{ isDiscoveryExpanded(node.id) ? '收起结构指纹' : '查看结构指纹' }}
             </button>
-            <div v-if="isDiscoveryExpanded(node.id)" class="mt-2 break-all rounded bg-gray-50 p-2 font-mono text-[11px] text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+            <div v-if="isDiscoveryExpanded(node.id)" class="mt-2 break-all rounded bg-gray-50 p-2 text-[11px] text-gray-500 font-mono dark:bg-gray-900 dark:text-gray-400">
               {{ node.structureFingerprint }}
             </div>
           </div>
         </div>
       </section>
 
-      <div v-else-if="overview.framework.deepDiscoveryFallback" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+      <div v-else-if="overview.framework.deepDiscoveryFallback" class="border border-amber-200 rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
         深发现本轮失败，已安全回退 ActivityService.List：{{ overview.discoveryError || overview.framework.fallbackReason || 'unknown' }}
       </div>
 
-      <div class="rounded-lg border border-blue-200 bg-blue-50/70 px-4 py-3 text-xs text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-300">
-        Transport: {{ overview.framework.listTransport || overview.framework.transport }}<template v-if="overview.framework.groupTransport"> + {{ overview.framework.groupTransport }}</template>
+      <div class="border border-blue-200 rounded-lg bg-blue-50/70 px-4 py-3 text-xs text-blue-700 dark:border-blue-900/40 dark:bg-blue-950/20 dark:text-blue-300">
+        Transport: {{ overview.framework.listTransport || overview.framework.transport }}<template v-if="overview.framework.groupTransport">
+          + {{ overview.framework.groupTransport }}
+        </template>
         · adapters: {{ overview.framework.adapters.length }} · Operate: {{ overview.framework.operateEnabled ? 'enabled' : 'disabled' }}
       </div>
 
@@ -387,7 +429,9 @@ onMounted(refresh)
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
-                <h3 class="truncate font-semibold text-gray-900 dark:text-gray-100">{{ activity.title || `活动 #${activity.id}` }}</h3>
+                <h3 class="truncate text-gray-900 font-semibold dark:text-gray-100">
+                  {{ activity.title || `活动 #${activity.id}` }}
+                </h3>
                 <span class="rounded px-2 py-0.5 text-xs" :class="activityStateClass(activity)">{{ activityStateText(activity) }}</span>
                 <span v-if="activity.parentId" class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-gray-700 dark:text-gray-300">
                   子活动 · {{ parentTitleMap.get(activity.parentId) || `#${activity.parentId}` }}
@@ -408,7 +452,9 @@ onMounted(refresh)
           </div>
 
           <div v-if="activity.randomShop" class="mt-3 rounded-lg bg-purple-50/50 p-3 text-xs dark:bg-purple-950/10">
-            <div class="font-medium text-purple-700 dark:text-purple-300">随机商店 · {{ activity.randomShop.items.length }} 项</div>
+            <div class="text-purple-700 font-medium dark:text-purple-300">
+              随机商店 · {{ activity.randomShop.items.length }} 项
+            </div>
             <div class="mt-2 flex flex-wrap gap-2">
               <span v-for="item in activity.randomShop.items.slice(0, 8)" :key="`random-${activity.id}-${item.id}`" class="rounded bg-white px-2 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                 {{ item.name || item.item.name }} ×{{ item.item.count }} / {{ item.cost.name }} ×{{ item.cost.count }} · {{ item.boughtCount }}/{{ item.stockCount || '-' }}
@@ -417,7 +463,9 @@ onMounted(refresh)
           </div>
 
           <div v-if="activity.exchangeShop" class="mt-3 rounded-lg bg-cyan-50/50 p-3 text-xs dark:bg-cyan-950/10">
-            <div class="font-medium text-cyan-700 dark:text-cyan-300">兑换商店 · {{ activity.exchangeShop.items.length }} 项</div>
+            <div class="text-cyan-700 font-medium dark:text-cyan-300">
+              兑换商店 · {{ activity.exchangeShop.items.length }} 项
+            </div>
             <div class="mt-2 flex flex-wrap gap-2">
               <span v-for="item in activity.exchangeShop.items.slice(0, 8)" :key="`exchange-${activity.id}-${item.id}`" class="rounded bg-white px-2 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                 {{ item.name || item.item.name }} ×{{ item.item.count }} / {{ item.cost.name }} ×{{ item.cost.count }}<template v-if="item.owned"> · 已拥有</template>
@@ -426,14 +474,16 @@ onMounted(refresh)
           </div>
 
           <div v-if="activity.drawInfo" class="mt-3 rounded-lg bg-pink-50/50 p-3 text-xs dark:bg-pink-950/10">
-            <div class="font-medium text-pink-700 dark:text-pink-300">抽奖池 · {{ activity.drawInfo.rewards.length }} 项</div>
+            <div class="text-pink-700 font-medium dark:text-pink-300">
+              抽奖池 · {{ activity.drawInfo.rewards.length }} 项
+            </div>
             <div class="mt-1 text-gray-500 dark:text-gray-400">
               免费 {{ activity.drawInfo.freeRemainingCount }}/{{ activity.drawInfo.maxFreeCount }} · 付费 {{ activity.drawInfo.paidRemainingCount }}/{{ activity.drawInfo.maxPaidCount }} · 单价 {{ activity.drawInfo.paidPrice }} (货币 {{ activity.drawInfo.paidCurrencyId }})
             </div>
           </div>
 
           <div v-if="activity.payload.raw" class="mt-3 border-t border-gray-100 pt-3 dark:border-gray-700">
-            <button class="text-xs text-blue-600 hover:underline dark:text-blue-300" @click="togglePayload(activity.id)">
+            <button class="text-xs text-blue-600 dark:text-blue-300 hover:underline" @click="togglePayload(activity.id)">
               {{ isPayloadExpanded(activity.id) ? '收起 payload' : `查看 payload${activity.payload.keys.length ? ` (${activity.payload.keys.join(', ')})` : ''}` }}
             </button>
             <pre v-if="isPayloadExpanded(activity.id)" class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-gray-50 p-3 text-[11px] text-gray-600 dark:bg-gray-900 dark:text-gray-300">{{ activity.payload.json ? JSON.stringify(activity.payload.json, null, 2) : activity.payload.raw }}</pre>
