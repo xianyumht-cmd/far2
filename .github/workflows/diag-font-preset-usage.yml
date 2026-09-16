@@ -18,18 +18,37 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Inspect configured webfont usage and emitted CSS
+      - name: Summarize configured and emitted webfont usage
         shell: bash
         run: |
           set -euo pipefail
           echo '=== source references ==='
           grep -R -n -E '(DM Sans|DM Serif Display|DM Mono|font-(sans|serif|mono)|font-family)' web/src web/index.html || true
 
-          pnpm -C web build
+          pnpm -C web build >/tmp/web-build.log 2>&1
+          tail -n 8 /tmp/web-build.log
 
-          echo '=== emitted webfont references ==='
-          grep -R -n -E '(DM Sans|DM Serif Display|DM Mono|fonts\.googleapis\.com|fonts\.gstatic\.com)' web/dist || true
-          echo '=== emitted font-face/import rules ==='
-          grep -R -n -E '(@font-face|@import[^;]*(font|google)|font-family)' web/dist --include='*.css' || true
+          echo '=== emitted CSS counts ==='
+          for pattern in 'DM Sans' 'DM Serif Display' 'DM Mono' 'fonts.googleapis.com' 'fonts.gstatic.com' '@font-face'; do
+            count="$(grep -R -F -o "$pattern" web/dist --include='*.css' 2>/dev/null | wc -l)"
+            echo "$pattern=$count"
+          done
+
+          echo '=== external font URLs ==='
+          grep -R -h -o -E 'https://[^)"[:space:]]+' web/dist --include='*.css' 2>/dev/null \
+            | grep -E 'fonts\.(googleapis|gstatic)\.com' \
+            | sort -u \
+            | head -n 20 || true
+
+          echo '=== font-face families ==='
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          css = '\n'.join(p.read_text(errors='ignore') for p in Path('web/dist').rglob('*.css'))
+          families = sorted(set(re.findall(r'font-family:([^;}]+)', css)))
+          for value in families:
+              if 'DM ' in value or 'monospace' in value or 'sans-serif' in value:
+                  print(value.strip())
+          PY
       - name: Verify repository
         run: pnpm verify
