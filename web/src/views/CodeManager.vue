@@ -224,10 +224,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl space-y-5">
+  <div class="mx-auto max-w-6xl w-full space-y-5">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <div class="flex items-center gap-2 text-2xl font-bold text-gray-900 dark:text-white">
+        <div class="flex items-center gap-2 text-2xl text-gray-900 font-bold dark:text-white">
           <div class="i-carbon-renew" />
           Code 自动刷新
         </div>
@@ -236,7 +236,7 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <button
-        class="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+        class="inline-flex items-center justify-center gap-2 border border-gray-200 rounded-lg bg-white px-4 py-2 text-sm text-gray-700 font-medium transition disabled:cursor-not-allowed dark:border-gray-700 dark:bg-gray-800 hover:bg-gray-50 dark:text-gray-200 disabled:opacity-50 dark:hover:bg-gray-700"
         :disabled="loading"
         @click="load()"
       >
@@ -245,12 +245,12 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <div v-if="!currentAccount" class="rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+    <div v-if="!currentAccount" class="border border-gray-300 rounded-xl border-dashed bg-white p-8 text-center text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
       请先在左侧选择或添加一个账号。
     </div>
 
     <template v-else>
-      <div v-if="sessionIdentityMismatch" class="rounded-xl border border-red-300 bg-red-50 p-4 text-sm leading-6 text-red-800 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-200">
+      <div v-if="sessionIdentityMismatch" class="border border-red-300 rounded-xl bg-red-50 p-4 text-sm text-red-800 leading-6 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-200">
         <div class="font-semibold">
           检测到账号 / Session 身份不一致，已强制禁止 Code 刷新
         </div>
@@ -260,23 +260,23 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="grid gap-4 lg:grid-cols-3">
-        <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs font-medium uppercase tracking-wide text-gray-400">
+        <section class="border border-gray-200 rounded-xl bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-400 font-medium tracking-wide uppercase">
             当前状态
           </div>
           <div class="mt-3 flex items-center gap-2">
             <span class="rounded-full px-3 py-1 text-sm font-semibold" :class="stateMeta.cls">{{ stateMeta.label }}</span>
           </div>
-          <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
+          <p class="mt-3 text-sm text-gray-600 leading-6 dark:text-gray-300">
             {{ stateMeta.detail }}
           </p>
         </section>
 
-        <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs font-medium uppercase tracking-wide text-gray-400">
+        <section class="border border-gray-200 rounded-xl bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-400 font-medium tracking-wide uppercase">
             Windows QQ Session
           </div>
-          <div class="mt-3 text-lg font-semibold text-gray-900 dark:text-white">
+          <div class="mt-3 text-lg text-gray-900 font-semibold dark:text-white">
             {{ accountStatus?.qqUin || '未绑定' }}
           </div>
           <div class="mt-1 text-xs text-gray-400">
@@ -295,11 +295,11 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs font-medium uppercase tracking-wide text-gray-400">
+        <section class="border border-gray-200 rounded-xl bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-400 font-medium tracking-wide uppercase">
             定向 Provider
           </div>
-          <div class="mt-3 break-all text-sm font-semibold text-gray-900 dark:text-white">
+          <div class="mt-3 break-all text-sm text-gray-900 font-semibold dark:text-white">
             {{ status?.provider || 'unavailable' }}
           </div>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -308,10 +308,10 @@ onBeforeUnmount(() => {
         </section>
       </div>
 
-      <section class="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <section class="border border-gray-200 rounded-xl bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div class="flex flex-col gap-4 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700">
           <div>
-            <h2 class="font-semibold text-gray-900 dark:text-white">
+            <h2 class="text-gray-900 font-semibold dark:text-white">
               账号级配置
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -328,32 +328,46 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="grid gap-px bg-gray-100 md:grid-cols-2 lg:grid-cols-4 dark:bg-gray-700">
+        <div class="grid gap-px bg-gray-100 lg:grid-cols-4 md:grid-cols-2 dark:bg-gray-700">
           <div class="bg-white p-5 dark:bg-gray-800">
-            <div class="text-xs text-gray-400">账号配置</div>
-            <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ config?.enabled ? '已启用' : '未启用' }}</div>
+            <div class="text-xs text-gray-400">
+              账号配置
+            </div>
+            <div class="mt-1 text-gray-900 font-medium dark:text-white">
+              {{ config?.enabled ? '已启用' : '未启用' }}
+            </div>
           </div>
           <div class="bg-white p-5 dark:bg-gray-800">
-            <div class="text-xs text-gray-400">模式</div>
-            <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ config?.mode || '—' }}</div>
+            <div class="text-xs text-gray-400">
+              模式
+            </div>
+            <div class="mt-1 text-gray-900 font-medium dark:text-white">
+              {{ config?.mode || '—' }}
+            </div>
           </div>
           <div class="bg-white p-5 dark:bg-gray-800">
-            <div class="text-xs text-gray-400">全局调度</div>
+            <div class="text-xs text-gray-400">
+              全局调度
+            </div>
             <div class="mt-1 font-medium" :class="status?.globalEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">
               {{ status?.globalEnabled ? '已启用' : '未启用' }}
             </div>
           </div>
           <div class="bg-white p-5 dark:bg-gray-800">
-            <div class="text-xs text-gray-400">刷新周期</div>
-            <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ formatDuration(status?.refreshIntervalMs || 0) }}</div>
+            <div class="text-xs text-gray-400">
+              刷新周期
+            </div>
+            <div class="mt-1 text-gray-900 font-medium dark:text-white">
+              {{ formatDuration(status?.refreshIntervalMs || 0) }}
+            </div>
           </div>
         </div>
       </section>
 
-      <section class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <section class="border border-gray-200 rounded-xl bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
         <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 class="font-semibold text-gray-900 dark:text-white">
+            <h2 class="text-gray-900 font-semibold dark:text-white">
               手动刷新
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -361,7 +375,7 @@ onBeforeUnmount(() => {
             </p>
           </div>
           <button
-            class="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
+            class="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm text-white font-semibold transition disabled:cursor-not-allowed disabled:bg-gray-300 hover:bg-blue-700 disabled:text-gray-500 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
             :disabled="!canManualRefresh || refreshing"
             @click="triggerRefresh"
           >
@@ -370,25 +384,35 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <div class="mt-5 grid gap-4 border-t border-gray-100 pt-5 sm:grid-cols-3 dark:border-gray-700">
+        <div class="grid mt-5 gap-4 border-t border-gray-100 pt-5 sm:grid-cols-3 dark:border-gray-700">
           <div>
-            <div class="text-xs text-gray-400">下次刷新</div>
-            <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">{{ formatTime(accountStatus?.nextRefreshAt || 0) }}</div>
+            <div class="text-xs text-gray-400">
+              下次刷新
+            </div>
+            <div class="mt-1 text-sm text-gray-900 font-medium dark:text-white">
+              {{ formatTime(accountStatus?.nextRefreshAt || 0) }}
+            </div>
           </div>
           <div>
-            <div class="text-xs text-gray-400">等待原因</div>
-            <div class="mt-1 break-all text-sm font-medium text-gray-900 dark:text-white">{{ accountStatus?.pendingReason || accountStatus?.state?.reason || '—' }}</div>
+            <div class="text-xs text-gray-400">
+              等待原因
+            </div>
+            <div class="mt-1 break-all text-sm text-gray-900 font-medium dark:text-white">
+              {{ accountStatus?.pendingReason || accountStatus?.state?.reason || '—' }}
+            </div>
           </div>
           <div>
-            <div class="text-xs text-gray-400">轮询 / 重试</div>
-            <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+            <div class="text-xs text-gray-400">
+              轮询 / 重试
+            </div>
+            <div class="mt-1 text-sm text-gray-900 font-medium dark:text-white">
               {{ formatDuration(status?.pollMs || 0) }} / {{ formatDuration(status?.retryMs || 0) }}
             </div>
           </div>
         </div>
       </section>
 
-      <div v-if="status && !status.globalEnabled" class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
+      <div v-if="status && !status.globalEnabled" class="border border-amber-200 rounded-xl bg-amber-50 p-4 text-sm text-amber-800 leading-6 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200">
         当前全局自动刷新仍处于关闭状态。即使账号级配置显示“已启用”，CodeManager 也不会执行真实刷新；这是当前 Provider 尚未完成前的保护状态。
       </div>
     </template>
