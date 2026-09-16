@@ -34,15 +34,30 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const pkg = require('./core/package.json')
-          const expected = {
-            axios: '^1.18.0',
-            protobufjs: '^8.6.6',
-            ws: '^8.21.0',
+          const floors = {
+            axios: [1, 18, 0],
+            protobufjs: [8, 6, 6],
+            ws: [8, 21, 0],
           }
-          for (const [name, version] of Object.entries(expected)) {
-            if (pkg.dependencies[name] !== version) {
-              throw new Error(`${name}: expected ${version}, got ${pkg.dependencies[name]}`)
+          const parse = (value) => {
+            const match = String(value).match(/(\d+)\.(\d+)\.(\d+)/)
+            if (!match) throw new Error(`cannot parse version from ${value}`)
+            return match.slice(1).map(Number)
+          }
+          const atLeast = (actual, floor) => {
+            for (let i = 0; i < 3; i += 1) {
+              if (actual[i] > floor[i]) return true
+              if (actual[i] < floor[i]) return false
             }
+            return true
+          }
+          for (const [name, floor] of Object.entries(floors)) {
+            const spec = pkg.dependencies[name]
+            const actual = parse(spec)
+            if (!atLeast(actual, floor)) {
+              throw new Error(`${name}: expected >=${floor.join('.')}, got ${spec}`)
+            }
+            console.log(`${name} ${spec}`)
           }
           NODE
       - name: Ensure no critical production advisory remains
