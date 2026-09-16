@@ -1,0 +1,82 @@
+name: Validate Remove Unused Pushoo
+
+on:
+  push:
+    branches: [chore/remove-unused-pushoo-20260917]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Confirm package is unused by source
+        shell: bash
+        run: |
+          set -euo pipefail
+          matches=$(grep -RniE "(^|[^[:alnum:]_-])pushoo([^[:alnum:]_-]|$)" core --exclude='package.json' --exclude='pnpm-lock.yaml' --exclude-dir=node_modules --exclude-dir=dist || true)
+          if [ -n "$matches" ]; then
+            echo "$matches"
+            echo 'pushoo is referenced by source; refusing removal' >&2
+            exit 1
+          fi
+          echo 'No source references to pushoo found.'
+      - name: Remove unused dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter qq-farm-bot remove pushoo
+          if grep -q '"pushoo"' core/package.json; then
+            echo 'pushoo still present in core/package.json' >&2
+            exit 1
+          fi
+          if grep -qE '^  pushoo@|/pushoo@|pushoo:' pnpm-lock.yaml; then
+            echo 'pushoo still present in root lockfile' >&2
+            exit 1
+          fi
+      - name: Verify repository
+        run: pnpm verify
+      - name: Audit production dependencies
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --prod --json > prod-audit.json
+          code=$?
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('prod-audit.json', 'utf8'));
+          console.log(JSON.stringify(data.metadata || {}, null, 2));
+          const pushooPaths = [];
+          for (const a of Object.values(data.advisories || {})) {
+            for (const f of a.findings || []) {
+              for (const p of f.paths || []) if (p.includes('pushoo')) pushooPaths.push(p);
+            }
+          }
+          if (pushooPaths.length) {
+            console.error('Audit still contains pushoo paths:', pushooPaths);
+            process.exit(1);
+          }
+          NODE
+          echo "PROD_AUDIT_EXIT=$code"
+          exit 0
+      - name: Commit production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add core/package.json pnpm-lock.yaml
+          git diff --cached --exit-code && { echo 'No changes to commit' >&2; exit 1; } || true
+          git commit -m 'chore(core): remove unused pushoo dependency'
+          git push
