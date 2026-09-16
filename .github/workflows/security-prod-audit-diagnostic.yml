@@ -1,0 +1,66 @@
+name: Production Audit Diagnostic
+
+on:
+  push:
+    branches: [diag/security-prod-audit-20260917]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Inventory production advisories
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --prod --json > prod-audit.json
+          code=$?
+          set -e
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('prod-audit.json', 'utf8'));
+          console.log('AUDIT_METADATA');
+          console.log(JSON.stringify(data.metadata || {}, null, 2));
+          const rows = [];
+          for (const [id, advisory] of Object.entries(data.advisories || {})) {
+            for (const finding of advisory.findings || []) {
+              for (const p of finding.paths || []) {
+                rows.push({
+                  id,
+                  module: advisory.module_name,
+                  severity: advisory.severity,
+                  version: finding.version,
+                  path: p,
+                  patched: advisory.patched_versions,
+                  vulnerable: advisory.vulnerable_versions,
+                  title: advisory.title,
+                });
+              }
+            }
+          }
+          const rank = { critical: 0, high: 1, moderate: 2, low: 3, info: 4 };
+          rows.sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9) || a.module.localeCompare(b.module) || a.path.localeCompare(b.path));
+          console.log(`AUDIT_PATH_COUNT=${rows.length}`);
+          for (const row of rows) console.log(JSON.stringify(row));
+          const groups = new Map();
+          for (const row of rows) {
+            const key = `${row.severity}|${row.module}|${row.version}|${row.patched}`;
+            if (!groups.has(key)) groups.set(key, { severity: row.severity, module: row.module, version: row.version, patched: row.patched, count: 0, paths: [] });
+            const g = groups.get(key); g.count++; if (g.paths.length < 5) g.paths.push(row.path);
+          }
+          console.log('AUDIT_GROUPS');
+          for (const g of groups.values()) console.log(JSON.stringify(g));
+          NODE
+          echo "PNPM_AUDIT_EXIT=$code"
