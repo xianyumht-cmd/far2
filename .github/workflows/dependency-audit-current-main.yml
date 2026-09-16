@@ -1,0 +1,78 @@
+name: Diagnose Current Main Dependencies
+
+on:
+  push:
+    branches: [diag/dependency-audit-main-20260917]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Inspect resolved production versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter qq-farm-bot list axios protobufjs express socket.io ws pushoo --depth 5 || true
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const roots = ['core', 'web'];
+          const pkgs = ['axios','protobufjs','express','socket.io','ws','pushoo','vite','vue-router'];
+          for (const root of roots) {
+            console.log(`-- ${root} --`);
+            for (const name of pkgs) {
+              try {
+                const p = require.resolve(`${name}/package.json`, { paths: [path.resolve(root)] });
+                const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+                console.log(`${name}=${json.version}`);
+              } catch {
+                console.log(`${name}=NOT_RESOLVED`);
+              }
+            }
+          }
+          NODE
+      - name: Production audit summary
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --prod --json > prod-audit.json
+          code=$?
+          echo "PROD_AUDIT_EXIT=$code"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('prod-audit.json', 'utf8'));
+          console.log(JSON.stringify(data.metadata || {}, null, 2));
+          const rows = [];
+          for (const [id, a] of Object.entries(data.advisories || {})) {
+            for (const f of a.findings || []) rows.push({id,module:a.module_name,severity:a.severity,version:f.version,paths:f.paths,patched:a.patched_versions});
+          }
+          rows.sort((a,b) => `${a.severity}:${a.module}:${a.version}`.localeCompare(`${b.severity}:${b.module}:${b.version}`));
+          console.log(JSON.stringify(rows, null, 2));
+          NODE
+          exit 0
+      - name: Full audit summary
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --json > full-audit.json
+          code=$?
+          echo "FULL_AUDIT_EXIT=$code"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('full-audit.json', 'utf8'));
+          console.log(JSON.stringify(data.metadata || {}, null, 2));
+          NODE
+          exit 0
