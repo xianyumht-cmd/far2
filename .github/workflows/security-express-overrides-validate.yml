@@ -34,6 +34,7 @@ jobs:
           pkg.pnpm.overrides['express>path-to-regexp'] = '0.1.13';
           pkg.pnpm.overrides['express>qs'] = '6.16.0';
           pkg.pnpm.overrides['express>body-parser'] = '1.20.6';
+          pkg.pnpm.overrides['body-parser>qs'] = '6.16.0';
           fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);
           NODE
           pnpm install --lockfile-only
