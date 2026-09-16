@@ -96,10 +96,10 @@ onMounted(refresh)
   <div class="space-y-4">
     <div class="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between dark:bg-gray-800">
       <div>
-        <div class="flex items-center gap-2 font-semibold text-gray-800 dark:text-gray-100">
+        <div class="flex items-center gap-2 text-gray-800 font-semibold dark:text-gray-100">
           <div class="i-carbon-chart-histogram text-lg" />
           个人生涯
-          <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+          <span class="rounded bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 font-medium dark:bg-emerald-950/30 dark:text-emerald-300">
             只读
           </span>
         </div>
@@ -108,7 +108,7 @@ onMounted(refresh)
         </div>
       </div>
       <button
-        class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700"
+        class="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 transition disabled:cursor-not-allowed dark:border-gray-700 hover:bg-gray-50 dark:text-gray-200 disabled:opacity-50 dark:hover:bg-gray-700"
         :disabled="loading || !accountRunning"
         @click="refresh"
       >
@@ -116,7 +116,7 @@ onMounted(refresh)
       </button>
     </div>
 
-    <div v-if="errorText" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+    <div v-if="errorText" class="border border-amber-200 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
       {{ errorText }}
     </div>
 
@@ -130,11 +130,11 @@ onMounted(refresh)
             class="h-16 w-16 rounded-full bg-gray-100 object-cover"
             @error="avatarFailed = true"
           >
-          <div v-else class="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 text-xl font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+          <div v-else class="h-16 w-16 flex items-center justify-center rounded-full bg-gray-100 text-xl text-gray-500 font-bold dark:bg-gray-700 dark:text-gray-300">
             {{ (overview.player.name || '?').charAt(0) }}
           </div>
           <div class="min-w-0 flex-1">
-            <div class="truncate text-lg font-semibold text-gray-900 dark:text-gray-100">
+            <div class="truncate text-lg text-gray-900 font-semibold dark:text-gray-100">
               {{ overview.player.name || '未返回昵称' }}
             </div>
             <div class="mt-1 flex flex-wrap gap-2 text-xs">
@@ -152,28 +152,48 @@ onMounted(refresh)
 
       <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">统计总量</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ formatNumber(overview.meta.statsTotal) }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            统计总量
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ formatNumber(overview.meta.statsTotal) }}
+          </div>
         </div>
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">统计条目</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ items.length }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            统计条目
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ items.length }}
+          </div>
         </div>
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">服务端统计类型数</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ overview.meta.statsCount }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            服务端统计类型数
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ overview.meta.statsCount }}
+          </div>
         </div>
         <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-          <div class="text-xs text-gray-500 dark:text-gray-400">达成等级数</div>
-          <div class="mt-1 text-xl font-semibold text-gray-800 dark:text-gray-100">{{ overview.meta.achievedLevels }}</div>
+          <div class="text-xs text-gray-500 dark:text-gray-400">
+            达成等级数
+          </div>
+          <div class="mt-1 text-xl text-gray-800 font-semibold dark:text-gray-100">
+            {{ overview.meta.achievedLevels }}
+          </div>
         </div>
       </div>
 
       <div v-if="topItems.length" class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-        <div class="mb-3 font-semibold text-gray-800 dark:text-gray-100">收获 Top 3</div>
+        <div class="mb-3 text-gray-800 font-semibold dark:text-gray-100">
+          收获 Top 3
+        </div>
         <div class="grid grid-cols-3 gap-3">
-          <div v-for="(item, index) in topItems" :key="item.id" class="rounded-lg border border-amber-100 bg-amber-50/50 p-3 text-center dark:border-amber-900/40 dark:bg-amber-950/10">
-            <div class="mx-auto mb-2 flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">{{ index + 1 }}</div>
+          <div v-for="(item, index) in topItems" :key="item.id" class="border border-amber-100 rounded-lg bg-amber-50/50 p-3 text-center dark:border-amber-900/40 dark:bg-amber-950/10">
+            <div class="mx-auto mb-2 h-7 w-7 flex items-center justify-center rounded-full bg-amber-500 text-xs text-white font-bold">
+              {{ index + 1 }}
+            </div>
             <img
               v-if="item.image && !imageErrors[item.id]"
               :src="item.image"
@@ -181,20 +201,28 @@ onMounted(refresh)
               class="mx-auto h-12 w-12 object-contain"
               @error="onItemImageError(item.id)"
             >
-            <div v-else class="mx-auto flex h-12 w-12 items-center justify-center rounded bg-white/80 text-sm font-bold text-gray-500 dark:bg-gray-800">{{ item.name.charAt(0) || '?' }}</div>
-            <div class="mt-2 truncate text-xs text-gray-600 dark:text-gray-300" :title="item.name">{{ item.name }}</div>
-            <div class="mt-1 font-semibold text-gray-900 dark:text-gray-100">{{ formatNumber(item.count) }}</div>
+            <div v-else class="mx-auto h-12 w-12 flex items-center justify-center rounded bg-white/80 text-sm text-gray-500 font-bold dark:bg-gray-800">
+              {{ item.name.charAt(0) || '?' }}
+            </div>
+            <div class="mt-2 truncate text-xs text-gray-600 dark:text-gray-300" :title="item.name">
+              {{ item.name }}
+            </div>
+            <div class="mt-1 text-gray-900 font-semibold dark:text-gray-100">
+              {{ formatNumber(item.count) }}
+            </div>
           </div>
         </div>
       </div>
 
       <div class="rounded-lg bg-white p-4 shadow dark:bg-gray-800">
-        <div class="mb-3 font-semibold text-gray-800 dark:text-gray-100">收获明细</div>
+        <div class="mb-3 text-gray-800 font-semibold dark:text-gray-100">
+          收获明细
+        </div>
         <div v-if="items.length === 0" class="rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500 dark:bg-gray-900/30 dark:text-gray-400">
           CareerInfoGet 当前没有返回收获条目。
         </div>
-        <div v-else class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-          <div v-for="item in remainingItems.length ? remainingItems : items" :key="`detail-${item.id}`" class="rounded-lg border border-gray-100 p-3 text-center dark:border-gray-700">
+        <div v-else class="grid grid-cols-2 gap-2 lg:grid-cols-5 sm:grid-cols-3 xl:grid-cols-6">
+          <div v-for="item in remainingItems.length ? remainingItems : items" :key="`detail-${item.id}`" class="border border-gray-100 rounded-lg p-3 text-center dark:border-gray-700">
             <img
               v-if="item.image && !imageErrors[item.id]"
               :src="item.image"
@@ -202,9 +230,15 @@ onMounted(refresh)
               class="mx-auto h-10 w-10 object-contain"
               @error="onItemImageError(item.id)"
             >
-            <div v-else class="mx-auto flex h-10 w-10 items-center justify-center rounded bg-gray-100 text-xs font-bold text-gray-500 dark:bg-gray-700 dark:text-gray-300">{{ item.name.charAt(0) || '?' }}</div>
-            <div class="mt-2 truncate text-xs text-gray-600 dark:text-gray-300" :title="item.name">{{ item.name }}</div>
-            <div class="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">{{ formatNumber(item.count) }}</div>
+            <div v-else class="mx-auto h-10 w-10 flex items-center justify-center rounded bg-gray-100 text-xs text-gray-500 font-bold dark:bg-gray-700 dark:text-gray-300">
+              {{ item.name.charAt(0) || '?' }}
+            </div>
+            <div class="mt-2 truncate text-xs text-gray-600 dark:text-gray-300" :title="item.name">
+              {{ item.name }}
+            </div>
+            <div class="mt-1 text-sm text-gray-900 font-semibold dark:text-gray-100">
+              {{ formatNumber(item.count) }}
+            </div>
           </div>
         </div>
       </div>
