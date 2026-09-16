@@ -21,7 +21,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Inspect registry metadata and local usage
+      - name: Inspect repository and pushoo usage
         shell: bash
         run: |
           set -euo pipefail
@@ -33,16 +33,26 @@ jobs:
           const pkg = JSON.parse(fs.readFileSync('core/node_modules/pushoo/package.json', 'utf8'));
           console.log(JSON.stringify({name:pkg.name,version:pkg.version,main:pkg.main,exports:pkg.exports,engines:pkg.engines,dependencies:pkg.dependencies,repository:pkg.repository}, null, 2));
           NODE
-          echo '=== REGISTRY CURRENT VERSION ==='
-          pnpm view pushoo@0.1.11 version dependencies engines repository --json
           echo '=== REGISTRY LATEST ==='
           pnpm view pushoo@latest version dependencies engines repository dist-tags --json
-          echo '=== ALL VERSIONS ==='
-          pnpm view pushoo versions --json
-          echo '=== REPOSITORY USAGE (excluding manifests/lock) ==='
-          rg -n -i 'pushoo' . --glob '!pnpm-lock.yaml' --glob '!**/package.json' --glob '!node_modules/**' --glob '!**/node_modules/**' || true
-          echo '=== PACKAGE FILES ==='
-          find core/node_modules/pushoo -maxdepth 2 -type f -printf '%P\n' | sort | head -80
-          echo '=== PACKAGE ENTRYPOINT ==='
-          entry=$(node -e "const p=require('./core/node_modules/pushoo/package.json'); console.log(p.main||'index.js')")
-          sed -n '1,260p' "core/node_modules/pushoo/$entry"
+          echo '=== FAR2 DIRECT PUS HOO TEXT USAGE (excluding manifests, lockfile, node_modules) ==='
+          grep -RIni \
+            --exclude='package.json' \
+            --exclude='pnpm-lock.yaml' \
+            --exclude-dir='.git' \
+            --exclude-dir='node_modules' \
+            'pushoo' . || true
+          echo '=== FAR2 EXPORTED NOTICE NAME USAGE ==='
+          grep -RInE \
+            --exclude='package.json' \
+            --exclude='pnpm-lock.yaml' \
+            --exclude-dir='.git' \
+            --exclude-dir='node_modules' \
+            'notice(Qmsg|ServerChan|PushPlus|PushPlusHxtrip|DingTalk|WeCom|Bark|GoCqhttp|NodeOnebot|Atri|Pushdeer|Igot|Telegram|Feishu|Ifttt|Wecombot|Discord|WxPusher|Join)?' \
+            core web || true
+          echo '=== PUS HOO INTERNAL LODASH USAGE ==='
+          grep -RIni --include='*.js' 'lodash' core/node_modules/pushoo/dist || true
+          echo '=== PUS HOO INTERNAL AXIOS USAGE SUMMARY ==='
+          grep -RIn --include='*.js' 'axios_1' core/node_modules/pushoo/dist | head -120 || true
+          echo '=== PUS HOO PACKAGE FILES ==='
+          find -L core/node_modules/pushoo -maxdepth 2 -type f -printf '%P\n' | sort | head -120
