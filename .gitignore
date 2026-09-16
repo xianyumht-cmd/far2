@@ -3,6 +3,10 @@ node_modules/
 core/node_modules/
 web/node_modules/
 
+# Workspace lockfile policy
+**/pnpm-lock.yaml
+!/pnpm-lock.yaml
+
 # Build outputs
 web/dist/
 core/dist/
