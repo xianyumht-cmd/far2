@@ -74,7 +74,14 @@
       "express>path-to-regexp": "0.1.13",
       "express>qs": "6.16.0",
       "express>body-parser": "1.20.6",
-      "body-parser>qs": "6.16.0"
+      "body-parser>qs": "6.16.0",
+      "socket.io-client>socket.io-parser": "4.2.7",
+      "engine.io-client>ws": "8.21.3",
+      "vue-router>picomatch": "4.0.4",
+      "tinyglobby>picomatch": "4.0.4",
+      "vue-router>yaml": "2.8.3",
+      "@vue/compiler-sfc>postcss": "8.5.23",
+      "postcss>nanoid": "3.3.18"
     }
   }
 }
