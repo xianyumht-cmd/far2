@@ -45,17 +45,34 @@ jobs:
         run: |
           set -euo pipefail
           node - <<'NODE'
+          const fs = require('node:fs');
           const path = require('node:path');
           const { createRequire } = require('node:module');
+
+          function packageVersionFromEntry(entry, expectedName) {
+            let dir = path.dirname(entry);
+            while (true) {
+              const manifest = path.join(dir, 'package.json');
+              if (fs.existsSync(manifest)) {
+                const pkg = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+                if (pkg.name === expectedName) return pkg.version;
+              }
+              const parent = path.dirname(dir);
+              if (parent === dir) break;
+              dir = parent;
+            }
+            throw new Error(`cannot locate ${expectedName} package.json from ${entry}`);
+          }
+
           const coreRequire = createRequire(path.join(process.cwd(), 'core', 'package.json'));
           const pushooEntry = coreRequire.resolve('pushoo');
           const pushooRequire = createRequire(pushooEntry);
           const axiosPath = pushooRequire.resolve('axios');
           const lodashPath = pushooRequire.resolve('lodash');
-          const axiosPkg = pushooRequire('./node_modules/axios/package.json');
-          const lodashPkg = pushooRequire('./node_modules/lodash/package.json');
-          if (axiosPkg.version !== '0.34.0') throw new Error(`unexpected pushoo axios ${axiosPkg.version}`);
-          if (lodashPkg.version !== '4.18.1') throw new Error(`unexpected pushoo lodash ${lodashPkg.version}`);
+          const axiosVersion = packageVersionFromEntry(axiosPath, 'axios');
+          const lodashVersion = packageVersionFromEntry(lodashPath, 'lodash');
+          if (axiosVersion !== '0.34.0') throw new Error(`unexpected pushoo axios ${axiosVersion}`);
+          if (lodashVersion !== '4.18.1') throw new Error(`unexpected pushoo lodash ${lodashVersion}`);
 
           const axiosModule = require(axiosPath);
           const axios = axiosModule.default || axiosModule;
@@ -95,7 +112,7 @@ jobs:
             if (requests.some(r => String(r.method).toLowerCase() !== 'post')) throw new Error(`unexpected request methods: ${JSON.stringify(requests)}`);
             if (requests[0].url !== 'https://example.invalid/far2-push') throw new Error(`unexpected webhook URL: ${requests[0].url}`);
             if (!String(requests[1].url).includes('qmsg')) throw new Error(`unexpected qmsg URL: ${requests[1].url}`);
-            console.log(JSON.stringify({ axios: axiosPkg.version, lodash: lodashPkg.version, interceptedRequests: requests.length, networkTouched: false }));
+            console.log(JSON.stringify({ axios: axiosVersion, lodash: lodashVersion, interceptedRequests: requests.length, networkTouched: false }));
           })().catch((error) => {
             console.error(error);
             process.exit(1);
