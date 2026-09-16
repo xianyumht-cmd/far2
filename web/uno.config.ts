@@ -1,4 +1,4 @@
-import { defineConfig, presetAttributify, presetIcons, presetUno, presetWebFonts } from 'unocss'
+import { defineConfig, presetAttributify, presetIcons, presetUno } from 'unocss'
 
 export default defineConfig({
   blocklist: [
@@ -16,6 +16,11 @@ export default defineConfig({
       ],
     },
   },
+  theme: {
+    fontFamily: {
+      mono: 'DM Mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace',
+    },
+  },
   presets: [
     presetUno(),
     presetAttributify(),
@@ -26,13 +31,6 @@ export default defineConfig({
         carbon: () => import('@iconify-json/carbon/icons.json').then(i => i.default),
         fas: () => import('@iconify-json/fa-solid/icons.json').then(i => i.default),
         'svg-spinners': () => import('@iconify-json/svg-spinners/icons.json').then(i => i.default),
-      },
-    }),
-    presetWebFonts({
-      fonts: {
-        sans: 'DM Sans',
-        serif: 'DM Serif Display',
-        mono: 'DM Mono',
       },
     }),
   ],
