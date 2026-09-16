@@ -35,6 +35,24 @@ jobs:
           NODE
           echo '=== REGISTRY LATEST ==='
           pnpm view pushoo@latest version dependencies engines repository dist-tags --json
+          echo '=== SECURE CHILD CANDIDATES ==='
+          pnpm view axios@latest version engines dist-tags --json
+          pnpm view lodash@latest version engines dist-tags --json
+          echo '=== CURRENT PUS HOO AUDIT PATHS ==='
+          set +e
+          pnpm audit --prod --json > prod-audit.json
+          set -e
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('prod-audit.json', 'utf8'));
+          for (const [id, advisory] of Object.entries(data.advisories || {})) {
+            for (const finding of advisory.findings || []) {
+              for (const p of finding.paths || []) {
+                if (p.startsWith('core>pushoo>')) console.log(JSON.stringify({id,module:advisory.module_name,severity:advisory.severity,version:finding.version,path:p,patched:advisory.patched_versions,title:advisory.title}));
+              }
+            }
+          }
+          NODE
           echo '=== FAR2 DIRECT PUS HOO TEXT USAGE (excluding manifests, lockfile, node_modules) ==='
           grep -RIni \
             --exclude='package.json' \
@@ -42,17 +60,7 @@ jobs:
             --exclude-dir='.git' \
             --exclude-dir='node_modules' \
             'pushoo' . || true
-          echo '=== FAR2 EXPORTED NOTICE NAME USAGE ==='
-          grep -RInE \
-            --exclude='package.json' \
-            --exclude='pnpm-lock.yaml' \
-            --exclude-dir='.git' \
-            --exclude-dir='node_modules' \
-            'notice(Qmsg|ServerChan|PushPlus|PushPlusHxtrip|DingTalk|WeCom|Bark|GoCqhttp|NodeOnebot|Atri|Pushdeer|Igot|Telegram|Feishu|Ifttt|Wecombot|Discord|WxPusher|Join)?' \
-            core web || true
           echo '=== PUS HOO INTERNAL LODASH USAGE ==='
           grep -RIni --include='*.js' 'lodash' core/node_modules/pushoo/dist || true
           echo '=== PUS HOO INTERNAL AXIOS USAGE SUMMARY ==='
           grep -RIn --include='*.js' 'axios_1' core/node_modules/pushoo/dist | head -120 || true
-          echo '=== PUS HOO PACKAGE FILES ==='
-          find -L core/node_modules/pushoo -maxdepth 2 -type f -printf '%P\n' | sort | head -120
