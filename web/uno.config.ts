@@ -23,12 +23,13 @@ export default defineConfig({
       scale: 1.2,
       warn: true,
       collections: {
-        carbon: () => import('@iconify-json/carbon/icons.json').then(i => i.default),
-        fas: () => import('@iconify-json/fa-solid/icons.json').then(i => i.default),
+        'carbon': () => import('@iconify-json/carbon/icons.json').then(i => i.default),
+        'fas': () => import('@iconify-json/fa-solid/icons.json').then(i => i.default),
         'svg-spinners': () => import('@iconify-json/svg-spinners/icons.json').then(i => i.default),
       },
     }),
     presetWebFonts({
+      provider: 'none',
       fonts: {
         sans: 'DM Sans',
         serif: 'DM Serif Display',
