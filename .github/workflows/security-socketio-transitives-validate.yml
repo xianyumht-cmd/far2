@@ -1,0 +1,97 @@
+name: Validate Socket.IO Transitive Security Refresh
+
+on:
+  push:
+    branches: [chore/security-socketio-transitives-20260917]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Refresh Socket.IO dependency family
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir core update socket.io
+          pnpm install --frozen-lockfile
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = path.resolve('core');
+          const socketPkgPath = require.resolve('socket.io/package.json', { paths: [root] });
+          const socketDir = path.dirname(socketPkgPath);
+          const resolveVersion = (name) => {
+            const p = require.resolve(`${name}/package.json`, { paths: [socketDir] });
+            return JSON.parse(fs.readFileSync(p, 'utf8')).version;
+          };
+          const versions = {
+            socketIo: JSON.parse(fs.readFileSync(socketPkgPath, 'utf8')).version,
+            engineIo: resolveVersion('engine.io'),
+            parser: resolveVersion('socket.io-parser'),
+          };
+          const enginePkgPath = require.resolve('engine.io/package.json', { paths: [socketDir] });
+          const engineDir = path.dirname(enginePkgPath);
+          const wsPkgPath = require.resolve('ws/package.json', { paths: [engineDir] });
+          versions.engineWs = JSON.parse(fs.readFileSync(wsPkgPath, 'utf8')).version;
+          console.log(versions);
+          const ge = (a, b) => {
+            const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+            for (let i = 0; i < 3; i++) { if (pa[i] !== pb[i]) return pa[i] > pb[i]; }
+            return true;
+          };
+          if (!ge(versions.engineIo, '6.6.7')) throw new Error(`engine.io still vulnerable: ${versions.engineIo}`);
+          if (!ge(versions.parser, '4.2.7')) throw new Error(`socket.io-parser still vulnerable: ${versions.parser}`);
+          if (!ge(versions.engineWs, '8.21.0')) throw new Error(`engine.io ws still vulnerable: ${versions.engineWs}`);
+          NODE
+      - name: Verify repository
+        run: pnpm verify
+      - name: Confirm Socket.IO audit paths are clean
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --prod --json > prod-audit.json
+          code=$?
+          set -e
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('prod-audit.json', 'utf8'));
+          const bad = [];
+          for (const [id, advisory] of Object.entries(data.advisories || {})) {
+            for (const finding of advisory.findings || []) {
+              for (const p of finding.paths || []) {
+                if (p.startsWith('core>socket.io>')) bad.push({id,module:advisory.module_name,severity:advisory.severity,version:finding.version,path:p,patched:advisory.patched_versions});
+              }
+            }
+          }
+          if (bad.length) {
+            console.error(JSON.stringify(bad, null, 2));
+            process.exit(1);
+          }
+          console.log('No production audit findings remain under core>socket.io>.');
+          NODE
+          echo "PROD_AUDIT_EXIT=$code"
+      - name: Commit production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add core/package.json pnpm-lock.yaml
+          unexpected=$(git diff --name-only --cached | grep -Ev '^(core/package.json|pnpm-lock.yaml)$' || true)
+          if [ -n "$unexpected" ]; then echo "Unexpected files: $unexpected" >&2; exit 1; fi
+          git diff --cached --exit-code && { echo 'No changes to commit' >&2; exit 1; } || true
+          git commit -m 'chore(core): refresh Socket.IO security transitives'
+          git push
