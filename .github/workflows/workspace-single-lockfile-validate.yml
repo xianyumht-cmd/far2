@@ -1,0 +1,62 @@
+name: Validate Single Workspace Lockfile
+
+on:
+  push:
+    branches: [chore/workspace-single-lockfile-20260916]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate lockfile gate behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm workspace:lockfile-check
+          cp pnpm-lock.yaml core/pnpm-lock.yaml
+          if pnpm workspace:lockfile-check; then
+            echo 'lockfile gate unexpectedly accepted a nested lockfile' >&2
+            exit 1
+          fi
+          rm core/pnpm-lock.yaml
+          pnpm workspace:lockfile-check
+      - name: Verify repository
+        run: pnpm verify
+
+  windows-lockfile-gate:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate lockfile gate on Windows
+        shell: pwsh
+        run: |
+          pnpm workspace:lockfile-check
+          Copy-Item pnpm-lock.yaml web/pnpm-lock.yaml
+          pnpm workspace:lockfile-check
+          if ($LASTEXITCODE -eq 0) {
+            throw 'lockfile gate unexpectedly accepted a nested lockfile'
+          }
+          Remove-Item web/pnpm-lock.yaml
+          pnpm workspace:lockfile-check
