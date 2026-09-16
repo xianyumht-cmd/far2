@@ -26,14 +26,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Replay validated CodeManager-only commit
+      - name: Replay validated CodeManager file snapshot
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git cherry-pick 0d10c738
-          test "$(git diff HEAD^ --name-only | wc -l)" -eq 1
-          test "$(git diff HEAD^ --name-only)" = "web/src/views/CodeManager.vue"
-          git diff HEAD^ --check
+          git show 0d10c738:web/src/views/CodeManager.vue > web/src/views/CodeManager.vue
+          test "$(git diff --name-only | wc -l)" -eq 1
+          test "$(git diff --name-only)" = "web/src/views/CodeManager.vue"
+          git diff --check
       - name: Confirm lint debt
         run: |
           output="$(pnpm lint:baseline)"
@@ -41,5 +39,12 @@ jobs:
           printf '%s\n' "$output" | grep -F 'ESLint baseline gate PASS: 271 current findings; baseline 773. No debt growth.'
       - name: Verify repository
         run: pnpm verify
-      - name: Push validated replay
-        run: git push origin HEAD:chore/phase4-batch31-code-manager-format-clean-20260916
+      - name: Commit and push validated replay
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/src/views/CodeManager.vue
+          git diff --cached --check
+          test "$(git diff --cached --name-only)" = "web/src/views/CodeManager.vue"
+          git commit -m "chore(web): normalize code manager template formatting"
+          git push origin HEAD:chore/phase4-batch31-code-manager-format-clean-20260916
