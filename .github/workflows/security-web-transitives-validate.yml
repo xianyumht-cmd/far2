@@ -34,6 +34,7 @@ jobs:
           pkg.pnpm.overrides['socket.io-client>socket.io-parser'] = '4.2.7';
           pkg.pnpm.overrides['engine.io-client>ws'] = '8.21.3';
           pkg.pnpm.overrides['vue-router>picomatch'] = '4.0.4';
+          pkg.pnpm.overrides['tinyglobby>picomatch'] = '4.0.4';
           pkg.pnpm.overrides['vue-router>yaml'] = '2.8.3';
           pkg.pnpm.overrides['@vue/compiler-sfc>postcss'] = '8.5.23';
           pkg.pnpm.overrides['postcss>nanoid'] = '3.3.18';
@@ -41,7 +42,7 @@ jobs:
           NODE
           pnpm install --lockfile-only
           pnpm install --frozen-lockfile
-          pnpm --filter qq-farm-bot-web list socket.io-client engine.io-client socket.io-parser ws vue vue-router @vue/compiler-sfc postcss nanoid picomatch yaml --depth 8
+          pnpm --filter qq-farm-bot-web list socket.io-client engine.io-client socket.io-parser ws vue vue-router @vue/compiler-sfc postcss nanoid tinyglobby picomatch yaml --depth 8
       - name: Verify repository
         run: pnpm verify
       - name: Confirm web audit paths are clean
