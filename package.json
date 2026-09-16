@@ -44,6 +44,7 @@
     "code:agent": "pnpm -C core code:agent",
     "code:provider-selftest": "pnpm -C core code:provider-selftest",
     "code:provider-check": "pnpm -C core code:provider-check",
+    "workspace:lockfile-check": "node scripts/workspace-lockfile-check.mjs",
     "lint": "pnpm lint:core && pnpm lint:web",
     "lint:core": "pnpm -C core lint",
     "lint:web": "pnpm -C web lint",
@@ -62,7 +63,7 @@
     "test": "pnpm -C core test",
     "test:security": "pnpm -C core test:security",
     "test:regression": "pnpm -C core test:regression",
-    "verify": "pnpm lint:baseline && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm workspace:lockfile-check && pnpm lint:baseline && pnpm typecheck && pnpm test && pnpm build"
   },
   "pnpm": {
     "overrides": {
