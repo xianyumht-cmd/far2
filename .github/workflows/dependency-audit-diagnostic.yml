@@ -21,19 +21,59 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Production dependency audit
+      - name: Inspect installed vulnerable-package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== pnpm list ==='
+          pnpm --filter qq-farm-bot list axios protobufjs express socket.io ws pushoo --depth 5 || true
+          pnpm --filter web list axios vite vue-router --depth 5 || true
+          echo '=== resolved package versions ==='
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const roots = ['core', 'web'];
+          const pkgs = ['axios', 'protobufjs', 'express', 'socket.io', 'socket.io-parser', 'engine.io', 'ws', 'pushoo', 'lodash', 'vite', 'vue-router', 'postcss', 'nanoid', 'qs', 'body-parser'];
+          for (const root of roots) {
+            console.log(`-- ${root} --`);
+            for (const name of pkgs) {
+              try {
+                const p = require.resolve(`${name}/package.json`, { paths: [path.resolve(root)] });
+                const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+                console.log(`${name}=${json.version} @ ${p}`);
+              } catch (err) {
+                console.log(`${name}=NOT_RESOLVED`);
+              }
+            }
+          }
+          NODE
+      - name: Production dependency audit summary
         shell: bash
         run: |
           set +e
-          pnpm audit --prod --audit-level low
+          pnpm audit --prod --json > prod-audit.json
           code=$?
           echo "PROD_AUDIT_EXIT=$code"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('prod-audit.json', 'utf8'));
+          console.log(JSON.stringify(data.metadata || {}, null, 2));
+          const advisories = data.advisories || {};
+          for (const [id, a] of Object.entries(advisories)) {
+            console.log(JSON.stringify({id, module_name:a.module_name, severity:a.severity, vulnerable_versions:a.vulnerable_versions, patched_versions:a.patched_versions, findings:a.findings}, null, 2));
+          }
+          NODE
           exit 0
-      - name: Full dependency audit
+      - name: Full dependency audit summary
         shell: bash
         run: |
           set +e
-          pnpm audit --audit-level low
+          pnpm audit --json > full-audit.json
           code=$?
           echo "FULL_AUDIT_EXIT=$code"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('full-audit.json', 'utf8'));
+          console.log(JSON.stringify(data.metadata || {}, null, 2));
+          NODE
           exit 0
