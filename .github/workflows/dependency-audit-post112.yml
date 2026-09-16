@@ -1,0 +1,31 @@
+name: Diagnose Remaining Production Advisories
+
+on:
+  push:
+    branches: [diag/dependency-audit-post112-20260917]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Remaining production dependency advisories
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --prod --audit-level low
+          code=$?
+          echo "PROD_AUDIT_EXIT=$code"
+          exit 0
