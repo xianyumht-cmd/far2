@@ -30,7 +30,7 @@ jobs:
 
           echo '=== emitted CSS counts ==='
           for pattern in 'DM Sans' 'DM Serif Display' 'DM Mono' 'fonts.googleapis.com' 'fonts.gstatic.com' '@font-face'; do
-            count="$(grep -R -F -o "$pattern" web/dist --include='*.css' 2>/dev/null | wc -l)"
+            count="$( (grep -R -F -o "$pattern" web/dist --include='*.css' 2>/dev/null || true) | wc -l )"
             echo "$pattern=$count"
           done
 
