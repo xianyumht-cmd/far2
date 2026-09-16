@@ -389,7 +389,9 @@ onMounted(() => loadIllustrated())
       <div>
         <div class="flex items-center gap-2">
           <div class="i-carbon-book text-2xl" :style="{ color: 'var(--theme-primary)' }" />
-          <h1 class="text-2xl font-bold">图鉴与商店</h1>
+          <h1 class="text-2xl font-bold">
+            图鉴与商店
+          </h1>
         </div>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
           默认只读取作物图鉴；缺失种子和商店按需读取，避免影响正在运行的巡田、好友和任务请求。
@@ -411,10 +413,10 @@ onMounted(() => loadIllustrated())
       </div>
     </div>
 
-    <div v-if="actionMessage" class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
+    <div v-if="actionMessage" class="border border-emerald-200 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-300">
       {{ actionMessage }}
     </div>
-    <div v-if="actionError" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+    <div v-if="actionError" class="border border-red-200 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
       {{ actionError }}
     </div>
 
@@ -438,45 +440,77 @@ onMounted(() => loadIllustrated())
     </div>
 
     <template v-if="activeTab === 'illustrated'">
-      <div v-if="illustratedError" class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
-        <div class="font-semibold text-red-700 dark:text-red-300">图鉴读取失败</div>
-        <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">{{ illustratedError }}</div>
+      <div v-if="illustratedError" class="border border-red-200 rounded-xl bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
+        <div class="text-red-700 font-semibold dark:text-red-300">
+          图鉴读取失败
+        </div>
+        <div class="mt-2 break-all text-xs text-red-600 font-mono dark:text-red-400">
+          {{ illustratedError }}
+        </div>
       </div>
 
       <div v-if="illustrated" class="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">图鉴总数</div><div class="mt-1 text-2xl font-bold">{{ illustrated.summary.total }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            图鉴总数
+          </div><div class="mt-1 text-2xl font-bold">
+            {{ illustrated.summary.total }}
+          </div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">已解锁</div><div class="mt-1 text-2xl font-bold text-emerald-600">{{ illustrated.summary.unlocked }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            已解锁
+          </div><div class="mt-1 text-2xl text-emerald-600 font-bold">
+            {{ illustrated.summary.unlocked }}
+          </div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">当前积分</div><div class="mt-1 text-2xl font-bold">{{ numberText(illustrated.summary.currentScore) }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            当前积分
+          </div><div class="mt-1 text-2xl font-bold">
+            {{ numberText(illustrated.summary.currentScore) }}
+          </div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">图鉴等级</div><div class="mt-1 text-2xl font-bold">Lv{{ illustrated.summary.level }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            图鉴等级
+          </div><div class="mt-1 text-2xl font-bold">
+            Lv{{ illustrated.summary.level }}
+          </div>
         </div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-          <div class="text-xs text-gray-500">当前 Tier</div><div class="mt-1 text-2xl font-bold">{{ illustrated.summary.currentTier }}</div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            当前 Tier
+          </div><div class="mt-1 text-2xl font-bold">
+            {{ illustrated.summary.currentTier }}
+          </div>
         </div>
-        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
-          <div class="text-xs text-amber-700 dark:text-amber-300">奖励状态</div>
-          <div class="mt-1 text-xl font-bold text-amber-700 dark:text-amber-300">待确认</div>
+        <div class="border border-amber-200 rounded-xl bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <div class="text-xs text-amber-700 dark:text-amber-300">
+            奖励状态
+          </div>
+          <div class="mt-1 text-xl text-amber-700 font-bold dark:text-amber-300">
+            待确认
+          </div>
         </div>
       </div>
 
       <div v-if="illustrated" class="grid gap-3 lg:grid-cols-2">
-        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
-          <div class="font-semibold text-amber-800 dark:text-amber-300">图鉴奖励暂不开放领取</div>
-          <div class="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-400">
+        <div class="border border-amber-200 rounded-xl bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <div class="text-amber-800 font-semibold dark:text-amber-300">
+            图鉴奖励暂不开放领取
+          </div>
+          <div class="mt-1 text-xs text-amber-700 leading-5 dark:text-amber-400">
             当前协议里的奖励标记不能可靠区分“已领取”和“未领取”。在字段语义完成实机确认前，领取接口已锁定，不会向游戏发送领奖请求。
           </div>
         </div>
 
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div class="font-semibold">补齐缺失种子</div>
+              <div class="font-semibold">
+                补齐缺失种子
+              </div>
               <div v-if="purchasePlan" class="mt-1 text-xs text-gray-500">
                 未解锁 {{ purchasePlan.summary.locked }} · 背包已有 {{ purchasePlan.summary.alreadyOwned }} · 可买 {{ purchasePlan.summary.buyable }} · 预计 {{ numberText(purchasePlan.summary.totalCost) }} 金币
               </div>
@@ -487,7 +521,7 @@ onMounted(() => loadIllustrated())
             <div class="flex gap-2">
               <button
                 v-if="!purchasePlan"
-                class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                class="border border-gray-300 rounded-lg bg-white px-4 py-2 text-sm text-gray-700 font-medium dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 disabled:opacity-50"
                 :disabled="busy"
                 @click="loadPurchasePlan"
               >
@@ -495,7 +529,7 @@ onMounted(() => loadIllustrated())
               </button>
               <button
                 v-else
-                class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-600 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                class="border border-gray-300 rounded-lg bg-white px-3 py-2 text-sm text-gray-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 disabled:opacity-50"
                 :disabled="busy"
                 @click="loadPurchasePlan"
               >
@@ -503,7 +537,7 @@ onMounted(() => loadIllustrated())
               </button>
               <button
                 v-if="purchasePlan"
-                class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                class="border border-amber-300 rounded-lg bg-amber-50 px-4 py-2 text-sm text-amber-700 font-medium disabled:cursor-not-allowed dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 disabled:opacity-50"
                 :disabled="busy || purchasePlan.summary.buyable <= 0"
                 @click="buyAllMissingSeeds"
               >
@@ -514,11 +548,11 @@ onMounted(() => loadIllustrated())
         </div>
       </div>
 
-      <div v-if="illustrated?.protocol.decodeMode === 'wire-fallback'" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
+      <div v-if="illustrated?.protocol.decodeMode === 'wire-fallback'" class="border border-amber-200 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
         标准 Proto 解码仍有字段漂移，本次已自动使用线级容错解析：{{ illustrated.protocol.decodeWarning }}
       </div>
 
-      <div v-if="illustrated" class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700 dark:bg-gray-800">
+      <div v-if="illustrated" class="flex flex-col gap-3 border border-gray-200 rounded-xl bg-white p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700 dark:bg-gray-800">
         <div class="flex flex-wrap gap-2">
           <button
             v-for="item in [
@@ -537,7 +571,7 @@ onMounted(() => loadIllustrated())
           </button>
         </div>
         <div class="relative sm:w-72">
-          <div class="i-carbon-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div class="i-carbon-search absolute left-3 top-1/2 text-gray-400 -translate-y-1/2" />
           <input v-model="search" class="w-full border border-gray-200 rounded-lg bg-transparent py-2 pl-9 pr-3 text-sm outline-none dark:border-gray-700" placeholder="搜索名称 / 果实ID / 种子ID">
         </div>
       </div>
@@ -546,18 +580,20 @@ onMounted(() => loadIllustrated())
         <div class="i-carbon-renew mr-2 animate-spin text-xl" />正在读取当前作物图鉴...
       </div>
 
-      <div v-else-if="illustrated" class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+      <div v-else-if="illustrated" class="grid grid-cols-2 gap-3 lg:grid-cols-5 md:grid-cols-4 sm:grid-cols-3 xl:grid-cols-6">
         <div
           v-for="item in filteredIllustrated"
           :key="item.fruitId"
-          class="relative overflow-hidden rounded-xl border bg-white p-3 dark:bg-gray-800"
+          class="relative overflow-hidden border rounded-xl bg-white p-3 dark:bg-gray-800"
           :class="item.unlocked ? 'border-gray-200 dark:border-gray-700' : 'border-dashed border-gray-300 dark:border-gray-600'"
         >
           <div class="h-20 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-900/40">
             <img v-if="item.image" :src="item.image" :alt="item.name" class="max-h-16 max-w-16 object-contain">
             <div v-else class="i-carbon-sprout text-3xl text-gray-300" />
           </div>
-          <div class="mt-3 truncate text-sm font-semibold" :title="item.name">{{ item.name }}</div>
+          <div class="mt-3 truncate text-sm font-semibold" :title="item.name">
+            {{ item.name }}
+          </div>
           <div class="mt-1 text-[11px] text-gray-400">
             果实 {{ item.fruitId }}<span v-if="item.seedId"> · 种子 {{ item.seedId }}</span>
           </div>
@@ -565,7 +601,7 @@ onMounted(() => loadIllustrated())
             <span :class="item.unlocked ? 'text-emerald-600' : 'text-gray-400'">{{ item.unlocked ? '已解锁' : '未解锁' }}</span>
             <span class="text-gray-400">Tier {{ item.illustratedTier }}</span>
           </div>
-          <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] text-gray-500">
+          <div class="grid grid-cols-2 mt-2 gap-2 text-[11px] text-gray-500">
             <div>奖励分 {{ numberText(item.rewardScore) }}</div>
             <div>收获 {{ numberText(item.harvestCount) }}</div>
           </div>
@@ -577,7 +613,7 @@ onMounted(() => loadIllustrated())
                 <span class="font-medium">{{ numberText(planByFruitId.get(item.fruitId)?.price || 0) }} 金币</span>
               </div>
               <button
-                class="w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs font-medium text-amber-700 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                class="w-full border border-amber-300 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-700 font-medium dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 disabled:opacity-50"
                 :disabled="busy"
                 @click="buyOneSeed(planByFruitId.get(item.fruitId)!)"
               >
@@ -591,11 +627,11 @@ onMounted(() => loadIllustrated())
         </div>
       </div>
 
-      <div v-if="illustrated && filteredIllustrated.length === 0" class="rounded-xl border border-dashed border-gray-300 py-16 text-center text-sm text-gray-500 dark:border-gray-700">
+      <div v-if="illustrated && filteredIllustrated.length === 0" class="border border-gray-300 rounded-xl border-dashed py-16 text-center text-sm text-gray-500 dark:border-gray-700">
         没有符合当前筛选条件的图鉴条目。
       </div>
 
-      <div v-if="illustrated" class="flex flex-wrap justify-end gap-3 font-mono text-[11px] text-gray-400">
+      <div v-if="illustrated" class="flex flex-wrap justify-end gap-3 text-[11px] text-gray-400 font-mono">
         <span>{{ illustrated.protocol.service }} / {{ illustrated.protocol.method }}</span>
         <span>{{ illustrated.protocol.schema }}</span>
         <span>{{ illustrated.protocol.decodeMode }}</span>
@@ -603,23 +639,51 @@ onMounted(() => loadIllustrated())
     </template>
 
     <template v-else>
-      <div v-if="shopsError" class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
-        <div class="font-semibold text-red-700 dark:text-red-300">商店读取失败</div>
-        <div class="mt-2 break-all font-mono text-xs text-red-600 dark:text-red-400">{{ shopsError }}</div>
+      <div v-if="shopsError" class="border border-red-200 rounded-xl bg-red-50 p-4 dark:border-red-900/40 dark:bg-red-950/20">
+        <div class="text-red-700 font-semibold dark:text-red-300">
+          商店读取失败
+        </div>
+        <div class="mt-2 break-all text-xs text-red-600 font-mono dark:text-red-400">
+          {{ shopsError }}
+        </div>
       </div>
 
       <div v-if="shops" class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">商店总数</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.total }}</div></div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">种子商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.seedShops }}</div></div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">道具商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.itemShops }}</div></div>
-        <div class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800"><div class="text-xs text-gray-500">宠物商店</div><div class="mt-1 text-2xl font-bold">{{ shops.summary.petShops }}</div></div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            商店总数
+          </div><div class="mt-1 text-2xl font-bold">
+            {{ shops.summary.total }}
+          </div>
+        </div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            种子商店
+          </div><div class="mt-1 text-2xl font-bold">
+            {{ shops.summary.seedShops }}
+          </div>
+        </div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            道具商店
+          </div><div class="mt-1 text-2xl font-bold">
+            {{ shops.summary.itemShops }}
+          </div>
+        </div>
+        <div class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div class="text-xs text-gray-500">
+            宠物商店
+          </div><div class="mt-1 text-2xl font-bold">
+            {{ shops.summary.petShops }}
+          </div>
+        </div>
       </div>
 
       <div v-if="shops" class="flex flex-wrap gap-2">
         <button
           v-for="shop in shops.shops"
           :key="shop.shopId"
-          class="rounded-lg border px-3 py-2 text-sm transition-colors"
+          class="border rounded-lg px-3 py-2 text-sm transition-colors"
           :class="selectedShopId === shop.shopId ? 'text-white' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'"
           :style="selectedShopId === shop.shopId ? { background: 'var(--theme-primary)', borderColor: 'var(--theme-primary)' } : {}"
           @click="loadShopInfo(shop.shopId)"
@@ -633,21 +697,29 @@ onMounted(() => loadIllustrated())
         <div class="i-carbon-renew mr-2 animate-spin text-xl" />正在读取商店协议...
       </div>
 
-      <div v-if="selectedShop && shopInfo" class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+      <div v-if="selectedShop && shopInfo" class="border border-gray-200 rounded-xl bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div class="flex flex-col gap-2 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700">
           <div>
-            <div class="text-lg font-bold">{{ selectedShop.shopName || selectedShop.shopTypeLabel }}</div>
-            <div class="mt-1 text-xs text-gray-400">Shop #{{ selectedShop.shopId }} · {{ selectedShop.shopTypeLabel }}</div>
+            <div class="text-lg font-bold">
+              {{ selectedShop.shopName || selectedShop.shopTypeLabel }}
+            </div>
+            <div class="mt-1 text-xs text-gray-400">
+              Shop #{{ selectedShop.shopId }} · {{ selectedShop.shopTypeLabel }}
+            </div>
           </div>
-          <div class="text-xs text-gray-500">商品 {{ shopInfo.summary.total }} · 已解锁 {{ shopInfo.summary.unlocked }} · 限购 {{ shopInfo.summary.limited }}</div>
+          <div class="text-xs text-gray-500">
+            商品 {{ shopInfo.summary.total }} · 已解锁 {{ shopInfo.summary.unlocked }} · 限购 {{ shopInfo.summary.limited }}
+          </div>
         </div>
 
-        <div v-if="shopInfoLoading" class="flex items-center justify-center py-12 text-gray-500"><div class="i-carbon-renew mr-2 animate-spin" />读取商品中...</div>
-        <div v-else class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div v-if="shopInfoLoading" class="flex items-center justify-center py-12 text-gray-500">
+          <div class="i-carbon-renew mr-2 animate-spin" />读取商品中...
+        </div>
+        <div v-else class="grid grid-cols-1 mt-4 gap-3 lg:grid-cols-3 sm:grid-cols-2 xl:grid-cols-4">
           <div
             v-for="goods in shopInfo.goods"
             :key="goods.goodsId"
-            class="rounded-xl border p-4"
+            class="border rounded-xl p-4"
             :class="goods.unlocked ? 'border-gray-200 dark:border-gray-700' : 'border-dashed border-gray-300 opacity-70 dark:border-gray-600'"
           >
             <div class="flex gap-3">
@@ -656,14 +728,22 @@ onMounted(() => loadIllustrated())
                 <div v-else class="i-carbon-shopping-catalog text-2xl text-gray-300" />
               </div>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold" :title="goods.name">{{ goods.name }}</div>
-                <div class="mt-1 text-[11px] text-gray-400">Item {{ goods.itemId }} · Goods {{ goods.goodsId }}</div>
-                <div class="mt-2 text-base font-bold">{{ numberText(goods.price) }} 金币</div>
+                <div class="truncate text-sm font-semibold" :title="goods.name">
+                  {{ goods.name }}
+                </div>
+                <div class="mt-1 text-[11px] text-gray-400">
+                  Item {{ goods.itemId }} · Goods {{ goods.goodsId }}
+                </div>
+                <div class="mt-2 text-base font-bold">
+                  {{ numberText(goods.price) }} 金币
+                </div>
               </div>
             </div>
-            <div class="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500">
+            <div class="grid grid-cols-2 mt-3 gap-2 text-xs text-gray-500">
               <div>每份 ×{{ goods.itemCount || 1 }}</div><div>已买 {{ goods.boughtNum }}</div>
-              <div>{{ goods.limitCount > 0 ? `限购 ${goods.limitCount}` : '不限购' }}</div><div :class="goods.unlocked ? 'text-emerald-600' : 'text-gray-400'">{{ goods.unlocked ? '已解锁' : '未解锁' }}</div>
+              <div>{{ goods.limitCount > 0 ? `限购 ${goods.limitCount}` : '不限购' }}</div><div :class="goods.unlocked ? 'text-emerald-600' : 'text-gray-400'">
+                {{ goods.unlocked ? '已解锁' : '未解锁' }}
+              </div>
             </div>
             <div v-if="goods.conditions.length" class="mt-2 flex flex-wrap gap-1">
               <span v-for="condition in goods.conditions" :key="`${condition.type}-${condition.param}`" class="rounded bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300">{{ conditionText(condition) }}</span>
@@ -674,7 +754,7 @@ onMounted(() => loadIllustrated())
               </div>
               <button
                 v-else
-                class="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                class="w-full border border-amber-300 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 font-medium dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300 disabled:opacity-50"
                 :disabled="busy"
                 @click="buyPetGoods(goods)"
               >
