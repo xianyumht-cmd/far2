@@ -18,12 +18,44 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Scan source and emitted assets
+      - name: Prove configured webfonts are unused
         shell: bash
         run: |
-          set -e
-          rg -n '(DM Sans|DM Serif Display|DM Mono|font-(sans|serif|mono)|font-family)' web/src web/index.html || true
+          set -euo pipefail
+          echo '=== source references ==='
+          if grep -R -n -E '(DM Sans|DM Serif Display|DM Mono|font-(sans|serif|mono)|font-family)' web/src web/index.html; then
+            echo 'Unexpected source font reference found'
+            exit 1
+          fi
+          echo 'NO_SOURCE_FONT_REFERENCES'
+
           pnpm -C web build
-          rg -n '(DM Sans|DM Serif Display|DM Mono|fonts.googleapis.com|fonts.gstatic.com)' web/dist || true
+
+          echo '=== emitted references ==='
+          if grep -R -n -E '(DM Sans|DM Serif Display|DM Mono|fonts\.googleapis\.com|fonts\.gstatic\.com)' web/dist; then
+            echo 'Unexpected emitted webfont reference found'
+            exit 1
+          fi
+          echo 'NO_DIST_WEBFONT_REFERENCES'
+      - name: Compare build after removing unused webfont preset
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/far2-web-baseline
+          cp -a web/dist /tmp/far2-web-baseline
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('web/uno.config.ts')
+          s = p.read_text()
+          s = s.replace(', presetWebFonts', '')
+          block = """    presetWebFonts({\n      fonts: {\n        sans: 'DM Sans',\n        serif: 'DM Serif Display',\n        mono: 'DM Mono',\n      },\n    }),\n"""
+          if block not in s:
+              raise SystemExit('expected presetWebFonts block not found')
+          p.write_text(s.replace(block, ''))
+          PY
+          pnpm -C web build
+          diff -qr /tmp/far2-web-baseline web/dist
+          echo 'BUILD_OUTPUT_IDENTICAL_WITHOUT_WEBFONT_PRESET'
+          git checkout -- web/uno.config.ts
       - name: Verify repository
         run: pnpm verify
