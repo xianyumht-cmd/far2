@@ -1,0 +1,45 @@
+name: Batch 31 Clean Replay
+
+on:
+  push:
+    branches: [chore/phase4-batch31-code-manager-format-clean-20260916]
+    paths: [.github/workflows/batch31-clean-replay.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: chore/phase4-batch31-code-manager-format-clean-20260916
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Replay validated CodeManager-only commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git cherry-pick 0d10c738
+          test "$(git diff HEAD^ --name-only | wc -l)" -eq 1
+          test "$(git diff HEAD^ --name-only)" = "web/src/views/CodeManager.vue"
+          git diff HEAD^ --check
+      - name: Confirm lint debt
+        run: |
+          output="$(pnpm lint:baseline)"
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -F 'ESLint baseline gate PASS: 271 current findings; baseline 773. No debt growth.'
+      - name: Verify repository
+        run: pnpm verify
+      - name: Push validated replay
+        run: git push origin HEAD:chore/phase4-batch31-code-manager-format-clean-20260916
