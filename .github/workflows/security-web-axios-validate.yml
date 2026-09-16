@@ -1,0 +1,75 @@
+name: Validate Web Axios Security Update
+
+on:
+  push:
+    branches: [chore/security-web-axios-20260917]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Update web axios only
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir web add axios@^1.20.0
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const web = JSON.parse(fs.readFileSync('web/package.json', 'utf8'));
+          if (web.dependencies?.axios !== '^1.20.0') {
+            throw new Error(`unexpected web axios specifier: ${web.dependencies?.axios}`);
+          }
+          NODE
+      - name: Verify repository
+        run: pnpm verify
+      - name: Confirm web axios audit path is clean
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --prod --json > prod-audit.json
+          code=$?
+          set -e
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('prod-audit.json', 'utf8'));
+          const bad = [];
+          for (const [id, advisory] of Object.entries(data.advisories || {})) {
+            for (const finding of advisory.findings || []) {
+              for (const p of finding.paths || []) {
+                if (p === 'web>axios' || p.startsWith('web>axios>')) {
+                  bad.push({id, module: advisory.module_name, severity: advisory.severity, version: finding.version, path: p, patched: advisory.patched_versions});
+                }
+              }
+            }
+          }
+          console.log(JSON.stringify(data.metadata || {}, null, 2));
+          if (bad.length) {
+            console.error('web axios audit paths remain vulnerable:', JSON.stringify(bad, null, 2));
+            process.exit(1);
+          }
+          console.log('No production audit findings remain under web>axios.');
+          NODE
+          echo "PROD_AUDIT_EXIT=$code"
+      - name: Commit production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add web/package.json pnpm-lock.yaml
+          git diff --cached --exit-code && { echo 'No changes to commit' >&2; exit 1; } || true
+          git commit -m 'chore(web): update axios security baseline'
+          git push
