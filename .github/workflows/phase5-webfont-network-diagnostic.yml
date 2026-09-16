@@ -1,0 +1,46 @@
+name: Phase 5 Webfont Network Diagnostic
+
+on:
+  push:
+    branches: [diag/phase5-webfont-network-20260916]
+    paths: [.github/workflows/phase5-webfont-network-diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prove normal web build is healthy
+        run: pnpm -C web build
+      - name: Prove current webfont config requires Google during build
+        run: |
+          echo '127.0.0.1 fonts.googleapis.com' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 fonts.gstatic.com' | sudo tee -a /etc/hosts
+          set +e
+          timeout 90s pnpm -C web build > /tmp/offline-font-build.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/offline-font-build.log
+          if [ "$status" -eq 0 ]; then
+            echo 'Expected the current presetWebFonts Google configuration to depend on external font access during build, but build succeeded.'
+            exit 1
+          fi
+          if grep -Eqi 'fonts\.googleapis\.com|fetch|ECONNREFUSED|ETIMEDOUT|connect' /tmp/offline-font-build.log; then
+            echo 'Confirmed: current webfont configuration creates a build-time external-network dependency.'
+          else
+            echo "Offline build failed with status $status, but not with a recognizable webfont/network signature."
+            exit 1
+          fi
