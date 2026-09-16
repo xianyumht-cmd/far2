@@ -1,0 +1,54 @@
+name: Bulk Tail Lint Inventory
+
+on:
+  push:
+    branches: [diag/phase4-bulk-tail-inventory-20260916]
+    paths: [.github/workflows/bulk-tail-inventory.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Inventory remaining lint
+        run: |
+          node --input-type=module <<'NODE'
+          import path from 'node:path'
+          import { createRequire } from 'node:module'
+          const root = process.cwd()
+          const cwd = path.join(root, 'web')
+          const req = createRequire(path.join(cwd, 'package.json'))
+          const { ESLint } = await import(`file://${req.resolve('eslint').replaceAll('\\', '/')}`)
+          const reports = await new ESLint({ cwd, fix: false }).lintFiles(['src/**/*.{ts,vue}'])
+          const byFile = []
+          const rules = new Map()
+          let total = 0
+          for (const report of reports) {
+            const messages = (report.messages || []).filter(m => m.severity)
+            if (!messages.length) continue
+            total += messages.length
+            const local = new Map()
+            for (const m of messages) {
+              rules.set(m.ruleId, (rules.get(m.ruleId) || 0) + 1)
+              local.set(m.ruleId, (local.get(m.ruleId) || 0) + 1)
+            }
+            byFile.push({ file: path.relative(cwd, report.filePath), count: messages.length, rules: Object.fromEntries([...local].sort()) })
+          }
+          byFile.sort((a, b) => b.count - a.count || a.file.localeCompare(b.file))
+          console.log(`WEB_TOTAL=${total}`)
+          console.log('RULES=' + JSON.stringify(Object.fromEntries([...rules].sort()), null, 2))
+          console.log('FILES=' + JSON.stringify(byFile, null, 2))
+          NODE
