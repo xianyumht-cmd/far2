@@ -70,7 +70,11 @@
       "@babel/traverse": "7.26.10",
       "socket.io>engine.io": "6.6.10",
       "socket.io>socket.io-parser": "4.2.7",
-      "socket.io-adapter>ws": "8.21.3"
+      "socket.io-adapter>ws": "8.21.3",
+      "express>path-to-regexp": "0.1.13",
+      "express>qs": "6.16.0",
+      "express>body-parser": "1.20.6",
+      "body-parser>qs": "6.16.0"
     }
   }
 }
