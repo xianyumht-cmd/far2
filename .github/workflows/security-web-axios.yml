@@ -1,0 +1,71 @@
+name: Validate Web Axios Security Update
+
+on:
+  push:
+    branches: [fix/security-web-axios-20260917]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Update web Axios
+        run: pnpm --filter qq-farm-bot-web update axios@^1.20.0
+      - name: Confirm patched Axios floor
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const pkg = require('./web/package.json')
+          const match = String(pkg.dependencies.axios).match(/(\d+)\.(\d+)\.(\d+)/)
+          if (!match) throw new Error(`cannot parse axios version: ${pkg.dependencies.axios}`)
+          const actual = match.slice(1).map(Number)
+          const floor = [1, 20, 0]
+          for (let i = 0; i < 3; i += 1) {
+            if (actual[i] > floor[i]) break
+            if (actual[i] < floor[i]) throw new Error(`axios floor not met: ${pkg.dependencies.axios}`)
+          }
+          console.log(`web axios ${pkg.dependencies.axios}`)
+          NODE
+      - name: Diagnose remaining production advisories
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --prod --audit-level low 2>&1 | tee /tmp/prod-audit.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          echo "PROD_AUDIT_EXIT=$code"
+          if grep -Fq 'web>axios' /tmp/prod-audit.txt; then
+            echo 'web Axios advisories remain after update' >&2
+            exit 1
+          fi
+          pnpm audit --prod --audit-level critical
+      - name: Verify repository
+        run: pnpm verify
+      - name: Commit validated dependency update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name xianyumht-cmd
+          git config user.email xianyumht@gmail.com
+          git add web/package.json pnpm-lock.yaml
+          if git diff --cached --quiet; then
+            echo 'No dependency changes to commit' >&2
+            exit 1
+          fi
+          git commit -m 'fix(security): update web axios'
+          git push origin HEAD:fix/security-web-axios-20260917
