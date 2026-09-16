@@ -20,6 +20,8 @@ overrides:
   vue-router>yaml: 2.8.3
   '@vue/compiler-sfc>postcss': 8.5.23
   postcss>nanoid: 3.3.18
+  pushoo>axios: 0.34.0
+  pushoo>lodash: 4.18.1
 
 importers:
 
@@ -1587,8 +1589,8 @@ packages:
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
 
-  axios@0.26.1:
-    resolution: {integrity: sha512-fPwcX4EvnSHuInCMItEhAGnaSEXRBjtzh9fOtsE6E1G6p7vl7edEeZe11QHf18+6+9gR5PbKV/sGKNaD8YaMeA==}
+  axios@0.34.0:
+    resolution: {integrity: sha512-CkOmqy7BaT4VC9+wRUmSM3LVwCkKK3UYc7koEqIHWRpOTJypwdNctaVOgnOjhHP3599Ubq2K8KqYwfC7c8NdPQ==}
 
   axios@1.20.0:
     resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
@@ -2676,8 +2678,8 @@ packages:
   lodash.unescape@4.0.1:
     resolution: {integrity: sha512-DhhGRshNS1aX6s5YdBE3njCCouPgnG29ebyHvImlZzXZf2SHgt+J08DHgytTPnpywNbO1Y8mNUFyQuIDBq2JZg==}
 
-  lodash@4.17.23:
-    resolution: {integrity: sha512-LgVTMpQtIopCi79SJeDiP0TfWi5CNEc/L/aRdTh3yIvmZXTnheWpKjSZhnvMl8iXbC1tFg9gdHHDMLoV7CnG+w==}
+  lodash@4.18.1:
+    resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
 
   logform@2.7.0:
     resolution: {integrity: sha512-TFYA4jnP7PVbmlBIfhlSe+WKxs9dklXMTEGcBCIvLhE/Tn3H6Gk1norupVW7m5Cnd4bLcr08AytbyV/xj7f/kQ==}
@@ -3159,6 +3161,9 @@ packages:
   proxy-addr@2.0.7:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
+
+  proxy-from-env@1.1.0:
+    resolution: {integrity: sha512-D+zkORCbA9f1tdWRK0RaCR3GPv50cMxcrz4X8k5LTSUD1Dkw47mKJEZQNunItRTkWwgtaUSo1RVFRIG9ZXiFYg==}
 
   proxy-from-env@2.1.0:
     resolution: {integrity: sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==}
@@ -5240,9 +5245,11 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  axios@0.26.1:
+  axios@0.34.0:
     dependencies:
       follow-redirects: 1.16.0
+      form-data: 4.0.6
+      proxy-from-env: 1.1.0
     transitivePeerDependencies:
       - debug
 
@@ -6424,7 +6431,7 @@ snapshots:
 
   lodash.unescape@4.0.1: {}
 
-  lodash@4.17.23: {}
+  lodash@4.18.1: {}
 
   logform@2.7.0:
     dependencies:
@@ -7054,6 +7061,8 @@ snapshots:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
 
+  proxy-from-env@1.1.0: {}
+
   proxy-from-env@2.1.0: {}
 
   pump@3.0.4:
@@ -7065,8 +7074,8 @@ snapshots:
 
   pushoo@0.1.11:
     dependencies:
-      axios: 0.26.1
-      lodash: 4.17.23
+      axios: 0.34.0
+      lodash: 4.18.1
       markdown-to-txt: 2.0.1
       marked: 4.3.0
     transitivePeerDependencies:

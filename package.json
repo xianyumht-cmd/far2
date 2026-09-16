@@ -81,7 +81,9 @@
       "tinyglobby>picomatch": "4.0.4",
       "vue-router>yaml": "2.8.3",
       "@vue/compiler-sfc>postcss": "8.5.23",
-      "postcss>nanoid": "3.3.18"
+      "postcss>nanoid": "3.3.18",
+      "pushoo>axios": "0.34.0",
+      "pushoo>lodash": "4.18.1"
     }
   }
 }
