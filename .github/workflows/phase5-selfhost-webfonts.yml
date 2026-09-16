@@ -1,0 +1,77 @@
+name: Phase 5 Self-Hosted Webfonts Validation
+
+on:
+  push:
+    branches: [fix/phase5-selfhost-webfonts-20260916]
+    paths: [.github/workflows/phase5-selfhost-webfonts.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/phase5-selfhost-webfonts-20260916
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Add local font packages
+        run: pnpm -C web add -D --save-exact @fontsource/dm-sans@5.3.0 @fontsource/dm-serif-display@5.3.0 @fontsource/dm-mono@5.3.0
+      - name: Switch UnoCSS webfonts to local assets
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+
+          const unoPath = 'web/uno.config.ts'
+          let uno = fs.readFileSync(unoPath, 'utf8')
+          const unoOld = "    presetWebFonts({\n      fonts: {"
+          const unoNew = "    presetWebFonts({\n      provider: 'none',\n      fonts: {"
+          if ((uno.split(unoOld).length - 1) !== 1) throw new Error('Unexpected presetWebFonts shape')
+          uno = uno.replace(unoOld, unoNew)
+          fs.writeFileSync(unoPath, uno)
+
+          const mainPath = 'web/src/main.ts'
+          let main = fs.readFileSync(mainPath, 'utf8')
+          const anchor = "import router from './router'\n"
+          const imports = "import '@fontsource/dm-mono/400.css'\nimport '@fontsource/dm-sans/400.css'\nimport '@fontsource/dm-serif-display/400.css'\n"
+          if ((main.split(anchor).length - 1) !== 1) throw new Error('Unexpected main.ts import anchor')
+          if (main.includes("@fontsource/dm-sans")) throw new Error('Fontsource imports already present')
+          main = main.replace(anchor, `${anchor}${imports}`)
+          fs.writeFileSync(mainPath, main)
+          NODE
+          pnpm -C web exec eslint src/main.ts uno.config.ts --fix
+      - name: Confirm zero lint before network isolation
+        run: pnpm lint:baseline
+      - name: Prove production build no longer requires Google Fonts
+        run: |
+          echo '127.0.0.1 fonts.googleapis.com' | sudo tee -a /etc/hosts
+          echo '127.0.0.1 fonts.gstatic.com' | sudo tee -a /etc/hosts
+          pnpm -C web build
+          if grep -R -E 'fonts\.googleapis\.com|fonts\.gstatic\.com' web/dist; then
+            echo 'Production output still references Google Fonts'
+            exit 1
+          fi
+          find web/dist -type f \( -name '*.woff' -o -name '*.woff2' \) -print | tee /tmp/font-assets.txt
+          test -s /tmp/font-assets.txt
+      - name: Verify repository with Google Fonts blocked
+        run: pnpm verify
+      - name: Commit audited production changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/package.json pnpm-lock.yaml web/uno.config.ts web/src/main.ts
+          git diff --cached --check
+          test "$(git diff --cached --name-only | wc -l)" -eq 4
+          git commit -m "fix(web): self-host configured web fonts"
+          git push origin HEAD:fix/phase5-selfhost-webfonts-20260916
