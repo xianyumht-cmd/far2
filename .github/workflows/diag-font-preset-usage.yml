@@ -18,37 +18,24 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Summarize configured and emitted webfont usage
+      - name: Extract emitted font-face contracts
         shell: bash
         run: |
           set -euo pipefail
-          echo '=== source references ==='
-          grep -R -n -E '(DM Sans|DM Serif Display|DM Mono|font-(sans|serif|mono)|font-family)' web/src web/index.html || true
-
           pnpm -C web build >/tmp/web-build.log 2>&1
-          tail -n 8 /tmp/web-build.log
-
-          echo '=== emitted CSS counts ==='
-          for pattern in 'DM Sans' 'DM Serif Display' 'DM Mono' 'fonts.googleapis.com' 'fonts.gstatic.com' '@font-face'; do
-            count="$( (grep -R -F -o "$pattern" web/dist --include='*.css' 2>/dev/null || true) | wc -l )"
-            echo "$pattern=$count"
-          done
-
-          echo '=== external font URLs ==='
-          grep -R -h -o -E 'https://[^)"[:space:]]+' web/dist --include='*.css' 2>/dev/null \
-            | grep -E 'fonts\.(googleapis|gstatic)\.com' \
-            | sort -u \
-            | head -n 20 || true
-
-          echo '=== font-face families ==='
           python - <<'PY'
           from pathlib import Path
           import re
           css = '\n'.join(p.read_text(errors='ignore') for p in Path('web/dist').rglob('*.css'))
-          families = sorted(set(re.findall(r'font-family:([^;}]+)', css)))
-          for value in families:
-              if 'DM ' in value or 'monospace' in value or 'sans-serif' in value:
-                  print(value.strip())
+          blocks = re.findall(r'@font-face\s*\{([^}]*)\}', css)
+          for i, block in enumerate(blocks, 1):
+              def prop(name):
+                  m = re.search(rf'{name}:([^;]+)', block)
+                  return m.group(1).strip() if m else ''
+              src = prop('src')
+              url = re.search(r'url\(([^)]+)\)', src)
+              print(f"FACE {i}: family={prop('font-family')} style={prop('font-style')} weight={prop('font-weight')} display={prop('font-display')} url={url.group(1) if url else ''}")
+          print(f'TOTAL_FONT_FACES={len(blocks)}')
           PY
       - name: Verify repository
         run: pnpm verify
