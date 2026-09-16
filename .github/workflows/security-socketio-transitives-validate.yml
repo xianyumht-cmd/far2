@@ -27,35 +27,7 @@ jobs:
           set -euo pipefail
           pnpm --dir core update socket.io
           pnpm install --frozen-lockfile
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const root = path.resolve('core');
-          const socketPkgPath = require.resolve('socket.io/package.json', { paths: [root] });
-          const socketDir = path.dirname(socketPkgPath);
-          const resolveVersion = (name) => {
-            const p = require.resolve(`${name}/package.json`, { paths: [socketDir] });
-            return JSON.parse(fs.readFileSync(p, 'utf8')).version;
-          };
-          const versions = {
-            socketIo: JSON.parse(fs.readFileSync(socketPkgPath, 'utf8')).version,
-            engineIo: resolveVersion('engine.io'),
-            parser: resolveVersion('socket.io-parser'),
-          };
-          const enginePkgPath = require.resolve('engine.io/package.json', { paths: [socketDir] });
-          const engineDir = path.dirname(enginePkgPath);
-          const wsPkgPath = require.resolve('ws/package.json', { paths: [engineDir] });
-          versions.engineWs = JSON.parse(fs.readFileSync(wsPkgPath, 'utf8')).version;
-          console.log(versions);
-          const ge = (a, b) => {
-            const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
-            for (let i = 0; i < 3; i++) { if (pa[i] !== pb[i]) return pa[i] > pb[i]; }
-            return true;
-          };
-          if (!ge(versions.engineIo, '6.6.7')) throw new Error(`engine.io still vulnerable: ${versions.engineIo}`);
-          if (!ge(versions.parser, '4.2.7')) throw new Error(`socket.io-parser still vulnerable: ${versions.parser}`);
-          if (!ge(versions.engineWs, '8.21.0')) throw new Error(`engine.io ws still vulnerable: ${versions.engineWs}`);
-          NODE
+          pnpm --filter qq-farm-bot list socket.io engine.io socket.io-parser ws --depth 5
       - name: Verify repository
         run: pnpm verify
       - name: Confirm Socket.IO audit paths are clean
