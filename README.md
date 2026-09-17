@@ -242,21 +242,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\windows\status-f
 
 ## 本地配置与敏感信息
 
-仓库中的根 `.env` 只应保留无敏感性的默认配置，例如端口、时区和 `NODE_ENV`。
+仓库只跟踪根 `.env.example` 作为无敏感信息的配置模板；实际 `.env` 属于本机私有配置并已被 Git 忽略。Docker / Compose 部署可先复制模板，再在本机填写实际值。
 
-真实生产密钥、Provider token、Cookie、Session、一次性 Code、账号状态等都不应提交到 Git。建议通过 Windows Machine/User 环境变量、NSSM service environment 或其他本机私有配置提供。
+真实生产密钥、`ADMIN_BOOTSTRAP_PASSWORD`、Provider token、Cookie、Session、一次性 Code、账号状态等都不应提交到 Git。建议通过本机 `.env`、Windows Machine/User 环境变量、NSSM service environment 或其他本机私有配置提供。
 
 特别禁止提交：
 
 ```text
 core/data/
+.env
+.env.local
+.env.*.local
 *.token
 *.secret
 *.key
 *.pem
 *.pfx
-.env.local
-.env.*.local
 ```
 
 ---
