@@ -1,0 +1,85 @@
+name: Validate Secure Card Randomness
+
+on:
+  push:
+    branches:
+      - fix/secure-card-randomness-20260917
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply secure randomness changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs');
+
+          function replaceExactly(file, before, after) {
+            const source = fs.readFileSync(file, 'utf8');
+            const count = source.split(before).length - 1;
+            if (count !== 1) throw new Error(`${file}: expected exactly one replacement target, found ${count}`);
+            fs.writeFileSync(file, source.replace(before, after));
+          }
+
+          replaceExactly(
+            'core/src/models/user-store.js',
+            "        id: Date.now() + Math.random().toString(36).substr(2, 9),",
+            "        id: crypto.randomUUID(),",
+          );
+
+          replaceExactly(
+            'core/src/models/user-store.js',
+            `const generateCardCode = () => {\n    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';\n    let code = '';\n    for (let i = 0; i < 16; i++) {\n        code += chars.charAt(Math.floor(Math.random() * chars.length));\n    }\n    return code;\n};`,
+            `const CARD_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';\nconst CARD_CODE_LENGTH = 16;\n\nconst generateCardCode = () => {\n    let code = '';\n    for (let i = 0; i < CARD_CODE_LENGTH; i++) {\n        code += CARD_CODE_ALPHABET[crypto.randomInt(CARD_CODE_ALPHABET.length)];\n    }\n    return code;\n};`,
+          );
+
+          replaceExactly(
+            'core/src/models/user-store.js',
+            '    const randomIndex = Math.floor(Math.random() * unusedTimeCards.length);',
+            '    const randomIndex = crypto.randomInt(unusedTimeCards.length);',
+          );
+
+          replaceExactly(
+            'core/scripts/security-phase2-selftest.js',
+            "    const userStore = require('../src/models/user-store');\n",
+            `    const userStore = require('../src/models/user-store');\n\n    const originalMathRandom = Math.random;\n    Math.random = () => {\n        throw new Error('Math.random must not be used for card secrets, card selection, or login-log identifiers');\n    };\n    try {\n        const singleCard = userStore.createCard('security-random-single', 1, 'time');\n        const batchCards = userStore.createCardsBatch('security-random-batch', 1, 100, 'time');\n        const generatedCards = [singleCard, ...batchCards];\n        assert.equal(generatedCards.length, 101);\n        assert.equal(new Set(generatedCards.map(card => card.code)).size, generatedCards.length, 'generated card codes must be unique');\n        for (const card of generatedCards) {\n            assert.match(card.code, /^[A-Z0-9]{16}$/, 'card code format must remain compatible');\n        }\n\n        const claimed = userStore.claimCardByUA('far2-security-randomness-selftest');\n        assert.equal(claimed.ok, true, 'card claim selection must not depend on Math.random');\n\n        const loginLog = userStore.addLoginLog({ event: 'security-randomness-selftest' });\n        assert.match(loginLog.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, 'login log IDs must use crypto.randomUUID');\n    } finally {\n        Math.random = originalMathRandom;\n    }\n`,
+          );
+          NODE
+
+      - name: Run focused security self-test
+        run: pnpm -C core security:phase2-selftest
+
+      - name: Verify repository
+        run: pnpm verify
+
+      - name: Commit production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add core/src/models/user-store.js core/scripts/security-phase2-selftest.js
+          unexpected=$(git diff --name-only --cached | grep -Ev '^(core/src/models/user-store\.js|core/scripts/security-phase2-selftest\.js)$' || true)
+          if [ -n "$unexpected" ]; then echo "Unexpected files: $unexpected" >&2; exit 1; fi
+          git diff --cached --check
+          git diff --cached --exit-code && { echo 'No changes to commit' >&2; exit 1; } || true
+          git commit -m 'fix(security): use cryptographic randomness for card secrets'
+          git push
