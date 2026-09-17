@@ -50,7 +50,9 @@ COPY --from=prod-deps /app/package.json ../package.json
 COPY --from=builder /app/core ./
 COPY --from=builder /app/web/dist ../web/dist
 
-RUN mkdir -p data/logs && chmod -R 755 data
+RUN mkdir -p data/logs && \
+    chown -R node:node data && \
+    chmod -R 755 data
 
 VOLUME ["/app/core/data"]
 
@@ -58,5 +60,7 @@ EXPOSE 3007
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD wget -q --spider http://localhost:3007/api/status || exit 1
+
+USER node
 
 CMD ["node", "client.js"]
