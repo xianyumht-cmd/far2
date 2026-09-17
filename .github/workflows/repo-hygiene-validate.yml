@@ -1,0 +1,90 @@
+name: Validate Repository Hygiene
+
+on:
+  push:
+    branches: [chore/repo-private-env-hygiene-20260917]
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+        with:
+          version: 10.30.2
+          run_install: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Update environment documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('README.md')
+          text = path.read_text(encoding='utf-8')
+          start = text.index('## 本地配置与敏感信息')
+          end = text.index('\n---\n\n## 更新本地源码', start)
+          section = '''## 本地配置与敏感信息
+
+仓库只跟踪根 `.env.example` 作为无敏感信息的配置模板；实际 `.env` 属于本机私有配置并已被 Git 忽略。Docker / Compose 部署可先复制模板，再在本机填写实际值。
+
+真实生产密钥、`ADMIN_BOOTSTRAP_PASSWORD`、Provider token、Cookie、Session、一次性 Code、账号状态等都不应提交到 Git。建议通过本机 `.env`、Windows Machine/User 环境变量、NSSM service environment 或其他本机私有配置提供。
+
+特别禁止提交：
+
+```text
+core/data/
+.env
+.env.local
+.env.*.local
+*.token
+*.secret
+*.key
+*.pem
+*.pfx
+```
+'''
+          path.write_text(text[:start] + section + text[end:], encoding='utf-8')
+          PY
+
+      - name: Verify private-file policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked_private="$(git ls-files -- .env '.idea/**')"
+          test -z "$tracked_private" || { echo "Private/local files are still tracked:"; printf '%s\n' "$tracked_private"; exit 1; }
+          git check-ignore -q .env
+          git check-ignore -q .idea/example.xml
+          if git check-ignore -q .env.example; then
+            echo '.env.example must stay trackable' >&2
+            exit 1
+          fi
+          test -f .env.example
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify repository
+        run: pnpm verify
+
+      - name: Commit documentation update
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'README already current'
+            exit 0
+          fi
+          git commit -m 'docs: document private env workflow'
+          git push
