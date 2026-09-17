@@ -29,6 +29,8 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Local environment overrides / private configuration
+.env
+!.env.example
 .env.local
 .env.*.local
 .env.private
