@@ -87,7 +87,7 @@ function saveLoginLogs() {
 function addLoginLog(entry) {
     loadLoginLogs();
     const logEntry = {
-        id: Date.now() + Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         timestamp: Date.now(),
         ...entry
     };
@@ -352,11 +352,13 @@ function needsRehash(storedPassword) {
     return !storedPassword.includes(':');
 }
 
+const CARD_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const CARD_CODE_LENGTH = 16;
+
 const generateCardCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let code = '';
-    for (let i = 0; i < 16; i++) {
-        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    for (let i = 0; i < CARD_CODE_LENGTH; i++) {
+        code += CARD_CODE_ALPHABET[crypto.randomInt(CARD_CODE_ALPHABET.length)];
     }
     return code;
 };
@@ -1007,7 +1009,7 @@ function claimCardByUA(ua, username = null) {
         return { ok: false, error: '卡密库存不足，请联系管理员！' };
     }
     
-    const randomIndex = Math.floor(Math.random() * unusedTimeCards.length);
+    const randomIndex = crypto.randomInt(unusedTimeCards.length);
     const selectedCard = unusedTimeCards[randomIndex];
     
     const uaHash = crypto.createHash('sha256').update(ua).digest('hex');

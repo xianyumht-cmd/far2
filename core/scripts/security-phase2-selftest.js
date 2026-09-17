@@ -48,6 +48,29 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
 try {
     const userStore = require('../src/models/user-store');
+
+    const originalMathRandom = Math.random;
+    Math.random = () => {
+        throw new Error('Math.random must not be used for card secrets, card selection, or login-log identifiers');
+    };
+    try {
+        const singleCard = userStore.createCard('security-random-single', 1, 'time');
+        const batchCards = userStore.createCardsBatch('security-random-batch', 1, 100, 'time');
+        const generatedCards = [singleCard, ...batchCards];
+        assert.equal(generatedCards.length, 101);
+        assert.equal(new Set(generatedCards.map(card => card.code)).size, generatedCards.length, 'generated card codes must be unique');
+        for (const card of generatedCards) {
+            assert.match(card.code, /^[A-Z0-9]{16}$/, 'card code format must remain compatible');
+        }
+
+        const claimed = userStore.claimCardByUA('far2-security-randomness-selftest');
+        assert.equal(claimed.ok, true, 'card claim selection must not depend on Math.random');
+
+        const loginLog = userStore.addLoginLog({ event: 'security-randomness-selftest' });
+        assert.match(loginLog.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, 'login log IDs must use crypto.randomUUID');
+    } finally {
+        Math.random = originalMathRandom;
+    }
     const attemptsFile = path.join(dataDir, 'login-attempts.json');
     const now = Date.now();
     const stale = now - (16 * 60 * 1000);
