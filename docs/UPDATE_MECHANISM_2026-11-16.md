@@ -36,7 +36,8 @@ all, and even a clone could not be updated unless it sat on `main` **and** ran a
    When no Windows service is registered, the transport now reports
    `{supported:true, executionMode:'manual_restart', reason:'manual_restart_required', autoRestart:false}`
    instead of refusing. The update runs, verifies, and then asks the operator to restart; nothing is
-   auto-killed. Service-based deployments keep the existing `windows_task` behaviour unchanged.
+   auto-killed. The worker receives no parent PID and cannot signal the running FAR2 process
+   in this mode. The next manual restart must use the original startup chain. Service-based deployments keep the existing `windows_task` behaviour unchanged.
 
 ## How to use it on this machine
 

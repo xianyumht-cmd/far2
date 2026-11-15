@@ -64,7 +64,7 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $vbs = Join-Path $projectRoot 'data\run-code-supervisor.vbs'
 $vbsBody = @"
 Set shell = CreateObject("WScript.Shell")
-# supervisor 自己从 %USERPROFILE%\.far2\admin-pass.txt 读取密码，VBS 不携带任何凭据
+' Supervisor reads password from local user storage; VBS contains no credentials.
 q = Chr(34)
 cmd = q & "$nodeExe" & q & " " & q & "$supervisor" & q & " --interval 30 >> " & q & "$logFile" & q & " 2>&1"
 shell.Run "cmd /c " & cmd, 0, False

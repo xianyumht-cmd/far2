@@ -510,7 +510,7 @@ function createReleaseUpdater(options = {}) {
         if (ancestor.status !== 0) {
             const error = new Error('Local main and origin/main diverged; automatic update is blocked.');
             error.code = 'update_non_fast_forward';
-            saveState({ phase: 'failed', stage: 'fast_forward_check', message: '升级被阻止：本地 main 与远程发生分叉。', lastError: error.message, restartPending: false });
+            saveState({ phase: 'failed', stage: 'fast_forward_check', message: '升级被阻止：本地与远程更新分支发生分叉。', lastError: error.message, restartPending: false });
             throw error;
         }
         if (previousSha === targetSha) {
@@ -534,7 +534,7 @@ function createReleaseUpdater(options = {}) {
             return saveState({
                 phase: restartFromPid ? 'restart_pending' : 'completed',
                 stage: 'verified',
-                message: restartFromPid ? '新版本验证通过，FAR2 即将自动重启…' : '新版本验证通过。',
+                message: restartFromPid ? '新版本验证通过，FAR2 即将自动重启…' : '新版本验证通过，请通过原启动器手动重启 FAR2 后生效。',
                 previousSha,
                 targetSha,
                 currentSha: finalSha,
@@ -550,7 +550,7 @@ function createReleaseUpdater(options = {}) {
         }
     }
 
-    function launchDirectWorker(action) {
+    function launchDirectWorker(action, restartFromPid = 0) {
         const workerPath = path.join(coreDir, 'scripts', 'release-update-worker.js');
         if (!fsRef.existsSync(workerPath)) {
             const error = new Error(`Update worker missing: ${workerPath}`);
@@ -558,7 +558,7 @@ function createReleaseUpdater(options = {}) {
             throw error;
         }
         const args = [workerPath, '--action', action];
-        if (action === 'apply') args.push('--parent-pid', String(processRef.pid));
+        if (action === 'apply' && restartFromPid > 0) args.push('--parent-pid', String(restartFromPid));
         const child = spawnRef(processRef.execPath, args, {
             cwd: projectRoot,
             detached: false,
@@ -610,7 +610,7 @@ function createReleaseUpdater(options = {}) {
             cap = ensureCleanMain();
         }
 
-        const restartFromPid = action === 'apply' ? processRef.pid : 0;
+        const restartFromPid = action === 'apply' && cap.autoRestart === true ? processRef.pid : 0;
         saveState({
             phase: 'queued',
             stage: 'dispatch',
@@ -622,6 +622,7 @@ function createReleaseUpdater(options = {}) {
             workerPid: 0,
             workerStartedAt: 0,
             restartFromPid,
+            executionMode: cap.executionMode,
             restartPending: false,
             lastError: '',
             rollbackError: '',
@@ -633,7 +634,7 @@ function createReleaseUpdater(options = {}) {
                 return { accepted: true, action, transport: 'windows_task', updateTaskName: cap.updateTaskName };
             }
 
-            const workerPid = launchDirectWorker(action);
+            const workerPid = launchDirectWorker(action, restartFromPid);
             const afterSpawn = loadState();
             if (afterSpawn.phase === 'queued' && afterSpawn.requestedAction === action) {
                 saveState({ stage: 'worker_started', workerPid });
