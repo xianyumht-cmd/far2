@@ -73,18 +73,31 @@ function qqRunning() {
 }
 
 async function api(pathname, options = {}) {
-    const headers = { 'content-type': 'application/json' };
-    if (state.token) headers['x-admin-token'] = state.token;
-    if (options.accountId) headers['x-account-id'] = String(options.accountId);
-    const res = await fetch(`${BASE}${pathname}`, {
-        method: options.method || 'GET',
-        headers,
-        body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch { json = { raw: text }; }
-    return { status: res.status, json };
+    const send = async () => {
+        const headers = { 'content-type': 'application/json' };
+        if (state.token) headers['x-admin-token'] = state.token;
+        if (options.accountId) headers['x-account-id'] = String(options.accountId);
+        const res = await fetch(`${BASE}${pathname}`, {
+            method: options.method || 'GET',
+            headers,
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        });
+        const text = await res.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch { json = { raw: text }; }
+        return { status: res.status, json };
+    };
+
+    let res = await send();
+    // FAR2 restarts invalidate every in-memory admin token immediately, while the local
+    // cache above lives for 30 minutes. Without this branch the supervisor would keep
+    // sending a dead token, see no accounts, and silently stop refreshing Code.
+    if (res.status === 401 && state.token) {
+        state.token = '';
+        state.tokenAt = 0;
+        if (await ensureToken()) res = await send();
+    }
+    return res;
 }
 
 async function ensureToken() {
