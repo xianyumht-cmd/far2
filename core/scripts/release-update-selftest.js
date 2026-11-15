@@ -100,7 +100,44 @@ async function main() {
     assert.equal(updater.loadState().phase, 'queued');
     assert.equal(updater.beginApply().accepted, false);
 
+    // A launcher-hosted Windows server must never be terminated by an update worker.
     updater.saveState({ phase: 'idle', requestedAction: '' });
+    let manualSpawn = null;
+    const manualUpdater = createReleaseUpdater({
+        projectRoot: root,
+        runner: (file, args, opts) => {
+            if (file === 'sc.exe' && args.join(' ') === 'query FAR2Farm') {
+                return { status: 1, stdout: '', stderr: 'service not installed' };
+            }
+            return runner(file, args, opts);
+        },
+        processRef: {
+            platform: 'win32',
+            pid: 4567,
+            execPath: 'C:/node/node.exe',
+            env: {},
+            pkg: false,
+        },
+        spawnRef(file, args) {
+            manualSpawn = { file, args };
+            return { pid: 9911, unref() {} };
+        },
+    });
+    const manualCapability = manualUpdater.capability();
+    assert.equal(manualCapability.supported, true);
+    assert.equal(manualCapability.executionMode, 'manual_restart');
+    assert.equal(manualCapability.autoRestart, false);
+    const manualQueued = manualUpdater.beginApply();
+    assert.equal(manualQueued.accepted, true);
+    assert.equal(manualQueued.transport, 'direct_worker');
+    assert.equal(manualSpawn.args.includes('--parent-pid'), false);
+    assert.equal(manualUpdater.loadState().restartFromPid, 0);
+    assert.equal(manualUpdater.loadState().executionMode, 'manual_restart');
+    const workerCode = fs.readFileSync(path.join(__dirname, 'release-update-worker.js'), 'utf8');
+    assert.match(workerCode, /if \(!manualRestart\) terminateParent\(parentPid\)/);
+    assert.match(workerCode, /if \(!parentPid && !manualRestart\)/);
+    manualUpdater.saveState({ phase: 'idle', requestedAction: '' });
+
     const scheduledUpdater = createReleaseUpdater({
         projectRoot: root,
         runner,

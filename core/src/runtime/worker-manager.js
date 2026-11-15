@@ -383,6 +383,15 @@ function createWorkerManager(options) {
         if (['getIllustrated', 'getShopProfiles', 'getShopInfo'].includes(String(method || ''))) {
             return 30000;
         }
+        // 活动超集：一次快照要串行读赛季/节气/公益/七夕/青梅/宠日记，10 秒不够；
+        // 写动作还要做「写前读 → 写 → 写后复读」，同样放宽。
+        if ([
+            'getActivityHubSnapshot', 'getActivityGroup', 'getPetDiary', 'getMilkTea',
+            'getWeatherActivity', 'getWeatherFriends', 'runActivityDaily', 'activityHubAction',
+            'operateActivityExchange', 'operateActivityConstellation', 'getActivityDailyState',
+        ].includes(String(method || ''))) {
+            return 120000;
+        }
         return 10000;
     }
 

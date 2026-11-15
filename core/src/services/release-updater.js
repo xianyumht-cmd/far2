@@ -8,7 +8,10 @@ const OFFICIAL_ORIGIN_PATTERNS = [
     /^git@github\.com:xianyumht-cmd\/far2(?:\.git)?$/i,
     /^ssh:\/\/git@github\.com\/xianyumht-cmd\/far2(?:\.git)?\/?$/i,
 ];
-const UPDATE_BRANCH = 'main';
+// The branch this checkout follows for updates. Defaults to main; a deployment that tracks a
+// long-lived dev branch (for example dev/fr3gb) can set FAR2_UPDATE_BRANCH instead of
+// copying the whole directory on every release.
+const UPDATE_BRANCH = String(process.env.FAR2_UPDATE_BRANCH || 'main').trim() || 'main';
 const STATE_VERSION = 1;
 const WORKER_MAX_RUNTIME_MS = 3 * 60 * 60 * 1000;
 const ACTIVE_PHASES = new Set(['queued', 'checking', 'updating', 'rolling_back', 'restart_pending']);
@@ -185,11 +188,16 @@ function createReleaseUpdater(options = {}) {
         if (processRef.platform === 'win32') {
             const serviceName = getServiceName();
             if (!serviceName) {
-                return { supported: false, executionMode: '', reason: 'automatic_restart_not_available', autoRestart: false, updateTaskName: '' };
+                // No Windows service to bounce (launcher/scheduled-task deployments). The update
+                // itself is safe; only the restart is manual, so report that instead of refusing.
+                return { supported: true, executionMode: 'manual_restart', reason: 'manual_restart_required', autoRestart: false, updateTaskName: '' };
             }
             const service = run('sc', ['query', serviceName], { allowFailure: true, timeout: 10000 });
             if (service.status !== 0) {
-                return { supported: false, executionMode: '', reason: 'automatic_restart_not_available', autoRestart: false, updateTaskName: '' };
+                // The default service name is FAR2Farm even for a launcher-only
+                // install. A missing service must select manual restart rather
+                // than disabling the updater altogether.
+                return { supported: true, executionMode: 'manual_restart', reason: 'manual_restart_required', autoRestart: false, updateTaskName: '' };
             }
 
             const updateTaskName = getUpdateTaskName();
@@ -505,7 +513,7 @@ function createReleaseUpdater(options = {}) {
         if (ancestor.status !== 0) {
             const error = new Error('Local main and origin/main diverged; automatic update is blocked.');
             error.code = 'update_non_fast_forward';
-            saveState({ phase: 'failed', stage: 'fast_forward_check', message: '升级被阻止：本地 main 与远程发生分叉。', lastError: error.message, restartPending: false });
+            saveState({ phase: 'failed', stage: 'fast_forward_check', message: '升级被阻止：本地与远程更新分支发生分叉。', lastError: error.message, restartPending: false });
             throw error;
         }
         if (previousSha === targetSha) {
@@ -529,7 +537,7 @@ function createReleaseUpdater(options = {}) {
             return saveState({
                 phase: restartFromPid ? 'restart_pending' : 'completed',
                 stage: 'verified',
-                message: restartFromPid ? '新版本验证通过，FAR2 即将自动重启…' : '新版本验证通过。',
+                message: restartFromPid ? '新版本验证通过，FAR2 即将自动重启…' : '新版本验证通过，请通过原启动器手动重启 FAR2 后生效。',
                 previousSha,
                 targetSha,
                 currentSha: finalSha,
@@ -545,7 +553,7 @@ function createReleaseUpdater(options = {}) {
         }
     }
 
-    function launchDirectWorker(action) {
+    function launchDirectWorker(action, restartFromPid = 0) {
         const workerPath = path.join(coreDir, 'scripts', 'release-update-worker.js');
         if (!fsRef.existsSync(workerPath)) {
             const error = new Error(`Update worker missing: ${workerPath}`);
@@ -553,7 +561,7 @@ function createReleaseUpdater(options = {}) {
             throw error;
         }
         const args = [workerPath, '--action', action];
-        if (action === 'apply') args.push('--parent-pid', String(processRef.pid));
+        if (action === 'apply' && restartFromPid > 0) args.push('--parent-pid', String(restartFromPid));
         const child = spawnRef(processRef.execPath, args, {
             cwd: projectRoot,
             detached: false,
@@ -605,7 +613,7 @@ function createReleaseUpdater(options = {}) {
             cap = ensureCleanMain();
         }
 
-        const restartFromPid = action === 'apply' ? processRef.pid : 0;
+        const restartFromPid = action === 'apply' && cap.autoRestart === true ? processRef.pid : 0;
         saveState({
             phase: 'queued',
             stage: 'dispatch',
@@ -617,6 +625,7 @@ function createReleaseUpdater(options = {}) {
             workerPid: 0,
             workerStartedAt: 0,
             restartFromPid,
+            executionMode: cap.executionMode,
             restartPending: false,
             lastError: '',
             rollbackError: '',
@@ -628,7 +637,7 @@ function createReleaseUpdater(options = {}) {
                 return { accepted: true, action, transport: 'windows_task', updateTaskName: cap.updateTaskName };
             }
 
-            const workerPid = launchDirectWorker(action);
+            const workerPid = launchDirectWorker(action, restartFromPid);
             const afterSpawn = loadState();
             if (afterSpawn.phase === 'queued' && afterSpawn.requestedAction === action) {
                 saveState({ stage: 'worker_started', workerPid });

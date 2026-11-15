@@ -84,6 +84,14 @@ async function loadProto() {
         getResourcePath('proto', 'dogpb.proto'),
         getResourcePath('proto', 'careerpb.proto'),
         getResourcePath('proto', 'activitypb.proto'),
+        // 活动超集：星座/公益红花/七夕/青梅/天气/奶茶/宠日记 的子协议与数据体
+        getResourcePath('proto', 'autumn-activities.proto'),
+        getResourcePath('proto', 'milk-tea.proto'),
+        getResourcePath('proto', 'pet-diary.proto'),
+        getResourcePath('proto', 'activity-ext.proto'),
+        getResourcePath('proto', 'seasonpb.proto'),
+        getResourcePath('proto', 'solartermspb.proto'),
+        getResourcePath('proto', 'weatherpb.proto'),
     ], { keepCase: true });
 
     // 网关
@@ -232,7 +240,7 @@ async function loadProto() {
     types.CareerInfoGetRequest = root.lookupType('gamepb.careerpb.CareerInfoGetRequest');
     types.CareerInfoGetReply = root.lookupType('gamepb.careerpb.CareerInfoGetReply');
 
-    // 活动中心（P5C-A 只读 List/GetGroup；刻意不加载 Operate）
+    // 活动中心（List/GetGroup 只读；Operate 仅在活动写链服务内使用，见 services/activity-operate.js）
     types.ActivityListRequest = root.lookupType('gamepb.activitypb.ListRequest');
     types.ActivityListReply = root.lookupType('gamepb.activitypb.ListReply');
     types.ActivityGetGroupRequest = root.lookupType('gamepb.activitypb.GetGroupRequest');
@@ -242,6 +250,79 @@ async function loadProto() {
     types.ActivityRandomShopInfo = root.lookupType('gamepb.activitypb.RandomShopInfo');
     types.ActivityExchangeShopInfo = root.lookupType('gamepb.activitypb.ExchangeShopInfo');
     types.ActivityDrawInfo = root.lookupType('gamepb.activitypb.DrawInfo');
+    types.ActivityOperateRequest = root.lookupType('gamepb.activitypb.OperateRequest');
+    types.ActivityOperateReply = root.lookupType('gamepb.activitypb.OperateReply');
+    types.ActivityExchangeShopOperateParams = root.lookupType('gamepb.activitypb.ExchangeShopOperateParams');
+    types.ActivityRandomShopOperateParams = root.lookupType('gamepb.activitypb.RandomShopOperateParams');
+    types.ActivityConstellationOperateParams = root.lookupType('gamepb.activitypb.ConstellationOperateParams');
+
+    // ── 活动超集（同源 activity-ext.proto + 子协议）──
+    types.ActivityDataExt = root.lookupType('gamepb.activitypb.ActivityData');
+    types.ActivityContentExt = root.lookupType('gamepb.activitypb.ActivityContent');
+    types.ActivityWindowExt = root.lookupType('gamepb.activitypb.ActivityWindow');
+    types.ActivityExtGroupReply = root.lookupType('gamepb.activitypb.ExtGroupReply');
+    types.ActivityExtOperateReply = root.lookupType('gamepb.activitypb.ActivityOperateReply');
+    types.ActivityExtListReply = root.lookupType('gamepb.activitypb.ActivityListReply');
+    types.ActivityExtListRequest = root.lookupType('gamepb.activitypb.ActivityListRequest');
+    types.ActivityExtChangeNotify = root.lookupType('gamepb.activitypb.ActiviesChangeNotify');
+
+    // 各活动的 Operate 选择器请求（字段号与官方客户端一致）
+    types.ActivityQueryRequest = root.lookupType('gamepb.activitypb.QueryActivityRequest');
+    types.ActivityExchangeShopRequest = root.lookupType('gamepb.activitypb.ExchangeShopRequest');
+    types.ActivityOperateConstellationRequest = root.lookupType('gamepb.activitypb.OperateConstellationRequest');
+    types.ActivityCharityRequest = root.lookupType('gamepb.activitypb.CharityRedFlowerOperateRequest');
+    types.ActivityClaimQingMeiDailySeedRequest = root.lookupType('gamepb.activitypb.ClaimQingMeiDailySeedRequest');
+    types.ActivityStartQingMeiBrewRequest = root.lookupType('gamepb.activitypb.StartQingMeiBrewRequest');
+    types.ActivityContinueQingMeiBrewRequest = root.lookupType('gamepb.activitypb.ContinueQingMeiBrewRequest');
+    types.ActivitySettleQingMeiBrewRequest = root.lookupType('gamepb.activitypb.SettleQingMeiBrewRequest');
+    types.ActivityClaimQixiBridgeRequest = root.lookupType('gamepb.activitypb.ClaimQixiBridgeRewardsRequest');
+    types.ActivityGiftQixiSachetRequest = root.lookupType('gamepb.activitypb.GiftQixiSachetRequest');
+    types.ActivityExchangeShopResult = root.lookupType('gamepb.activitypb.ExchangeShopResult');
+
+    // 子协议：奶茶店 / 宠日记 / 赛季 / 节气 / 天气
+    types.MilkTeaOperateRequest = root.lookupType('gamepb.activitypb.MilkTeaOperateRequest');
+    types.MilkTeaOperateReply = root.lookupType('gamepb.activitypb.MilkTeaOperateReply');
+    types.MilkTeaGetGroupReply = root.lookupType('gamepb.activitypb.MilkTeaGetGroupReply');
+    types.PetDiaryOperateRequest = root.lookupType('gamepb.activitypb.PetDiaryOperateRequest');
+    types.PetDiaryOperateReply = root.lookupType('gamepb.activitypb.PetDiaryOperateReply');
+    types.PetDiaryGetGroupReply = root.lookupType('gamepb.activitypb.PetDiaryGetGroupReply');
+    types.SeasonInfoRequest = root.lookupType('gamepb.seasonpb.GetSeasonInfoRequest');
+    types.SeasonInfoReply = root.lookupType('gamepb.seasonpb.GetSeasonInfoReply');
+    types.SeasonClaimBattlePassRequest = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsRequest');
+    types.SeasonClaimBattlePassReply = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsReply');
+    types.SolarTermsReply = root.lookupType('gamepb.solartermspb.GetSolarTermsReply');
+    types.SolarTermsClaimRequest = root.lookupType('gamepb.solartermspb.ClaimSolarTermsRequest');
+    types.SolarTermsClaimReply = root.lookupType('gamepb.solartermspb.ClaimSolarTermsReply');
+    types.WeatherStatusReply = root.lookupType('gamepb.weatherpb.GetWeatherStatusReply');
+
+    // 与同源代码同名的别名（移植过来的 activity-center 子服务直接按这些名字引用）
+    // 注意：同源客户端用 group_id=1 的 GetGroupRequest，far2 自身用 id=1+uid=2，字段名不同，
+    // 因此这里给移植代码一个独立类型，避免参数被静默丢弃。
+    types.GetGroupRequest = root.lookupType('gamepb.activitypb.ExtGroupRequest');
+    types.GetGroupReply = types.ActivityExtGroupReply;
+    types.QueryActivityRequest = types.ActivityQueryRequest;
+    types.ExchangeShopRequest = types.ActivityExchangeShopRequest;
+    types.OperateConstellationRequest = types.ActivityOperateConstellationRequest;
+    types.CharityRedFlowerOperateRequest = types.ActivityCharityRequest;
+    types.ClaimQingMeiDailySeedRequest = types.ActivityClaimQingMeiDailySeedRequest;
+    types.StartQingMeiBrewRequest = types.ActivityStartQingMeiBrewRequest;
+    types.ContinueQingMeiBrewRequest = types.ActivityContinueQingMeiBrewRequest;
+    types.SettleQingMeiBrewRequest = types.ActivitySettleQingMeiBrewRequest;
+    types.ClaimQixiBridgeRewardsRequest = types.ActivityClaimQixiBridgeRequest;
+    types.GiftQixiSachetRequest = types.ActivityGiftQixiSachetRequest;
+    types.AutumnOperateRequest = root.lookupType('gamepb.activitypb.AutumnOperateRequest');
+    types.CollectWeatherRequest = root.lookupType('gamepb.activitypb.CollectWeatherRequest');
+    types.AdvanceWeatherResearchRequest = root.lookupType('gamepb.activitypb.AdvanceWeatherResearchRequest');
+    types.GetSeasonInfoRequest = root.lookupType('gamepb.seasonpb.GetSeasonInfoRequest');
+    types.GetSeasonInfoReply = root.lookupType('gamepb.seasonpb.GetSeasonInfoReply');
+    types.ClaimBattlePassRewardsRequest = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsRequest');
+    types.ClaimBattlePassRewardsReply = root.lookupType('gamepb.seasonpb.ClaimBattlePassRewardsReply');
+    types.GetSolarTermsRequest = root.lookupType('gamepb.solartermspb.GetSolarTermsRequest');
+    types.GetSolarTermsReply = root.lookupType('gamepb.solartermspb.GetSolarTermsReply');
+    types.ClaimSolarTermsRequest = root.lookupType('gamepb.solartermspb.ClaimSolarTermsRequest');
+    types.ClaimSolarTermsReply = root.lookupType('gamepb.solartermspb.ClaimSolarTermsReply');
+    types.GetWeatherStatusRequest = root.lookupType('gamepb.weatherpb.GetWeatherStatusRequest');
+    types.GetWeatherStatusReply = root.lookupType('gamepb.weatherpb.GetWeatherStatusReply');
 
     // Proto 加载完成
     log('系统', 'Protobuf 定义加载完成');

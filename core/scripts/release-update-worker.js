@@ -51,15 +51,16 @@ function main() {
         error.code = 'update_action_invalid';
         throw error;
     }
-    if (!parentPid) {
-        const error = new Error('Update apply requires a FAR2 parent PID.');
+    const manualRestart = !scheduledTask && queuedState.executionMode === 'manual_restart' && !parentPid;
+    if (!parentPid && !manualRestart) {
+        const error = new Error('Update apply requires a FAR2 parent PID unless manual restart mode is explicitly queued.');
         error.code = 'update_parent_pid_missing';
         throw error;
     }
 
     if (queuedState.recoveryRequired) updater.recoverInterruptedUpdate();
     updater.performUpdate({ restartFromPid: parentPid });
-    terminateParent(parentPid);
+    if (!manualRestart) terminateParent(parentPid);
 }
 
 try {

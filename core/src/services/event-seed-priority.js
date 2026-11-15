@@ -53,7 +53,9 @@ function inspectSeedEvidence(itemId, itemInfo, plant, activityItemIds = new Set(
     // Activity nodes can reference fertilizers, currencies, fruits and other rewards.
     // An activity reference may enrich a seed-like candidate, but cannot create
     // seed identity by itself.
-    const candidate = knownPlant || strongItemEvidence || namespaceCandidate;
+    // The numeric seed range is only a discovery hint for items absent from
+    // ItemInfo. A known non-seed item must never enter the seed queue.
+    const candidate = knownPlant || strongItemEvidence || (!info && namespaceCandidate);
 
     let confidence = 'none';
     if (knownPlant) confidence = 'proven-config';
@@ -110,7 +112,7 @@ function buildBagSeedInventory(rawItems, options = {}) {
         const plantSize = plant ? Math.max(1, Number(plant.size) || 1) : 0;
         const requiredLevel = plant
             ? Math.max(0, Number(plant.land_level_need) || 0)
-            : Math.max(0, Number(itemInfo && itemInfo.level) || 0);
+            : 0; // ItemInfo.level is an item metadata tier, not a plant eligibility gate.
 
         const current = merged.get(seedId) || {
             seedId,
@@ -375,7 +377,9 @@ function createEventSeedPriorityService(options = {}) {
             return {
                 ...row,
                 shopListed,
-                specialCandidate: row.activityReferenced === true || (shopLoaded && shopListed === false),
+                // Absence from one account-scoped shop is not proof of an event.
+                // Keep resolved held non-shop seeds eligible for priority planting.
+                specialCandidate: row.activityReferenced === true || (row.resolved === true && shopLoaded && shopListed === false),
             };
         };
 
@@ -441,7 +445,9 @@ function createEventSeedPriorityService(options = {}) {
         const plantedLandIds = [];
         let totalPlanted = 0;
         let occupiedCount = 0;
-        let blockShopFallback = unresolved.length > 0;
+        // An unidentified seed is evidence for configuration repair, not proof of
+        // a 2x2 footprint. Only failed known-seed operations can block this cycle.
+        let blockShopFallback = false;
         let knownSeedBlock = false;
         const knownSeedBlockReasons = [];
         const markKnownSeedBlock = (reason) => {
@@ -592,13 +598,12 @@ function createEventSeedPriorityService(options = {}) {
             maybeLog(
                 accountId,
                 `unresolved:${ids.join(',')}`,
-                `发现尚未识别的疑似活动种子 ${unresolved.map(row => `${row.name}(${row.seedId})x${row.count}`).join('、')}；为避免误买普通种子，本轮暂停商店补种并记录学习证据`,
+                `发现暂未匹配作物配置的背包候选种子 ${unresolved.map(row => `${row.name}(${row.seedId})x${row.count}`).join('、')}；已记录配置缺失证据，不为未知尺寸预留土地`,
                 {
-                    result: 'unresolved_seed_block_shop',
+                    result: 'config_missing_seed',
                     seedIds: ids,
                     confidence: unresolved.map(row => ({ seedId: row.seedId, confidence: row.confidence })),
                 },
-                true,
             );
         }
 

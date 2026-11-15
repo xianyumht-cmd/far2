@@ -63,7 +63,11 @@
     "test": "pnpm -C core test",
     "test:security": "pnpm -C core test:security",
     "test:regression": "pnpm -C core test:regression",
-    "verify": "pnpm workspace:lockfile-check && pnpm lint:baseline && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm workspace:lockfile-check && pnpm lint:baseline && pnpm typecheck && pnpm test && pnpm build",
+    "activity:operate-selftest": "pnpm -C core activity:operate-selftest",
+    "activity:hub-selftest": "pnpm -C core activity:hub-selftest",
+    "activity:features-selftest": "pnpm -C core activity:features-selftest",
+    "activity:daily-selftest": "pnpm -C core activity:daily-selftest"
   },
   "pnpm": {
     "overrides": {
@@ -72,9 +76,9 @@
       "socket.io>socket.io-parser": "4.2.7",
       "socket.io-adapter>ws": "8.21.3",
       "express>path-to-regexp": "0.1.13",
-      "express>qs": "6.16.0",
-      "express>body-parser": "1.20.6",
-      "body-parser>qs": "6.16.0",
+      "express>qs": "6.16.1",
+      "express>body-parser": "1.20.9",
+      "body-parser>qs": "6.16.1",
       "socket.io-client>socket.io-parser": "4.2.7",
       "engine.io-client>ws": "8.21.3",
       "vue-router>picomatch": "4.0.4",
@@ -83,7 +87,11 @@
       "@vue/compiler-sfc>postcss": "8.5.23",
       "postcss>nanoid": "3.3.18",
       "pushoo>axios": "0.34.0",
-      "pushoo>lodash": "4.18.1"
+      "pushoo>lodash": "4.18.1",
+      "@vue/server-renderer": "3.5.42",
+      "express>proxy-addr": "2.0.8",
+      "axios>follow-redirects": "1.16.2",
+      "@vue/compiler-core>source-map-js": "1.2.2"
     }
   }
 }

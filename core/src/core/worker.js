@@ -32,6 +32,13 @@ const { connect, cleanup, getWs, getUserState, networkEvents } = require('../uti
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
 const { installDogFeedActionHook } = require('../services/dog-feed-action-hook');
+const { createActivityOperateService } = require('../services/activity-operate');
+const { createActivityHub } = require('../services/activity-hub');
+
+// 活动写链按 worker（=账号）独立实例，避免多账号共享速率预算与串行队列。
+const activityOperate = createActivityOperateService();
+// 活动超集（星座/公益红花/七夕/青梅）编排层，同样按账号独立
+const activityHub = createActivityHub();
 
 // WorkerThread mode starts worker.js directly, so install the P7E manual-feed
 // action bridge here as well. The hook is idempotent for fork/pkg paths.
@@ -147,6 +154,8 @@ async function runDailyRoutines(force = false) {
         await performDailyMonthCardGift(force);
         await buyFreeGifts(force);
         await performDailyVipGift(force);
+        // 活动超集的每日动作（默认关：FAR2_ACTIVITY_AUTO=1 才跑，且仍受 hub 闸门约束）
+        await require('../services/activity-daily').runDailyActivityRoutines(activityHub, { force });
     } catch (e) {
         log('系统', `每日任务调度失败: ${e.message}`, { module: 'system', event: '每日任务', result: 'error' });
     }
@@ -671,6 +680,84 @@ async function handleApiCall(msg) {
             case 'listActivities':
                 result = await require('../services/activity-readonly').listActivityOverview();
                 break;
+            case 'getActivityGroup': {
+                const activityId = Number(args[0]) || 0;
+                if (activityId <= 0) throw new Error('activityId 必须为正整数');
+                result = await activityOperate.readGroup(activityId);
+                break;
+            }
+            case 'operateActivityExchange':
+                result = await activityOperate.exchangeGoods(args[0] || {});
+                break;
+            case 'operateActivityConstellation':
+                result = await activityOperate.claimConstellation(args[0] || {});
+                break;
+            case 'getActivityOperateState':
+                result = activityOperate.getState();
+                break;
+            case 'setActivityOperatePolicy':
+                result = activityOperate.setPolicy(args[0] || {});
+                break;
+            // ── 活动超集（星座/公益红花/七夕/青梅）──
+            case 'getActivityHubSnapshot':
+                result = await activityHub.getActivityCenterSnapshot();
+                break;
+            case 'getActivityHubPolicy':
+                result = activityHub.policy();
+                break;
+            case 'runActivityDaily':
+                result = await require('../services/activity-daily').runDailyActivityRoutines(activityHub, { force: !!(args[0] && args[0].force) });
+                break;
+            case 'getActivityDailyState':
+                result = require('../services/activity-daily').loadState();
+                break;
+            case 'getPetDiary':
+                result = await activityHub.getPetDiary();
+                break;
+            case 'getMilkTea': {
+                const page = String(args[0] || 'shop');
+                result = await activityHub.getMilkTeaActivity(page, args[1] || {});
+                break;
+            }
+            case 'getWeatherActivity':
+                result = await activityHub.getWeatherActivity();
+                break;
+            case 'getWeatherFriends':
+                result = await activityHub.getWeatherFriends();
+                break;
+            case 'setActivityHubPolicy':
+                result = activityHub.setPolicy(args[0] || {});
+                break;
+            case 'activityHubAction': {
+                const action = String(args[0] || '');
+                const payload = args[1] || {};
+                const allowed = {
+                    charityClaimSeeds: 'claimCharitySeeds',
+                    charityDonateLove: 'donateCharityLove',
+                    charityClaimProgress: 'claimCharityProgressReward',
+                    constellationClaim: 'claimConstellation',
+                    qixiClaimBridge: 'claimQixiBridge',
+                    qingmeiClaimSeed: 'claimQingMeiSeed',
+                    qingmeiSettle: 'settleQingMei',
+                    petDiaryOperate: 'petDiaryOperate',
+                    milkTeaOperate: 'milkTeaOperate',
+                    weatherCollectBottle: 'weatherCollectBottle',
+                    weatherAdvanceResearch: 'weatherAdvanceResearch',
+                };
+                const method = allowed[action];
+                if (!method) throw new Error(`未知活动动作: ${action}`);
+                if (method === 'petDiaryOperate' || method === 'milkTeaOperate') {
+                    // 这两个方法签名是 (子动作, 参数)
+                    result = await activityHub[method](String(payload.action || ''), payload.payload || payload);
+                } else if (method === 'weatherCollectBottle') {
+                    result = await activityHub[method](payload.gid ?? payload.friendGid ?? 0);
+                } else if (method === 'weatherAdvanceResearch') {
+                    result = await activityHub[method](payload.nodeId ?? payload.node_id ?? 0);
+                } else {
+                    result = await activityHub[method](payload);
+                }
+                break;
+            }
             case 'getShopProfiles':
                 result = await require('../services/catalog').getShopProfilesOverview();
                 break;

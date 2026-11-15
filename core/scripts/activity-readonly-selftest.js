@@ -9,7 +9,10 @@ async function main() {
     await loadProto();
     assert.ok(types.ActivityListRequest, 'ActivityListRequest should load');
     assert.ok(types.ActivityListReply, 'ActivityListReply should load');
-    assert.equal(types.ActivityOperateRequest, undefined, 'P5C read-only proto must not expose OperateRequest');
+    // 活动写链（Operate）已经落地到 services/activity-operate.js，因此 proto 里现在有 Operate；
+    // 但只读发现层本身依然不允许写：framework.operateEnabled 必须保持 false。
+    assert.ok(types.ActivityOperateRequest, 'OperateRequest should now be loaded for the write chain');
+    assert.ok(types.ActivityOperateReply, 'OperateReply should now be loaded for the write chain');
 
     const now = 2_000_000_000;
     const raw = types.ActivityListReply.encode(types.ActivityListReply.create({
@@ -108,7 +111,7 @@ async function main() {
     console.log('✅ parent/child tree building PASS');
     console.log('✅ random/exchange/draw generic read summaries PASS');
     console.log('✅ payload JSON stays generic and non-JSON stays raw PASS');
-    console.log('✅ Operate remains absent from FAR2 P5C read-only proto PASS');
+    console.log('✅ Operate 已由独立写链服务承载，只读发现层仍保持 operateEnabled=false PASS');
     console.log('\n=== RESULT ===');
     console.log(JSON.stringify({
         ok: true,

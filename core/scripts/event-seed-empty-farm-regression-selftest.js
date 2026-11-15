@@ -71,8 +71,8 @@ async function main() {
     inspection: { inventory: { unresolvedCandidates: [{
       seedId: 21050, confidence: 'high', activityReferenced: true,
     }] } },
-  }), true);
-  console.log('✅ high-confidence seed evidence remains fail-closed PASS');
+  }), false);
+  console.log('✅ high-confidence item evidence alone cannot reserve or block plots PASS');
 
   const knownSeed = {
     seed_id: 20901,
