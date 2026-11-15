@@ -105,7 +105,12 @@ async function main() {
     let manualSpawn = null;
     const manualUpdater = createReleaseUpdater({
         projectRoot: root,
-        runner,
+        runner: (file, args, opts) => {
+            if (file === 'sc.exe' && args.join(' ') === 'query FAR2Farm') {
+                return { status: 1, stdout: '', stderr: 'service not installed' };
+            }
+            return runner(file, args, opts);
+        },
         processRef: {
             platform: 'win32',
             pid: 4567,

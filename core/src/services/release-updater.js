@@ -194,7 +194,10 @@ function createReleaseUpdater(options = {}) {
             }
             const service = run('sc', ['query', serviceName], { allowFailure: true, timeout: 10000 });
             if (service.status !== 0) {
-                return { supported: false, executionMode: '', reason: 'automatic_restart_not_available', autoRestart: false, updateTaskName: '' };
+                // The default service name is FAR2Farm even for a launcher-only
+                // install. A missing service must select manual restart rather
+                // than disabling the updater altogether.
+                return { supported: true, executionMode: 'manual_restart', reason: 'manual_restart_required', autoRestart: false, updateTaskName: '' };
             }
 
             const updateTaskName = getUpdateTaskName();

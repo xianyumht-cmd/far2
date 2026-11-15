@@ -18,7 +18,7 @@
 | 3 | **no `.git` in the project root** | `git_checkout_required` | **YES — the old tree was a copied export, never a clone** | no (it is a real clone) |
 | 4 | current branch ≠ update branch | `checkout_main_required` | — | yes, because the branch was hard-coded to `main` |
 | 5 | origin is not `xianyumht-cmd/far2` | `update_origin_rejected` | — | no, origin is correct |
-| 6 | Windows: no `FAR2Farm` service | `automatic_restart_not_available` | — | yes, this host is launcher-started, not an NSSM service |
+| 6 | Windows: no `FAR2Farm` service | `automatic_restart_not_available` (before fix) | — | yes, this host is launcher-started, not an NSSM service |
 
 So the one-click update was unusable for **two independent reasons**: the deployment had no Git metadata at
 all, and even a clone could not be updated unless it sat on `main` **and** ran as an NSSM service.
@@ -33,7 +33,7 @@ all, and even a clone could not be updated unless it sat on `main` **and** ran a
    built-in updater (`fetch` → `merge --ff-only` → `pnpm install --frozen-lockfile` → `pnpm verify`)
    instead of copying the directory again.
 2. **Launcher-started deployments keep the update path**
-   When no Windows service is registered, the transport now reports
+   When the Windows service is absent (including a failed `sc query FAR2Farm`), the transport now reports
    `{supported:true, executionMode:'manual_restart', reason:'manual_restart_required', autoRestart:false}`
    instead of refusing. The update runs, verifies, and then asks the operator to restart; nothing is
    auto-killed. The worker receives no parent PID and cannot signal the running FAR2 process
