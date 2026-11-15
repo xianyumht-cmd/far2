@@ -8,7 +8,10 @@ const OFFICIAL_ORIGIN_PATTERNS = [
     /^git@github\.com:xianyumht-cmd\/far2(?:\.git)?$/i,
     /^ssh:\/\/git@github\.com\/xianyumht-cmd\/far2(?:\.git)?\/?$/i,
 ];
-const UPDATE_BRANCH = 'main';
+// The branch this checkout follows for updates. Defaults to main; a deployment that tracks a
+// long-lived dev branch (for example dev/fr3gb) can set FAR2_UPDATE_BRANCH instead of
+// copying the whole directory on every release.
+const UPDATE_BRANCH = String(process.env.FAR2_UPDATE_BRANCH || 'main').trim() || 'main';
 const STATE_VERSION = 1;
 const WORKER_MAX_RUNTIME_MS = 3 * 60 * 60 * 1000;
 const ACTIVE_PHASES = new Set(['queued', 'checking', 'updating', 'rolling_back', 'restart_pending']);
@@ -185,7 +188,9 @@ function createReleaseUpdater(options = {}) {
         if (processRef.platform === 'win32') {
             const serviceName = getServiceName();
             if (!serviceName) {
-                return { supported: false, executionMode: '', reason: 'automatic_restart_not_available', autoRestart: false, updateTaskName: '' };
+                // No Windows service to bounce (launcher/scheduled-task deployments). The update
+                // itself is safe; only the restart is manual, so report that instead of refusing.
+                return { supported: true, executionMode: 'manual_restart', reason: 'manual_restart_required', autoRestart: false, updateTaskName: '' };
             }
             const service = run('sc', ['query', serviceName], { allowFailure: true, timeout: 10000 });
             if (service.status !== 0) {

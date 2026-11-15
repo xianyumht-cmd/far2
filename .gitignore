@@ -16,6 +16,9 @@ coverage/
 # FAR2 runtime state / account data
 core/data/
 
+# Local launcher/runtime directory (machine-specific, never committed)
+data/
+
 # Logs / diagnostics / temporary files
 *.log
 *.log.*
