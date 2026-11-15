@@ -14,16 +14,30 @@
  *   node tools/code-supervisor.js --once              # 只检查一轮就退出
  *
  * 环境变量:
- *   FAR2_ADMIN_PASS    管理员密码（必填）
+ *   FAR2_ADMIN_PASS    管理员密码（可选；缺省时读本机安全存储）
+ *   FAR2_ADMIN_SECRET_FILE  密码文件路径，默认 %USERPROFILE%\.far2\admin-pass.txt
  *   FAR2_BASE          默认 http://127.0.0.1:3007
  */
 
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 
 const BASE = process.env.FAR2_BASE || 'http://127.0.0.1:3007';
-const PASS = process.env.FAR2_ADMIN_PASS || '';
+function readLocalAdminSecret() {
+    // 本机安全存储：默认 %USERPROFILE%\.far2\admin-pass.txt（仅当前用户可读，从不入库）
+    const file = process.env.FAR2_ADMIN_SECRET_FILE
+        || path.join(os.homedir(), '.far2', 'admin-pass.txt');
+    try {
+        const value = fs.readFileSync(file, 'utf8').split(/\r?\n/)[0].trim();
+        return value || '';
+    } catch {
+        return '';
+    }
+}
+
+const PASS = process.env.FAR2_ADMIN_PASS || readLocalAdminSecret();
 const USER = process.env.FAR2_ADMIN_USER || 'admin';
 const INTERVAL = Number(process.argv.includes('--interval')
     ? process.argv[process.argv.indexOf('--interval') + 1]
@@ -169,7 +183,7 @@ async function tick() {
 
 async function main() {
     log(`Code supervisor 启动：base=${BASE} interval=${INTERVAL}s（只在掉线时刷新，无定期刷新）`);
-    if (!PASS) log('警告：FAR2_ADMIN_PASS 为空，无法登录 far2');
+    if (!PASS) log('警告：未找到管理员密码（FAR2_ADMIN_PASS 与本机 .far2/admin-pass.txt 均为空），无法登录 far2');
 
     for (;;) {
         try {

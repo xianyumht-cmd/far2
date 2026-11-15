@@ -30,8 +30,19 @@ if ($Uninstall) {
     exit 0
 }
 
+# 密码来源：显式参数 → 环境变量 → 本机安全存储。任务与 VBS 都不携带密码。
+$secretFile = Join-Path $env:USERPROFILE '.far2\admin-pass.txt'
+if ([string]::IsNullOrWhiteSpace($AdminPassword) -and (Test-Path -LiteralPath $secretFile)) {
+    $AdminPassword = (Get-Content -LiteralPath $secretFile -TotalCount 1).Trim()
+}
 if ([string]::IsNullOrWhiteSpace($AdminPassword)) {
-    throw '需要在环境变量 FAR2_ADMIN_PASS 里提供 far2 管理员密码（-AdminPassword 也可以）'
+    throw "未找到管理员密码：请把密码写入 $secretFile（推荐，仅本机可读），或用 -AdminPassword 传入一次。脚本不会把密码写进计划任务或 VBS。"
+}
+if (-not (Test-Path -LiteralPath $secretFile)) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -LiteralPath $secretFile) | Out-Null
+    Set-Content -LiteralPath $secretFile -Value $AdminPassword -NoNewline -Encoding UTF8
+    try { icacls.exe $secretFile /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null } catch { }
+    Write-Host "已把管理员密码写入本机安全存储：$secretFile" -ForegroundColor Green
 }
 
 # 优先用项目自带的 Node 20（微信通道用），否则用系统 node
@@ -53,7 +64,7 @@ New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $vbs = Join-Path $projectRoot 'data\run-code-supervisor.vbs'
 $vbsBody = @"
 Set shell = CreateObject("WScript.Shell")
-shell.Environment("PROCESS")("FAR2_ADMIN_PASS") = "$AdminPassword"
+# supervisor 自己从 %USERPROFILE%\.far2\admin-pass.txt 读取密码，VBS 不携带任何凭据
 q = Chr(34)
 cmd = q & "$nodeExe" & q & " " & q & "$supervisor" & q & " --interval 30 >> " & q & "$logFile" & q & " 2>&1"
 shell.Run "cmd /c " & cmd, 0, False
