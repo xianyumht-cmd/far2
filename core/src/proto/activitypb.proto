@@ -7,6 +7,10 @@ import "corepb.proto";
 service ActivityService {
   rpc List(ListRequest) returns (ListReply);
   rpc GetGroup(GetGroupRequest) returns (GetGroupReply);
+  // 活动写操作。选择器由 operate_type 决定，具体参数放在对应的字段号里；
+  // 已知取值：1=兑换商店购买(101)、2=随机商店购买(102)、3=随机商店刷新(无参)、
+  // 21=星座点亮/一键领取(119 空消息)。未在此列出的 operate_type 一律不盲打。
+  rpc Operate(OperateRequest) returns (OperateReply);
 }
 
 message ListRequest {}
@@ -101,4 +105,42 @@ message ListReply {
 
 message GetGroupReply {
   ActivityNode group = 1;
+}
+
+// ============ 活动写链（Operate） ============
+// 字段号来自实机抓包（见 docs/far2-评审与活动写链.md）：
+//   OperateRequest.1  = activity_id
+//   OperateRequest.2  = operate_type
+//   OperateRequest.101 = exchange_shop_operate {goods_id, count}
+//   OperateRequest.102 = random_shop_operate   {goods_id, count}
+//   OperateRequest.119 = constellation_operate {}（空消息，官方客户端点亮时附带）
+//   OperateReply.3    = ActivityNode（与 GetGroupReply.group 同构）
+//   OperateReply.104  = repeated corepb.Item rewards
+
+message ExchangeShopOperateParams {
+  int64 goods_id = 1;
+  int64 count = 2;
+}
+
+message RandomShopOperateParams {
+  int64 goods_id = 1;
+  int64 count = 2;
+}
+
+message ConstellationOperateParams {
+}
+
+message OperateRequest {
+  int64 activity_id = 1;
+  int64 operate_type = 2;
+  ExchangeShopOperateParams exchange_shop_operate = 101;
+  RandomShopOperateParams random_shop_operate = 102;
+  ConstellationOperateParams constellation_operate = 119;
+}
+
+message OperateReply {
+  int64 activity_id = 1;
+  int64 operate_type = 2;
+  ActivityNode group = 3;
+  repeated corepb.Item rewards = 104;
 }

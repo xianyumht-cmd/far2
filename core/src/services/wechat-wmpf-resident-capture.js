@@ -4,7 +4,27 @@ const process = require('node:process');
 const { spawnSync } = require('node:child_process');
 const WebSocket = require('ws');
 const { WebSocketServer } = require('ws');
-const frida = require('frida');
+// frida 17 是 ESM 包，顶层 require 会报 ERR_REQUIRE_ESM；改成懒加载 + 动态 import。
+let fridaModule = null;
+let fridaLoading = null;
+async function loadFrida() {
+    if (fridaModule) return fridaModule;
+    if (!fridaLoading) {
+        fridaLoading = (async () => {
+            try {
+                const mod = await import('frida');
+                fridaModule = mod && mod.default ? (mod.default.default || mod.default) : mod;
+            } catch (importError) {
+                fridaModule = require('frida');
+            }
+            return fridaModule;
+        })().catch((error) => {
+            fridaLoading = null;
+            throw error;
+        });
+    }
+    return fridaLoading;
+}
 const { isLikelyCode } = require('./windows-runtime-code');
 const {
     EXPECTED_APP_ID,
@@ -214,6 +234,7 @@ class ResidentCdpBridge {
 }
 
 async function attachHook() {
+    const frida = await loadFrida();
     const device = await frida.getLocalDevice();
     const processes = await device.enumerateProcesses({ scope: frida.Scope.Metadata });
     const host = selectWmpfHostProcess(processes);

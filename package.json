@@ -63,7 +63,11 @@
     "test": "pnpm -C core test",
     "test:security": "pnpm -C core test:security",
     "test:regression": "pnpm -C core test:regression",
-    "verify": "pnpm workspace:lockfile-check && pnpm lint:baseline && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm workspace:lockfile-check && pnpm lint:baseline && pnpm typecheck && pnpm test && pnpm build",
+    "activity:operate-selftest": "pnpm -C core activity:operate-selftest",
+    "activity:hub-selftest": "pnpm -C core activity:hub-selftest",
+    "activity:features-selftest": "pnpm -C core activity:features-selftest",
+    "activity:daily-selftest": "pnpm -C core activity:daily-selftest"
   },
   "pnpm": {
     "overrides": {

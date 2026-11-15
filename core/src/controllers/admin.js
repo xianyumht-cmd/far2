@@ -6,6 +6,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const process = require('node:process');
+const crypto = require('node:crypto');
 const express = require('express');
 const { Server: SocketIOServer } = require('socket.io');
 const { version } = require('../../package.json');
@@ -1384,6 +1385,240 @@ function startAdminServer(dataProvider) {
             }
             const data = await provider.listActivities(id);
             return res.json({ ok: true, data });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    // API: 活动写链（Operate）—— 默认关闭 + 默认 dryRun，见 docs/far2-评审与活动写链.md
+    app.get('/api/activity/operate/state', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        try {
+            if (!provider || typeof provider.getActivityOperateState !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动写链接口不可用' });
+            }
+            return res.json({ ok: true, data: await provider.getActivityOperateState(id) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/activity/operate/policy', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        try {
+            if (!provider || typeof provider.setActivityOperatePolicy !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动写链接口不可用' });
+            }
+            const policy = {
+                enabled: req.body && req.body.enabled,
+                dryRun: req.body && req.body.dryRun,
+                maxPerHour: req.body && req.body.maxPerHour,
+            };
+            return res.json({ ok: true, data: await provider.setActivityOperatePolicy(id, policy) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.get('/api/activity/:activityId/group', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        const activityId = Number(req.params.activityId) || 0;
+        if (activityId <= 0) return res.status(400).json({ ok: false, error: 'activityId 必须为正整数' });
+        try {
+            if (!provider || typeof provider.getActivityGroup !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动分组接口不可用' });
+            }
+            return res.json({ ok: true, data: await provider.getActivityGroup(id, activityId) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/activity/operate/exchange', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        try {
+            if (!provider || typeof provider.operateActivityExchange !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动写链接口不可用' });
+            }
+            const params = {
+                activityId: Number(req.body && req.body.activityId) || 0,
+                goodsId: Number(req.body && req.body.goodsId) || 0,
+                count: Number(req.body && req.body.count) || 1,
+            };
+            return res.json({ ok: true, data: await provider.operateActivityExchange(id, params) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/activity/operate/constellation', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        try {
+            if (!provider || typeof provider.operateActivityConstellation !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动写链接口不可用' });
+            }
+            const params = { activityId: Number(req.body && req.body.activityId) || 0 };
+            return res.json({ ok: true, data: await provider.operateActivityConstellation(id, params) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    // API: 活动超集（星座/公益红花/七夕/青梅）——只读快照 + 受闸门保护的写动作
+    app.get('/api/activity/hub', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        try {
+            if (!provider || typeof provider.getActivityHubSnapshot !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动超集接口不可用' });
+            }
+            const data = await provider.getActivityHubSnapshot(id);
+            const policy = await provider.getActivityHubPolicy(id).catch(() => null);
+            return res.json({ ok: true, data: { ...data, policy } });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/activity/hub/policy', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        try {
+            if (!provider || typeof provider.setActivityHubPolicy !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动超集接口不可用' });
+            }
+            const policy = {
+                enabled: req.body && req.body.enabled,
+                dryRun: req.body && req.body.dryRun,
+                maxPerHour: req.body && req.body.maxPerHour,
+            };
+            return res.json({ ok: true, data: await provider.setActivityHubPolicy(id, policy) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/activity/hub/:action', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) {
+            return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        }
+        try {
+            if (!provider || typeof provider.activityHubAction !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动超集接口不可用' });
+            }
+            const payload = (req.body && req.body.payload) || {};
+            return res.json({ ok: true, data: await provider.activityHubAction(id, req.params.action, payload) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    // API: 宠日记 / 奶茶店 / 天气活动（只读快照；写动作走 /api/activity/hub/:action）
+    app.get('/api/activity/pet-diary', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        try {
+            if (!provider || typeof provider.getPetDiary !== 'function') {
+                return res.status(503).json({ ok: false, error: '宠日记接口不可用' });
+            }
+            return res.json({ ok: true, data: await provider.getPetDiary(id) });
+        } catch (e) {
+            // 活动没开时属于正常业务状态，不当 500 返回
+            const message = String((e && e.message) || e || '');
+            if (/未返回|未发现|尚未开放|已经结束|未开启/.test(message)) {
+                return res.json({ ok: true, data: { available: false, reason: message } });
+            }
+            return handleApiError(res, e);
+        }
+    });
+
+    app.get('/api/activity/milk-tea', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        try {
+            if (!provider || typeof provider.getMilkTea !== 'function') {
+                return res.status(503).json({ ok: false, error: '奶茶店接口不可用' });
+            }
+            const page = String(req.query.page || 'shop');
+            return res.json({ ok: true, data: await provider.getMilkTea(id, page, {}) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.get('/api/activity/weather', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        try {
+            if (!provider || typeof provider.getWeatherActivity !== 'function') {
+                return res.status(503).json({ ok: false, error: '天气活动接口不可用' });
+            }
+            const [activity, friends] = await Promise.all([
+                provider.getWeatherActivity(id).catch(e => ({ error: String(e && e.message) })),
+                provider.getWeatherFriends(id).catch(e => ({ error: String(e && e.message) })),
+            ]);
+            return res.json({ ok: true, data: { activity, friends } });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    // API: 活动日常（七项超集的每日编排）
+    app.get('/api/activity/daily/state', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        try {
+            if (!provider || typeof provider.getActivityDailyState !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动日常接口不可用' });
+            }
+            return res.json({ ok: true, data: await provider.getActivityDailyState(id) });
+        } catch (e) {
+            return handleApiError(res, e);
+        }
+    });
+
+    app.post('/api/activity/daily/run', async (req, res) => {
+        const id = getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
+        if (!checkAccountAccess(req, id)) return res.status(403).json({ ok: false, error: '无权访问此账号' });
+        try {
+            if (!provider || typeof provider.runActivityDaily !== 'function') {
+                return res.status(503).json({ ok: false, error: '活动日常接口不可用' });
+            }
+            const force = !!(req.body && req.body.force);
+            return res.json({ ok: true, data: await provider.runActivityDaily(id, { force }) });
         } catch (e) {
             return handleApiError(res, e);
         }

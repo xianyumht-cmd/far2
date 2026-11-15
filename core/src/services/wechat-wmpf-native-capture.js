@@ -258,10 +258,17 @@ send({ type: 'far2_wmpf_hook_ready' });
 }
 
 async function loadFrida() {
+    // frida 17 是 ESM 包：CJS 的 require('frida') 会 ERR_REQUIRE_ESM，
+    // 这里用动态 import（Node 20 起支持），失败再退回 require 兼容老版本。
     try {
-        return require('frida');
-    } catch {
-        throw createError('wechat_native_frida_missing', 'FAR2-native WMPF backend requires the isolated frida runtime');
+        const mod = await import('frida');
+        return mod && mod.default ? (mod.default.default || mod.default) : mod;
+    } catch (importError) {
+        try {
+            return require('frida');
+        } catch {
+            throw createError('wechat_native_frida_missing', `FAR2-native WMPF backend requires the isolated frida runtime (${importError && importError.code})`);
+        }
     }
 }
 

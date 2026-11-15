@@ -15,7 +15,7 @@ function Get-NodePath {
     if ($node) {
         try {
             $version = (& $node.Source -p "process.versions.node").Trim()
-            if ([int]$version.Split('.')[0] -ge 22) { return [string]$node.Source }
+            if ([int]$version.Split('.')[0] -ge 20) { return [string]$node.Source }
         }
         catch {}
     }
@@ -30,7 +30,7 @@ function Get-NodePath {
         if (-not $cached) { continue }
         try {
             $version = (& $cached.FullName -p "process.versions.node").Trim()
-            if ([int]$version.Split('.')[0] -ge 22) { return [string]$cached.FullName }
+            if ([int]$version.Split('.')[0] -ge 20) { return [string]$cached.FullName }
         }
         catch {}
     }
@@ -54,7 +54,10 @@ function Test-Dependencies {
     param([string]$NodePath)
     Push-Location -LiteralPath $coreRoot
     try {
-        & $NodePath -e "require('frida');require('ws');require('long');require('protobufjs');require('node-fetch');" *> $null
+        & $NodePath -e "require('ws');require('long');require('protobufjs');require('node-fetch');" *> $null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        # frida 17 是 ESM 包，必须用动态 import 检查
+        & $NodePath --input-type=module -e "import('frida').then(()=>process.exit(0)).catch(()=>process.exit(1))" *> $null
         return ($LASTEXITCODE -eq 0)
     }
     catch { return $false }
