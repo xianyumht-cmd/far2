@@ -28,6 +28,14 @@ function main() {
                 }],
             },
         },
+    }), false);
+
+    assert.equal(shouldBlockShopFallback({
+        blockShopFallback: true,
+        knownSeedBlock: true,
+        knownSeedBlockReasons: ['2x2-failed'],
+        unresolvedSeedIds: [20999],
+        inspection: { inventory: { unresolvedCandidates: [] } },
     }), true);
 
     assert.equal(shouldBlockShopFallback({
@@ -44,7 +52,7 @@ function main() {
             },
         },
     }), false);
-    console.log('✅ high-confidence unknown blocks shop; namespace-only medium candidate does not permanently block PASS');
+    console.log('✅ unverified items never block shop; a proven-seed write failure still blocks PASS');
 
     assert.equal(shouldBlockShopFallback({
         blockShopFallback: true,

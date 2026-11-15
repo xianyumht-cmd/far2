@@ -61,13 +61,19 @@ async function main() {
     });
     assert.deepEqual(
         await unknownProtected([1, 2, 3, 4, 5, 6], { level: 113 }),
-        { plantedLands: [5, 6] },
+        { plantedLands: [1, 2, 3, 4, 5, 6] },
     );
     assert.deepEqual(unknownCalls, [
-        ['reserve', [1, 2, 3, 4, 5, 6], 1],
-        ['shop', [5, 6]],
+        ['shop', [1, 2, 3, 4, 5, 6]],
     ]);
-    console.log('✅ high-confidence unresolved seed reserves one possible 2x2 footprint instead of stalling the whole farm PASS');
+    console.log('✅ high-confidence unresolved seed cannot reserve any unverified footprint PASS');
+
+    // Production regression: when precisely four adjacent plots are empty,
+    // an unknown bag seed must never hold all four for endless 2x2 learning.
+    unknownCalls.length = 0;
+    assert.deepEqual(await unknownProtected([5, 6, 1, 2], { level: 113 }),
+        { plantedLands: [5, 6, 1, 2] });
+    assert.deepEqual(unknownCalls, [['shop', [5, 6, 1, 2]]]);
 
     const reservationCalls = [];
     const reserved2x2 = createEventSeedShopWrapper({

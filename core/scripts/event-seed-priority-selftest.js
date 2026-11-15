@@ -142,11 +142,11 @@ async function main() {
         state: { level: 113 },
         accountId: 'fixture',
     });
-    assert.equal(unresolvedResult.blockShopFallback, true);
+    assert.equal(unresolvedResult.blockShopFallback, false);
     assert.deepEqual(unresolvedResult.unresolvedSeedIds, [20999]);
     assert.equal(noWrites.length, 0);
     assert.equal(discoveryWrites.length, 1);
-    console.log('✅ unresolved seed blocks ordinary shop fallback and causes zero plant writes PASS');
+    console.log('✅ unresolved seed is recorded without blocking ordinary shop fallback or causing speculative writes PASS');
 
     const planted1x1 = [];
     const service1x1 = createEventSeedPriorityService({
