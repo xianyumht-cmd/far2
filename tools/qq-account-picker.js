@@ -14,7 +14,7 @@
  *
  * 命令:
  *   node tools/qq-account-picker.js list
- *   node tools/qq-account-picker.js pick   --uin 2320006072 --wait 90
+ *   node tools/qq-account-picker.js pick   --uin QQ_UIN --wait 90
  *   node tools/qq-account-picker.js dump   --title 选择账号
  *   node tools/qq-account-picker.js close  --title 选择账号
  *   node tools/qq-account-picker.js close-farm [--proc QQ]

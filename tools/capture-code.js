@@ -8,8 +8,8 @@
  *   4. 可选 --apply：直接把 Code 写回 far2 账号并启动 worker
  *
  * 用法:
- *   node tools/capture-code.js --uin 2320006072
- *   node tools/capture-code.js --uin 2320006072 --apply --account 1
+ *   node tools/capture-code.js --uin QQ_UIN
+ *   node tools/capture-code.js --uin QQ_UIN --apply --account 1
  *
  * 退出码：0 = 拿到 Code；1 = 失败。
  */
@@ -34,9 +34,14 @@ function codeFileFor(uin) {
 }
 
 async function main() {
-    const uin = arg('uin', '2320006072');
+    const uin = arg('uin', process.env.FAR2_TARGET_UIN || '');
     const apply = hasFlag('apply');
     const accountId = arg('account', '1');
+    if (!uin) {
+        console.error('Missing target UIN: provide --uin or FAR2_TARGET_UIN');
+        process.exitCode = 2;
+        return;
+    }
 
     // 说明：QQ 的「选择账号」是主窗口内的 Chromium 弹层（EnumWindows 里找不到独立 HWND，
     // UIA 也拿不到节点），所以这里不做「点按钮」的尝试，只靠「按实际 UIN 绑定」保证不写错号。
