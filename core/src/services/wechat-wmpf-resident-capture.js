@@ -14,7 +14,7 @@ async function loadFrida() {
             try {
                 const mod = await import('frida');
                 fridaModule = mod && mod.default ? (mod.default.default || mod.default) : mod;
-            } catch (importError) {
+            } catch {
                 fridaModule = require('frida');
             }
             return fridaModule;

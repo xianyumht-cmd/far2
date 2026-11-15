@@ -15,7 +15,6 @@
  *   node tools\wmpf-probe.js --pid 18280
  */
 
-const path = require('node:path');
 
 async function loadFrida() {
     const mod = await import('frida');

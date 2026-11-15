@@ -104,12 +104,10 @@ function makeTransport(log) {
 async function runFeature(hub, log, label, action, expect) {
     log.length = 0;
     RPC_LOG.length = 0;
-    let outcome = 'ok';
     let errorMessage = '';
     try {
         await action();
     } catch (error) {
-        outcome = 'error';
         errorMessage = String((error && error.message) || error);
     }
     const operateCall = log.find(entry => entry.method === 'Operate')

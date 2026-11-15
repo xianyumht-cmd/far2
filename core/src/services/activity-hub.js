@@ -18,7 +18,7 @@ const process = require('node:process');
 
 const { sendMsgAsync } = require('../utils/network');
 const { types } = require('../utils/proto');
-const { getServerTimeSec, toNum, log } = require('../utils/utils');
+const { getServerTimeSec, log } = require('../utils/utils');
 const { getItemById, getItemImageById, getMutantEffectsByIds } = require('../config/gameConfig');
 const { getBag, getBagItems } = require('./warehouse');
 const activityWindows = require('./activity-windows');

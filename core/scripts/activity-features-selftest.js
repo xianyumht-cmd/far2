@@ -12,7 +12,6 @@
  */
 
 const assert = require('node:assert/strict');
-const path = require('node:path');
 
 // 先把 network 模块换成假的，再 require 移植模块
 const networkPath = require.resolve('../src/utils/network');
