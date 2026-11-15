@@ -17,12 +17,14 @@
  *   FAR2_ADMIN_PASS    管理员密码（可选；缺省时读本机安全存储）
  *   FAR2_ADMIN_SECRET_FILE  密码文件路径，默认 %USERPROFILE%\.far2\admin-pass.txt
  *   FAR2_BASE          默认 http://127.0.0.1:3007
+ *   FAR2_CODE_SUPERVISOR_UINS  可选 QQ UIN 白名单，逗号分隔；未设置则监控全部保存账号
  */
 
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { parseScope, shouldMonitorAccount } = require('./code-supervisor-scope');
 
 const BASE = process.env.FAR2_BASE || 'http://127.0.0.1:3007';
 function readLocalAdminSecret() {
@@ -39,6 +41,7 @@ function readLocalAdminSecret() {
 
 const PASS = process.env.FAR2_ADMIN_PASS || readLocalAdminSecret();
 const USER = process.env.FAR2_ADMIN_USER || 'admin';
+const TARGET_SCOPE = parseScope(process.env.FAR2_CODE_SUPERVISOR_UINS);
 const INTERVAL = Number(process.argv.includes('--interval')
     ? process.argv[process.argv.indexOf('--interval') + 1]
     : 30);
@@ -174,7 +177,7 @@ async function tick() {
     }
     const summary = [];
     for (const account of accounts) {
-        if (String(account.platform || 'qq').toLowerCase() !== 'qq') continue;
+        if (!shouldMonitorAccount(account, TARGET_SCOPE)) continue;
         const ok = await checkAccount(account);
         summary.push(`${account.uin || account.id}:${ok ? '在线' : '离线'}`);
     }
@@ -184,6 +187,11 @@ async function tick() {
 async function main() {
     log(`Code supervisor 启动：base=${BASE} interval=${INTERVAL}s（只在掉线时刷新，无定期刷新）`);
     if (!PASS) log('警告：未找到管理员密码（FAR2_ADMIN_PASS 与本机 .far2/admin-pass.txt 均为空），无法登录 far2');
+    if (TARGET_SCOPE !== null) {
+        log(TARGET_SCOPE.size > 0
+            ? `仅监控 ${TARGET_SCOPE.size} 个指定的 QQ 账号，其余保存账号不触发 Code 刷新`
+            : '监控白名单为空或非法：不对任何账号执行刷新（fail-closed）');
+    }
 
     for (;;) {
         try {
